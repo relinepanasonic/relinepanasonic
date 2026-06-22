@@ -18,50 +18,134 @@ export default function LoginPage() {
     const supabase = createClient();
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     setLoading(false);
-    if (error) {
-      setError(error.message);
-      return;
-    }
+    if (error) { setError(error.message); return; }
     router.replace("/");
     router.refresh();
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gray-50 p-4">
+    <div
+      className="flex min-h-screen items-center justify-center p-4"
+      style={{ background: "linear-gradient(135deg, #0a1628 0%, #0f2040 50%, #1a3461 100%)" }}
+    >
+      {/* Background decorative rings */}
+      <div className="pointer-events-none fixed inset-0 overflow-hidden">
+        <div style={{
+          position: "absolute", top: "-20%", right: "-10%",
+          width: 600, height: 600, borderRadius: "50%",
+          border: "1px solid rgba(201,162,39,0.08)",
+        }} />
+        <div style={{
+          position: "absolute", top: "-10%", right: "-5%",
+          width: 400, height: 400, borderRadius: "50%",
+          border: "1px solid rgba(201,162,39,0.12)",
+        }} />
+        <div style={{
+          position: "absolute", bottom: "-20%", left: "-10%",
+          width: 500, height: 500, borderRadius: "50%",
+          border: "1px solid rgba(201,162,39,0.06)",
+        }} />
+      </div>
+
       <form
         onSubmit={onSubmit}
-        className="w-full max-w-sm space-y-4 rounded-xl bg-white p-8 shadow-sm"
+        className="glass relative w-full max-w-sm rounded-2xl p-8"
+        style={{ boxShadow: "0 25px 60px rgba(0,0,0,0.5), 0 0 0 1px rgba(201,162,39,0.1)" }}
       >
-        <h1 className="text-xl font-semibold text-gray-900">ProfTokoOnline</h1>
-        <p className="-mt-2 text-sm text-gray-500">Sign in to your dashboard</p>
-        <div className="space-y-1">
-          <label className="text-sm text-gray-600">Email</label>
-          <input
-            type="email"
-            required
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
-          />
+        {/* Logo mark */}
+        <div className="mb-6 flex flex-col items-center gap-3">
+          {/* Shield icon built from CSS — matches logo shape */}
+          <div style={{
+            width: 56, height: 56, borderRadius: "50%",
+            background: "linear-gradient(135deg, #1a3461, #0a1628)",
+            border: "2px solid rgba(201,162,39,0.4)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            boxShadow: "0 0 20px rgba(201,162,39,0.15)",
+          }}>
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
+              <path d="M12 2L3 7v5c0 5.25 3.75 10.15 9 11.35C17.25 22.15 21 17.25 21 12V7L12 2z" fill="rgba(201,162,39,0.2)" stroke="#c9a227" strokeWidth="1.5" strokeLinejoin="round"/>
+              <path d="M9 12l2 2 4-4" stroke="#c9a227" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </div>
+          <div className="text-center">
+            <h1 className="text-xl font-bold tracking-wide" style={{ color: "#e8edf8" }}>
+              ProfTokoOnline
+            </h1>
+            <p className="mt-0.5 text-xs" style={{ color: "#7b8db0" }}>
+              Dashboard Analytics
+            </p>
+          </div>
         </div>
-        <div className="space-y-1">
-          <label className="text-sm text-gray-600">Password</label>
-          <input
-            type="password"
-            required
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
-          />
+
+        {/* Divider */}
+        <div style={{ height: 1, background: "linear-gradient(90deg, transparent, rgba(201,162,39,0.3), transparent)", marginBottom: 24 }} />
+
+        <div className="space-y-4">
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium uppercase tracking-widest" style={{ color: "#7b8db0" }}>
+              Email
+            </label>
+            <input
+              type="email"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="your@email.com"
+              className="w-full rounded-lg px-4 py-2.5 text-sm outline-none transition-all"
+              style={{
+                background: "rgba(255,255,255,0.05)",
+                border: "1px solid rgba(255,255,255,0.08)",
+                color: "#e8edf8",
+              }}
+              onFocus={(e) => e.target.style.borderColor = "rgba(201,162,39,0.5)"}
+              onBlur={(e) => e.target.style.borderColor = "rgba(255,255,255,0.08)"}
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium uppercase tracking-widest" style={{ color: "#7b8db0" }}>
+              Password
+            </label>
+            <input
+              type="password"
+              required
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="••••••••"
+              className="w-full rounded-lg px-4 py-2.5 text-sm outline-none transition-all"
+              style={{
+                background: "rgba(255,255,255,0.05)",
+                border: "1px solid rgba(255,255,255,0.08)",
+                color: "#e8edf8",
+              }}
+              onFocus={(e) => e.target.style.borderColor = "rgba(201,162,39,0.5)"}
+              onBlur={(e) => e.target.style.borderColor = "rgba(255,255,255,0.08)"}
+            />
+          </div>
+
+          {error && (
+            <div className="rounded-lg px-4 py-2.5 text-sm" style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.2)", color: "#fca5a5" }}>
+              {error}
+            </div>
+          )}
+
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full rounded-lg py-2.5 text-sm font-semibold tracking-wide transition-all"
+            style={{
+              background: loading ? "rgba(201,162,39,0.5)" : "linear-gradient(135deg, #c9a227, #e8c84a)",
+              color: "#0a1628",
+              boxShadow: loading ? "none" : "0 4px 20px rgba(201,162,39,0.3)",
+            }}
+          >
+            {loading ? "Signing in…" : "Sign In"}
+          </button>
         </div>
-        {error && <p className="text-sm text-red-600">{error}</p>}
-        <button
-          type="submit"
-          disabled={loading}
-          className="w-full rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-        >
-          {loading ? "Signing in…" : "Sign in"}
-        </button>
+
+        <p className="mt-6 text-center text-xs" style={{ color: "#4a5d7a" }}>
+          © {new Date().getFullYear()} ProfTokoOnline
+        </p>
       </form>
     </div>
   );

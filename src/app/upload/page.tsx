@@ -69,70 +69,78 @@ export default function UploadPage() {
     setBusy(false);
   }
 
-  const input =
-    "w-full rounded-md border border-gray-300 px-3 py-2 text-sm";
+  const inp: React.CSSProperties = {
+    width: "100%", borderRadius: 8, padding: "8px 12px", fontSize: 13,
+    background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)",
+    color: "#e8edf8", outline: "none",
+  };
+  const label: React.CSSProperties = { fontSize: 11, color: "#7b8db0", fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.05em", display: "block", marginBottom: 4 };
 
   return (
+    <div style={{ minHeight: "100vh", background: "linear-gradient(160deg, #0a1628 0%, #0f2040 100%)" }}>
     <div className="mx-auto max-w-3xl space-y-6 p-6">
-      <h1 className="text-xl font-semibold">Upload</h1>
+      <div>
+        <h1 className="text-lg font-bold" style={{ color: "#e8edf8" }}>Upload Data</h1>
+        <p className="text-xs mt-0.5" style={{ color: "#7b8db0" }}>Upload Performa, SPOS, and Ads files for the same period</p>
+      </div>
 
-      {/* Shared manual fields — same for the whole upload set */}
-      <div className="grid grid-cols-2 gap-4 rounded-xl bg-white p-5 shadow-sm md:grid-cols-3">
-        <label className="space-y-1 text-sm">
-          <span className="text-gray-600">Client ID (superadmin)</span>
-          <input className={input} value={clientId} onChange={(e) => setClientId(e.target.value)} placeholder="leave blank if scoped" />
-        </label>
-        <label className="space-y-1 text-sm">
-          <span className="text-gray-600">Admin</span>
-          <input className={input} value={manual.admin} onChange={(e) => setField("admin", e.target.value)} />
-        </label>
-        <label className="space-y-1 text-sm">
-          <span className="text-gray-600">Bulan</span>
-          <select className={input} value={manual.bulan} onChange={(e) => setField("bulan", e.target.value)}>
+      {/* Shared manual fields */}
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-3" style={{ background: "rgba(15,32,64,0.7)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 14, padding: 20 }}>
+        <div className="space-y-1">
+          <span style={label}>Client ID (superadmin)</span>
+          <input style={inp} value={clientId} onChange={(e) => setClientId(e.target.value)} placeholder="leave blank if scoped" />
+        </div>
+        <div className="space-y-1">
+          <span style={label}>Admin</span>
+          <input style={inp} value={manual.admin} onChange={(e) => setField("admin", e.target.value)} />
+        </div>
+        <div className="space-y-1">
+          <span style={label}>Bulan</span>
+          <select style={inp} value={manual.bulan} onChange={(e) => setField("bulan", e.target.value)}>
             {MONTHS.map((m) => <option key={m}>{m}</option>)}
           </select>
-        </label>
-        <label className="space-y-1 text-sm">
-          <span className="text-gray-600">Year</span>
-          <input type="number" className={input} value={manual.year} onChange={(e) => setField("year", Number(e.target.value))} />
-        </label>
-        <label className="space-y-1 text-sm">
-          <span className="text-gray-600">Week</span>
-          <input className={input} value={manual.week} onChange={(e) => setField("week", e.target.value)} />
-        </label>
-        <label className="space-y-1 text-sm">
-          <span className="text-gray-600">City</span>
-          <input className={input} value={manual.city} onChange={(e) => setField("city", e.target.value)} />
-        </label>
-        <label className="space-y-1 text-sm">
-          <span className="text-gray-600">PIC</span>
-          <input className={input} value={manual.pic_client} onChange={(e) => setField("pic_client", e.target.value)} />
-        </label>
-        <label className="space-y-1 text-sm">
-          <span className="text-gray-600">Store Name</span>
-          <input className={input} value={manual.store_name} onChange={(e) => setField("store_name", e.target.value)} />
-        </label>
-        <label className="space-y-1 text-sm">
-          <span className="text-gray-600">Tanggal Mulai</span>
-          <input type="date" className={input} value={manual.tanggal_mulai} onChange={(e) => setField("tanggal_mulai", e.target.value)} />
-        </label>
+        </div>
+        <div className="space-y-1">
+          <span style={label}>Year</span>
+          <input type="number" style={inp} value={manual.year} onChange={(e) => setField("year", Number(e.target.value))} />
+        </div>
+        <div className="space-y-1">
+          <span style={label}>Week</span>
+          <input style={inp} value={manual.week} onChange={(e) => setField("week", e.target.value)} />
+        </div>
+        <div className="space-y-1">
+          <span style={label}>City</span>
+          <input style={inp} value={manual.city} onChange={(e) => setField("city", e.target.value)} />
+        </div>
+        <div className="space-y-1">
+          <span style={label}>PIC</span>
+          <input style={inp} value={manual.pic_client} onChange={(e) => setField("pic_client", e.target.value)} />
+        </div>
+        <div className="space-y-1">
+          <span style={label}>Store Name</span>
+          <input style={inp} value={manual.store_name} onChange={(e) => setField("store_name", e.target.value)} />
+        </div>
+        <div className="space-y-1">
+          <span style={label}>Tanggal Mulai</span>
+          <input type="date" style={inp} value={manual.tanggal_mulai} onChange={(e) => setField("tanggal_mulai", e.target.value)} />
+        </div>
       </div>
 
       {/* 3 file slots */}
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
         {SLOTS.map((s) => (
-          <div key={s.source} className="rounded-xl bg-white p-4 shadow-sm">
-            <div className="mb-2 font-medium">{s.label}</div>
+          <div key={s.source} style={{ background: "rgba(15,32,64,0.7)", border: `1px solid ${files[s.source] ? "rgba(201,162,39,0.3)" : "rgba(255,255,255,0.06)"}`, borderRadius: 14, padding: 20 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: "#c9a227", marginBottom: 12 }}>{s.label}</div>
             <input
               type="file"
               accept={s.accept}
-              onChange={(e) =>
-                setFiles((f) => ({ ...f, [s.source]: e.target.files?.[0] ?? null }))
-              }
-              className="text-sm"
+              onChange={(e) => setFiles((f) => ({ ...f, [s.source]: e.target.files?.[0] ?? null }))}
+              style={{ fontSize: 12, color: "#94a3b8", width: "100%" }}
             />
             {files[s.source] && (
-              <p className="mt-2 truncate text-xs text-gray-500">{files[s.source]!.name}</p>
+              <p style={{ marginTop: 8, fontSize: 11, color: "#c9a227", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                ✓ {files[s.source]!.name}
+              </p>
             )}
           </div>
         ))}
@@ -141,16 +149,25 @@ export default function UploadPage() {
       <button
         onClick={submit}
         disabled={busy}
-        className="rounded-md bg-blue-600 px-5 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+        style={{
+          background: busy ? "rgba(201,162,39,0.4)" : "linear-gradient(135deg, #c9a227, #e8c84a)",
+          color: "#0a1628", border: "none", borderRadius: 8,
+          padding: "10px 28px", fontSize: 13, fontWeight: 700,
+          cursor: busy ? "not-allowed" : "pointer",
+          boxShadow: busy ? "none" : "0 4px 20px rgba(201,162,39,0.3)",
+        }}
       >
-        {busy ? "Uploading…" : "Upload"}
+        {busy ? "Uploading…" : "Upload Files"}
       </button>
 
       {log.length > 0 && (
-        <div className="rounded-xl bg-gray-900 p-4 font-mono text-xs text-gray-100">
-          {log.map((l, i) => <div key={i}>{l}</div>)}
+        <div style={{ background: "rgba(10,22,40,0.8)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 12, padding: 16, fontFamily: "monospace", fontSize: 12, color: "#94a3b8" }}>
+          {log.map((l, i) => (
+            <div key={i} style={{ color: l.startsWith("✓") ? "#c9a227" : "#f87171", marginBottom: 4 }}>{l}</div>
+          ))}
         </div>
       )}
+    </div>
     </div>
   );
 }

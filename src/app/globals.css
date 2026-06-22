@@ -1,26 +1,67 @@
 @import "tailwindcss";
 
+/* ── ProfTokoOnline Brand Palette (from logo) ─────────────────────────
+   Navy Dark  #0a1628   deepest background
+   Navy       #0f2040   card / sidebar
+   Navy Mid   #1a3461   elevated surfaces
+   Navy Light #1e4a7a   borders / hover
+   Gold       #c9a227   primary accent
+   Gold Light #e8c84a   hover / highlight
+   Silver     #94a3b8   muted text / icons
+   White      #f0f4ff   primary text on dark
+──────────────────────────────────────────────────────────────────────── */
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --navy-deep:   #0a1628;
+  --navy:        #0f2040;
+  --navy-mid:    #1a3461;
+  --navy-light:  #1e4a7a;
+  --gold:        #c9a227;
+  --gold-light:  #e8c84a;
+  --silver:      #94a3b8;
+  --text:        #e8edf8;
+  --text-muted:  #7b8db0;
+  --border:      rgba(255,255,255,0.07);
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  --color-background: var(--navy-deep);
+  --color-foreground: var(--text);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
+* { box-sizing: border-box; }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--navy-deep);
+  color: var(--text);
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--navy); }
+::-webkit-scrollbar-thumb { background: var(--navy-light); border-radius: 3px; }
+
+/* Gold shimmer on KPI cards */
+@keyframes shimmer {
+  0%   { background-position: -400px 0; }
+  100% { background-position: 400px 0; }
+}
+.gold-shimmer {
+  background: linear-gradient(90deg, var(--gold) 0%, var(--gold-light) 50%, var(--gold) 100%);
+  background-size: 400px 100%;
+  animation: shimmer 3s linear infinite;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Glassmorphism card */
+.glass {
+  background: rgba(15, 32, 64, 0.7);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--border);
 }
