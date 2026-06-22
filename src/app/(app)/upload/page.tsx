@@ -62,7 +62,7 @@ export default function UploadPage() {
           <Field label="Year"><input type="number" value={manual.year} onChange={(e) => setField("year", Number(e.target.value))} /></Field>
           <Field label="Week"><input value={manual.week} onChange={(e) => setField("week", e.target.value)} /></Field>
           <Field label="City"><input value={manual.city} onChange={(e) => setField("city", e.target.value)} /></Field>
-          <Field label="PIC"><input value={manual.pic_client} onChange={(e) => setField("pic_client", e.target.value)} /></Field>
+          <Field label="Owner"><input value={manual.pic_client} onChange={(e) => setField("pic_client", e.target.value)} /></Field>
           <Field label="Store Name"><input value={manual.store_name} onChange={(e) => setField("store_name", e.target.value)} /></Field>
           <Field label="Tanggal Mulai"><input type="date" value={manual.tanggal_mulai} onChange={(e) => setField("tanggal_mulai", e.target.value)} /></Field>
         </div>

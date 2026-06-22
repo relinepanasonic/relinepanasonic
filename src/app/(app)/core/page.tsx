@@ -16,11 +16,6 @@ export default function CoreListPage() {
   const [items, setItems] = useState<Item[]>([]);
   const [msg, setMsg] = useState("");
 
-  // input states
-  const [cityIn, setCityIn] = useState(""); const [cityPic, setCityPic] = useState("");
-  const [dealerIn, setDealerIn] = useState(""); const [dealerCity, setDealerCity] = useState("");
-  const [brandIn, setBrandIn] = useState(""); const [typeIn, setTypeIn] = useState("");
-
   const reload = useCallback(async (cid: string) => {
     if (!cid) { setItems([]); return; }
     const { data } = await supabase.from("master_data")
@@ -44,111 +39,143 @@ export default function CoreListPage() {
   }, [supabase, reload]);
 
   const cities = items.filter((i) => i.kind === "city");
-  const dealers = items.filter((i) => i.kind === "dealer");
+  const owners = items.filter((i) => i.kind === "owner");
+  const stores = items.filter((i) => i.kind === "store");
   const brands = items.filter((i) => i.kind === "brand");
-  const types = items.filter((i) => i.kind === "product_type");
+  const platforms = items.filter((i) => i.kind === "platform");
 
-  async function add(kind: string, value: string, extra: { pic?: string; city?: string } = {}) {
+  async function add(kind: string, value: string, city?: string) {
     if (!clientId) { setMsg("Pick a client first"); return; }
     if (!value.trim()) return;
     setMsg("");
     const { error } = await supabase.from("master_data").insert({
-      client_id: clientId, kind, value: value.trim(), pic: extra.pic || null, city: extra.city || null,
+      client_id: clientId, kind, value: value.trim(), city: city || null,
     });
-    if (error) { setMsg("✗ " + error.message); return; }
+    if (error) {
+      setMsg(error.code === "23505" ? `"${value}" already exists in this list` : "✗ " + error.message);
+      return;
+    }
     reload(clientId);
   }
-  async function remove(id: string) {
-    await supabase.from("master_data").delete().eq("id", id);
-    reload(clientId);
-  }
-
-  const picForCity = (c: string) => cities.find((x) => x.value === c)?.pic || "";
-
-  const smallInp: React.CSSProperties = { flex: 1, padding: "7px 9px", borderRadius: 8, border: "1px solid rgba(201,162,39,.25)", background: "rgba(10,22,40,.7)", color: "var(--text)", fontSize: 12, minWidth: 0 };
-  const addBtn: React.CSSProperties = { background: "var(--gold)", border: "none", borderRadius: 8, width: 34, cursor: "pointer", fontWeight: 800, color: "var(--navy-deep)" };
+  async function remove(id: string) { await supabase.from("master_data").delete().eq("id", id); reload(clientId); }
 
   return (
-    <div className="panel">
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
-        <div><h3 style={{ margin: 0 }}>Core List</h3>
-          <div className="hint">Master data behind every dropdown — City+PIC, Dealer, Brand &amp; Product Type. Add here and it appears in Upload.</div></div>
+    <>
+      {/* Header */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", flexWrap: "wrap", gap: 12, marginBottom: 16 }}>
+        <div>
+          <h2 style={{ margin: 0, fontSize: 18, color: "#fff", fontWeight: 800 }}>Core List</h2>
+          <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 3 }}>Master data behind every dropdown — one city can have many owners &amp; stores.</div>
+        </div>
         {isSuper && clients.length > 0 && (
-          <select value={clientId} onChange={(e) => { setClientId(e.target.value); reload(e.target.value); }}
-            style={{ padding: "8px 11px", borderRadius: 10, border: "1px solid rgba(201,162,39,.25)", background: "rgba(10,22,40,.6)", color: "var(--text)", fontSize: 13 }}>
-            {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
+          <div className="fld" style={{ minWidth: 180 }}>
+            <label>Client</label>
+            <select value={clientId} onChange={(e) => { setClientId(e.target.value); reload(e.target.value); }}>
+              {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </div>
         )}
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 14, marginTop: 16 }} className="core-grid">
-        {/* City + PIC */}
-        <Col title="City & PIC (1 city = 1 PIC)">
-          <List items={cities} render={(i) => <span>{i.value} <span style={{ color: "var(--muted)" }}>· {i.pic || "—"}</span></span>} onDel={remove} />
-          <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
-            <input style={smallInp} placeholder="City" value={cityIn} onChange={(e) => setCityIn(e.target.value)} />
-            <input style={smallInp} placeholder="PIC" value={cityPic} onChange={(e) => setCityPic(e.target.value)} />
-            <button style={addBtn} onClick={() => { add("city", cityIn, { pic: cityPic }); setCityIn(""); setCityPic(""); }}>+</button>
-          </div>
-        </Col>
+      {msg && <div style={{ color: "#ff9a9a", fontSize: 13, marginBottom: 12, background: "rgba(239,68,68,.1)", border: "1px solid rgba(239,68,68,.2)", borderRadius: 10, padding: "8px 12px" }}>{msg}</div>}
 
-        {/* Dealer */}
-        <Col title="Dealers">
-          <List items={dealers} render={(i) => <span>{i.value} <span style={{ color: "var(--muted)" }}>· {i.city || "—"}</span></span>} onDel={remove} />
-          <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 8 }}>
-            <input style={smallInp} placeholder="Dealer name" value={dealerIn} onChange={(e) => setDealerIn(e.target.value)} />
-            <div style={{ display: "flex", gap: 6 }}>
-              <select style={smallInp} value={dealerCity} onChange={(e) => setDealerCity(e.target.value)}>
-                <option value="">Select city</option>
-                {cities.map((c) => <option key={c.id} value={c.value}>{c.value}</option>)}
-              </select>
-              <button style={addBtn} onClick={() => { add("dealer", dealerIn, { city: dealerCity, pic: picForCity(dealerCity) }); setDealerIn(""); setDealerCity(""); }}>+</button>
-            </div>
-          </div>
-        </Col>
+      <div className="core-grid" style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 16 }}>
+        <Card icon="🏙️" title="Cities" count={cities.length}>
+          <ItemList items={cities} onDel={remove} />
+          <SimpleAdd placeholder="Add city…" onAdd={(v) => add("city", v)} />
+        </Card>
 
-        {/* Brand */}
-        <Col title="Brands">
-          <List items={brands} render={(i) => <span>{i.value}</span>} onDel={remove} />
-          <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
-            <input style={smallInp} placeholder="Add brand" value={brandIn} onChange={(e) => setBrandIn(e.target.value)} />
-            <button style={addBtn} onClick={() => { add("brand", brandIn); setBrandIn(""); }}>+</button>
-          </div>
-        </Col>
+        <Card icon="👤" title="Owners" count={owners.length}>
+          <ItemList items={owners} sub={(i) => i.city} onDel={remove} />
+          <LinkedAdd placeholder="Owner name…" cities={cities} onAdd={(v, c) => add("owner", v, c)} />
+        </Card>
 
-        {/* Product Type */}
-        <Col title="Product Types">
-          <List items={types} render={(i) => <span>{i.value}</span>} onDel={remove} />
-          <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
-            <input style={smallInp} placeholder="Add type" value={typeIn} onChange={(e) => setTypeIn(e.target.value)} />
-            <button style={addBtn} onClick={() => { add("product_type", typeIn); setTypeIn(""); }}>+</button>
-          </div>
-        </Col>
+        <Card icon="🏬" title="Store Names" count={stores.length}>
+          <ItemList items={stores} sub={(i) => i.city} onDel={remove} />
+          <LinkedAdd placeholder="Store name…" cities={cities} onAdd={(v, c) => add("store", v, c)} />
+        </Card>
+
+        <Card icon="🏷️" title="Brands" count={brands.length}>
+          <ItemList items={brands} onDel={remove} />
+          <SimpleAdd placeholder="Add brand…" onAdd={(v) => add("brand", v)} />
+        </Card>
+
+        <Card icon="🛒" title="Platforms" count={platforms.length}>
+          <ItemList items={platforms} onDel={remove} />
+          <SimpleAdd placeholder="Add platform…" onAdd={(v) => add("platform", v)} />
+        </Card>
       </div>
-      {msg && <div style={{ color: "#ff9a9a", fontSize: 13, marginTop: 12 }}>{msg}</div>}
+    </>
+  );
+}
+
+/* ---------- premium card ---------- */
+function Card({ icon, title, count, children }: { icon: string; title: string; count: number; children: React.ReactNode }) {
+  return (
+    <div className="panel" style={{ display: "flex", flexDirection: "column", padding: 0, overflow: "hidden" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "14px 16px", borderBottom: "1px solid var(--line)" }}>
+        <span style={{ fontSize: 18 }}>{icon}</span>
+        <h3 style={{ margin: 0, flex: 1 }}>{title}</h3>
+        <span style={{ fontSize: 11, fontWeight: 700, color: "var(--gold)", background: "rgba(201,162,39,.12)", border: "1px solid rgba(201,162,39,.25)", borderRadius: 999, padding: "2px 10px" }}>{count}</span>
+      </div>
+      <div style={{ padding: 14, display: "flex", flexDirection: "column", gap: 12, flex: 1 }}>{children}</div>
     </div>
   );
 }
 
-function Col({ title, children }: { title: string; children: React.ReactNode }) {
+function ItemList({ items, sub, onDel }: { items: Item[]; sub?: (i: Item) => string | null; onDel: (id: string) => void }) {
+  if (items.length === 0)
+    return <div style={{ color: "var(--muted)", fontSize: 12.5, padding: "10px 4px", textAlign: "center" }}>No entries yet</div>;
   return (
-    <div>
-      <div style={{ fontSize: 12, textTransform: "uppercase", letterSpacing: ".04em", color: "var(--gold)", marginBottom: 6 }}>{title}</div>
-      {children}
-    </div>
-  );
-}
-
-function List({ items, render, onDel }: { items: Item[]; render: (i: Item) => React.ReactNode; onDel: (id: string) => void }) {
-  return (
-    <div style={{ maxHeight: 220, overflow: "auto", display: "flex", flexDirection: "column", gap: 5 }}>
+    <div style={{ maxHeight: 240, overflowY: "auto", display: "flex", flexDirection: "column", gap: 6 }}>
       {items.map((i) => (
-        <div key={i.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 6, background: "rgba(10,22,40,.6)", border: "1px solid rgba(201,162,39,.15)", borderRadius: 8, padding: "5px 8px", fontSize: 12 }}>
-          {render(i)}
-          <button onClick={() => onDel(i.id)} style={{ background: "none", border: "none", color: "#ff9a9a", cursor: "pointer", fontSize: 14 }}>×</button>
+        <div key={i.id} className="core-row"
+          style={{ display: "flex", alignItems: "center", gap: 8, background: "rgba(10,22,40,.55)", border: "1px solid var(--line)", borderRadius: 10, padding: "8px 12px", transition: "border-color .15s" }}>
+          <span style={{ flex: 1, fontSize: 13, color: "var(--text)" }}>{i.value}</span>
+          {sub && sub(i) && <span style={{ fontSize: 11, color: "var(--gold)", background: "rgba(201,162,39,.1)", borderRadius: 6, padding: "2px 8px" }}>{sub(i)}</span>}
+          <button onClick={() => onDel(i.id)} title="Remove"
+            style={{ background: "none", border: "none", color: "var(--muted)", cursor: "pointer", fontSize: 16, lineHeight: 1, padding: "0 2px" }}
+            onMouseEnter={(e) => (e.currentTarget.style.color = "#ff9a9a")}
+            onMouseLeave={(e) => (e.currentTarget.style.color = "var(--muted)")}>×</button>
         </div>
       ))}
-      {items.length === 0 && <div style={{ color: "var(--muted)", fontSize: 12, padding: "6px 2px" }}>Empty</div>}
+    </div>
+  );
+}
+
+const fieldStyle: React.CSSProperties = {
+  padding: "9px 12px", borderRadius: 10, border: "1px solid rgba(201,162,39,.22)",
+  background: "rgba(10,22,40,.6)", color: "var(--text)", fontSize: 13, outline: "none",
+};
+const plusStyle: React.CSSProperties = {
+  flexShrink: 0, width: 40, borderRadius: 10, border: "none", cursor: "pointer",
+  background: "linear-gradient(135deg,var(--gold),var(--gold-soft))", color: "var(--navy-deep)", fontWeight: 800, fontSize: 18,
+};
+
+function SimpleAdd({ placeholder, onAdd }: { placeholder: string; onAdd: (v: string) => void }) {
+  const [v, setV] = useState("");
+  const go = () => { if (v.trim()) { onAdd(v); setV(""); } };
+  return (
+    <div style={{ display: "flex", gap: 8, marginTop: "auto" }}>
+      <input style={{ ...fieldStyle, flex: 1 }} placeholder={placeholder} value={v}
+        onChange={(e) => setV(e.target.value)} onKeyDown={(e) => e.key === "Enter" && go()} />
+      <button style={plusStyle} onClick={go}>+</button>
+    </div>
+  );
+}
+
+function LinkedAdd({ placeholder, cities, onAdd }: { placeholder: string; cities: Item[]; onAdd: (v: string, city: string) => void }) {
+  const [v, setV] = useState(""); const [city, setCity] = useState("");
+  const go = () => { if (v.trim() && city) { onAdd(v, city); setV(""); } };
+  return (
+    <div style={{ display: "flex", gap: 8, marginTop: "auto" }}>
+      <input style={{ ...fieldStyle, flex: 2, minWidth: 0 }} placeholder={placeholder} value={v}
+        onChange={(e) => setV(e.target.value)} onKeyDown={(e) => e.key === "Enter" && go()} />
+      <select style={{ ...fieldStyle, flex: 1, minWidth: 0, cursor: "pointer" }} value={city} onChange={(e) => setCity(e.target.value)}>
+        <option value="">City…</option>
+        {cities.map((c) => <option key={c.id} value={c.value}>{c.value}</option>)}
+      </select>
+      <button style={plusStyle} onClick={go} title={!city ? "Pick a city first" : "Add"}>+</button>
     </div>
   );
 }
