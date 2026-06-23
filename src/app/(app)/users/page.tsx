@@ -142,7 +142,7 @@ export default function UsersPage() {
                     {ROLES.filter((r) => isSuper || r.v !== "superadmin").map((r) => <option key={r.v} value={r.v}>{r.l}</option>)}
                   </select>
                 </Fld>
-                {isSuper && form.role !== "superadmin" && (
+                {isSuper && (form.role === "branch_manager" || form.role === "store_user") && (
                   <Fld label="Client">
                     <select style={inp} value={form.client_id} onChange={(e) => setForm({ ...form, client_id: e.target.value })}>
                       <option value="">Select client…</option>

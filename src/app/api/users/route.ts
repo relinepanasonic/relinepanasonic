@@ -18,12 +18,19 @@ async function getManager(): Promise<Caller | null> {
   return { id: user.id, role: p.role, client_id: p.client_id };
 }
 
+// Only branch_manager / store_user are client-scoped. superadmin & client_admin
+// are global (see/edit all clients) so they carry no client_id.
+function isScopedRole(role?: string) {
+  return role === "branch_manager" || role === "store_user";
+}
+
 // Resolve which client the new/edited user belongs to + guard role escalation.
 function resolveClient(mgr: Caller, bodyClientId?: string, targetRole?: string): string | null | "ERR" {
+  // only superadmin may create another superadmin
+  if (targetRole === "superadmin" && mgr.role !== "superadmin") return "ERR";
+  if (!isScopedRole(targetRole)) return null; // global roles carry no client
   if (mgr.role === "superadmin") return bodyClientId ?? null;
-  // client_admin: locked to own client and cannot create superadmins
-  if (targetRole === "superadmin") return "ERR";
-  return mgr.client_id;
+  return bodyClientId ?? mgr.client_id;
 }
 
 export async function POST(req: NextRequest) {
@@ -37,7 +44,7 @@ export async function POST(req: NextRequest) {
 
   const clientId = resolveClient(mgr, b.client_id, role);
   if (clientId === "ERR") return NextResponse.json({ error: "Not allowed" }, { status: 403 });
-  if (role !== "superadmin" && !clientId)
+  if (isScopedRole(role) && !clientId)
     return NextResponse.json({ error: "client_id required" }, { status: 400 });
 
   const admin = createAdminClient();
@@ -52,7 +59,7 @@ export async function POST(req: NextRequest) {
     email,
     display_name: display_name || null,
     role,
-    client_id: role === "superadmin" ? null : clientId,
+    client_id: isScopedRole(role) ? clientId : null,
     scope_city: role === "branch_manager" ? scope_city || null : null,
     scope_store: role === "store_user" ? scope_store || null : null,
   });
@@ -73,10 +80,10 @@ export async function PATCH(req: NextRequest) {
 
   const admin = createAdminClient();
 
-  // client_admin may only edit users within their own client
+  // client_admin is global but may never touch superadmins (neither target nor target role)
   if (mgr.role === "client_admin") {
-    const { data: target } = await admin.from("profiles").select("client_id").eq("id", id).single();
-    if (!target || target.client_id !== mgr.client_id || role === "superadmin")
+    const { data: target } = await admin.from("profiles").select("role").eq("id", id).single();
+    if (!target || target.role === "superadmin" || role === "superadmin")
       return NextResponse.json({ error: "Not allowed" }, { status: 403 });
   }
 
@@ -107,8 +114,8 @@ export async function DELETE(req: NextRequest) {
 
   const admin = createAdminClient();
   if (mgr.role === "client_admin") {
-    const { data: target } = await admin.from("profiles").select("client_id").eq("id", id).single();
-    if (!target || target.client_id !== mgr.client_id)
+    const { data: target } = await admin.from("profiles").select("role").eq("id", id).single();
+    if (!target || target.role === "superadmin")
       return NextResponse.json({ error: "Not allowed" }, { status: 403 });
   }
   const { error } = await admin.auth.admin.deleteUser(id); // cascades profile
