@@ -14,6 +14,7 @@ const NAV: { href: string; icon: string; label: string; roles?: Role[] }[] = [
   { href: "/ads",        icon: "🎯", label: "Ads Performance" },
   { href: "/store",      icon: "🏬", label: "Store Performance" },
   { href: "/users",      icon: "👥", label: "Users",              roles: ["superadmin"] },
+  { href: "/invoice",    icon: "🧾", label: "Invoice",             roles: ["superadmin"] },
   { href: "/core",       icon: "🗂️", label: "Core List",          roles: ["superadmin", "client_admin"] },
   { href: "/calc",       icon: "🧮", label: "Price Calculator" },
   { href: "/marketfee",  icon: "💰", label: "Market Place Fee" },

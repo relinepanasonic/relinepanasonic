@@ -14,6 +14,7 @@ const SLOTS: { source: DataSource; label: string; hint: string; accept: string }
 
 const MONTHS = ["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"];
 const WEEKS = ["Week 1", "Week 2", "Week 3", "Week 4", "Week 5"];
+const BASELINE_WEEK = "Baseline (Week 0)";
 const SRC_LABEL: Record<string, string> = { perf: "Performa", spos: "SPOS", ads: "Ads" };
 
 // --- week-date helpers (Mon→Sun) ---
@@ -78,6 +79,16 @@ export default function UploadPage() {
 
   function setField<K extends keyof typeof manual>(k: K, v: (typeof manual)[K]) {
     setManual((m) => ({ ...m, [k]: v }));
+  }
+
+  // When Baseline is selected: auto-set Week and clear dates (no week range for baseline).
+  function pickBulan(v: string) {
+    if (v === "Baseline") {
+      setManual((m) => ({ ...m, bulan: v, week: BASELINE_WEEK, tanggal_mulai: "", tanggal_berakhir: "" }));
+    } else {
+      const nextWeek = manual.week === BASELINE_WEEK ? "Week 1" : manual.week;
+      setManual((m) => ({ ...m, bulan: v, week: nextWeek }));
+    }
   }
 
   // Tanggal Mulai: snap to Monday + auto-set Tanggal Akhir (Sunday = +6 days).
@@ -188,7 +199,7 @@ export default function UploadPage() {
             </select>
           </Field>
           <Field label="Bulan">
-            <select value={manual.bulan} onChange={(e) => setField("bulan", e.target.value)}>
+            <select value={manual.bulan} onChange={(e) => pickBulan(e.target.value)}>
               <option value="">Month</option>
               {MONTHS.map((m) => <option key={m}>{m}</option>)}
               <option value="Baseline">📌 Baseline (Month Awal)</option>
@@ -198,6 +209,7 @@ export default function UploadPage() {
           <Field label="Week">
             <select value={manual.week} onChange={(e) => setField("week", e.target.value)}>
               {WEEKS.map((w) => <option key={w}>{w}</option>)}
+              <option value={BASELINE_WEEK}>📌 {BASELINE_WEEK}</option>
             </select>
           </Field>
 
@@ -222,22 +234,35 @@ export default function UploadPage() {
         </div>
 
         {/* 3 dates on their own row */}
-        <div className="upl-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 14, marginTop: 14 }}>
-          <Field label="Tanggal Mulai (Senin)">
-            <input type="date" value={manual.tanggal_mulai} onChange={(e) => pickStart(e.target.value)} />
-            <span style={{ fontSize: 10.5, color: "var(--muted)", marginTop: 3 }}>Auto-snaps to Monday · {fmtID(manual.tanggal_mulai)}</span>
-          </Field>
-          <Field label="Tanggal Akhir (Minggu)">
-            <input type="date" value={manual.tanggal_berakhir} readOnly disabled
-              style={{ opacity: .7, cursor: "not-allowed" }} />
-            <span style={{ fontSize: 10.5, color: "var(--muted)", marginTop: 3 }}>1 week after start · {fmtID(manual.tanggal_berakhir)}</span>
-          </Field>
-          <Field label="Tanggal Input (log)">
-            <input type="text" value={inputTime.toLocaleString("id-ID")} readOnly disabled
-              style={{ opacity: .7, cursor: "not-allowed" }} />
-            <span style={{ fontSize: 10.5, color: "var(--muted)", marginTop: 3 }}>Recorded automatically</span>
-          </Field>
-        </div>
+        {(() => {
+          const isBaseline = manual.bulan === "Baseline";
+          return (
+            <div className="upl-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 14, marginTop: 14 }}>
+              <Field label="Tanggal Mulai (Senin)">
+                {isBaseline
+                  ? <BaselineDateBadge />
+                  : <>
+                      <input type="date" value={manual.tanggal_mulai} onChange={(e) => pickStart(e.target.value)} />
+                      <span style={{ fontSize: 10.5, color: "var(--muted)", marginTop: 3 }}>Auto-snaps to Monday · {fmtID(manual.tanggal_mulai)}</span>
+                    </>}
+              </Field>
+              <Field label="Tanggal Akhir (Minggu)">
+                {isBaseline
+                  ? <BaselineDateBadge />
+                  : <>
+                      <input type="date" value={manual.tanggal_berakhir} readOnly disabled
+                        style={{ opacity: .7, cursor: "not-allowed" }} />
+                      <span style={{ fontSize: 10.5, color: "var(--muted)", marginTop: 3 }}>1 week after start · {fmtID(manual.tanggal_berakhir)}</span>
+                    </>}
+              </Field>
+              <Field label="Tanggal Input (log)">
+                <input type="text" value={inputTime.toLocaleString("id-ID")} readOnly disabled
+                  style={{ opacity: .7, cursor: "not-allowed" }} />
+                <span style={{ fontSize: 10.5, color: "var(--muted)", marginTop: 3 }}>Recorded automatically</span>
+              </Field>
+            </div>
+          );
+        })()}
 
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 14, margin: "20px 0 8px", padding: 16, border: "1px dashed rgba(201,162,39,.35)", borderRadius: 14, background: "rgba(15,32,64,.4)" }}>
           {SLOTS.map((s) => (
@@ -348,6 +373,14 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
     <div className="fld" style={{ minWidth: 0 }}>
       <label>{label}</label>
       {children}
+    </div>
+  );
+}
+
+function BaselineDateBadge() {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 14px", borderRadius: 10, border: "1px solid rgba(201,162,39,.35)", background: "rgba(201,162,39,.08)", color: "var(--gold)", fontWeight: 700, fontSize: 13, fontStyle: "italic", minHeight: 38 }}>
+      📌 Month Awal
     </div>
   );
 }
