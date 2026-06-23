@@ -56,7 +56,7 @@ export default function UploadPage() {
   const [busy,    setBusy]    = useState(false);
   const [log,     setLog]     = useState<string[]>([]);
   const [uploads, setUploads] = useState<UploadRow[]>([]);
-  const [flt,     setFlt]     = useState({ year: "", month: "", week: "", city: "", dealer: "", source: "" });
+  const [flt,     setFlt]     = useState({ year: "", month: "", week: "", city: "", dealer: "", source: "" }); // city/source kept for reset compat
 
   // load uploads
   const loadUploads = useCallback(async (cid: string) => {
@@ -173,19 +173,36 @@ export default function UploadPage() {
   const fYears   = Array.from(new Set(uploads.map((u) => u.meta?.year).filter(Boolean) as number[])).sort((a,b) => b-a).map(String);
   const fMonths  = uniq((u) => u.meta?.bulan);
   const fWeeks   = uniq((u) => u.meta?.week);
-  const fCities  = uniq((u) => u.meta?.city);
-  const fDealers = flt.city
-    ? uniq((u) => u.meta?.city === flt.city ? u.meta?.store_name : null)
-    : uniq((u) => u.meta?.store_name);
+  const fDealers = uniq((u) => u.meta?.store_name);
 
   const shown = uploads.filter((u) =>
-    (!flt.year   || String(u.meta?.year)   === flt.year) &&
-    (!flt.month  || u.meta?.bulan          === flt.month) &&
-    (!flt.week   || u.meta?.week           === flt.week) &&
-    (!flt.city   || u.meta?.city           === flt.city) &&
-    (!flt.dealer || u.meta?.store_name     === flt.dealer) &&
-    (!flt.source || u.source               === flt.source)
+    (!flt.year   || String(u.meta?.year) === flt.year) &&
+    (!flt.month  || u.meta?.bulan        === flt.month) &&
+    (!flt.week   || u.meta?.week         === flt.week) &&
+    (!flt.dealer || u.meta?.store_name   === flt.dealer)
   );
+
+  function makeTableId(meta: UploadRow["meta"], source: string): string {
+    if (!meta) return "—";
+    if ((meta as Record<string, unknown>).bq_table) return String((meta as Record<string, unknown>).bq_table);
+    const q = (b: string) => ["Januari","Februari","Maret"].includes(b) ? "Q1" : ["April","Mei","Juni"].includes(b) ? "Q2" : ["Juli","Agustus","September"].includes(b) ? "Q3" : "Q4";
+    const clean = (s: string) => s.replace(/\s+/g, "");
+    return [
+      meta.year || "",
+      meta.bulan ? q(meta.bulan) : "",
+      clean(meta.city || ""),
+      clean(meta.store_name || ""),
+      clean(meta.bulan || ""),
+      meta.week ? meta.week.replace("Week ", "Week") : "",
+      source === "perf" ? "Performa" : source === "spos" ? "SPOS" : "Ads",
+    ].filter(Boolean).join("");
+  }
+
+  function fmtWhen(iso: string): string {
+    const d = new Date(iso);
+    return d.toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" })
+      + " " + d.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" });
+  }
 
   // ---------- data per dealer summary ----------
   const dealerStats = (() => {
@@ -340,60 +357,44 @@ export default function UploadPage() {
 
       {/* ───── Upload Log ───── */}
       <div className="panel" style={{ marginTop: 18 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10, marginBottom: 14 }}>
-          <div>
-            <h3 style={{ margin: 0 }}>Upload Log</h3>
-            <div className="hint">Filter by period or dealer — delete a bad upload to remove all its rows.</div>
-          </div>
-          <span style={{ fontSize: 11, fontWeight: 700, color: "var(--gold)", background: "rgba(201,162,39,.12)", border: "1px solid rgba(201,162,39,.25)", borderRadius: 999, padding: "3px 12px" }}>
-            {shown.length} / {uploads.length}
-          </span>
+        <div style={{ marginBottom: 14 }}>
+          <h3 style={{ margin: 0 }}>Upload Log</h3>
+          <div className="hint">Every upload is recorded. Delete an entry to remove its table &amp; data (use this if a file uploaded wrong).</div>
         </div>
 
-        {/* Filter bar */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10, marginBottom: 10 }}>
-          <Field label="Year"><select value={flt.year}   onChange={(e) => setFlt((f) => ({ ...f, year: e.target.value }))}><option value="">All years</option>{fYears.map((y) => <option key={y} value={y}>{y}</option>)}</select></Field>
-          <Field label="Month"><select value={flt.month}  onChange={(e) => setFlt((f) => ({ ...f, month: e.target.value }))}><option value="">All months</option>{fMonths.map((m) => <option key={m} value={m}>{m}</option>)}</select></Field>
-          <Field label="Week"><select value={flt.week}   onChange={(e) => setFlt((f) => ({ ...f, week: e.target.value }))}><option value="">All weeks</option>{fWeeks.map((w) => <option key={w} value={w}>{w}</option>)}</select></Field>
-        </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr) auto", gap: 10, marginBottom: 14, alignItems: "end" }}>
-          <Field label="City"><select value={flt.city}   onChange={(e) => setFlt((f) => ({ ...f, city: e.target.value, dealer: "" }))}><option value="">All cities</option>{fCities.map((c) => <option key={c} value={c}>{c}</option>)}</select></Field>
-          <Field label="Dealer"><select value={flt.dealer} onChange={(e) => setFlt((f) => ({ ...f, dealer: e.target.value }))}><option value="">All dealers</option>{fDealers.map((d) => <option key={d} value={d}>{d}</option>)}</select></Field>
-          <Field label="Source"><select value={flt.source} onChange={(e) => setFlt((f) => ({ ...f, source: e.target.value }))}><option value="">All sources</option>{SLOTS.map((s) => <option key={s.source} value={s.source}>{s.label}</option>)}</select></Field>
-          <button className="btn-ghost" onClick={() => setFlt({ year: "", month: "", week: "", city: "", dealer: "", source: "" })} style={{ height: 38 }}>Reset</button>
+        {/* Filter bar — Year / Month / Week / Dealer */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr) auto auto", gap: 10, marginBottom: 14, alignItems: "end" }}>
+          <Field label="Year"><select value={flt.year}   onChange={(e) => setFlt((f) => ({ ...f, year: e.target.value }))}><option value="">All Years</option>{fYears.map((y) => <option key={y} value={y}>{y}</option>)}</select></Field>
+          <Field label="Month"><select value={flt.month}  onChange={(e) => setFlt((f) => ({ ...f, month: e.target.value }))}><option value="">All Months</option>{fMonths.map((m) => <option key={m} value={m}>{m}</option>)}</select></Field>
+          <Field label="Week"><select value={flt.week}   onChange={(e) => setFlt((f) => ({ ...f, week: e.target.value }))}><option value="">All Weeks</option>{fWeeks.map((w) => <option key={w} value={w}>{w}</option>)}</select></Field>
+          <Field label="Dealer"><select value={flt.dealer} onChange={(e) => setFlt((f) => ({ ...f, dealer: e.target.value }))}><option value="">All Dealers</option>{fDealers.map((d) => <option key={d} value={d}>{d}</option>)}</select></Field>
+          <button className="btn-ghost" onClick={() => setFlt({ year: "", month: "", week: "", city: "", dealer: "", source: "" })} style={{ height: 38, alignSelf: "end" }}>Reset</button>
+          <span style={{ alignSelf: "end", fontSize: 12, color: "var(--muted)", whiteSpace: "nowrap", paddingBottom: 8 }}>{shown.length} rows</span>
         </div>
 
         <div className="tbl-wrap">
           <table className="tbl">
             <thead>
-              <tr>
-                <th>Admin</th><th>Dealer</th><th>City</th><th>Source</th>
-                <th>Month</th><th>Week</th><th>Year</th>
-                <th className="num">Rows</th><th>File</th><th>Uploaded</th><th></th>
-              </tr>
+              <tr><th>WHEN</th><th>BY</th><th>TYPE</th><th>FILE</th><th className="num">ROWS</th><th>TABLE</th><th></th></tr>
             </thead>
             <tbody>
               {shown.map((u) => (
                 <tr key={u.id}>
+                  <td style={{ whiteSpace: "nowrap", fontSize: 12 }}>{fmtWhen(u.created_at)}</td>
                   <td>{u.meta?.admin || "—"}</td>
-                  <td>{u.meta?.store_name || "—"}</td>
-                  <td>{u.meta?.city || "—"}</td>
                   <td>
                     <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 999, background: SRC_COLOR[u.source] + "22", color: SRC_COLOR[u.source], border: `1px solid ${SRC_COLOR[u.source]}44` }}>
                       {SRC_LABEL[u.source] || u.source}
                     </span>
                   </td>
-                  <td>{u.meta?.bulan || "—"}</td>
-                  <td>{u.meta?.week || "—"}</td>
-                  <td>{u.meta?.year || "—"}</td>
+                  <td style={{ maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={u.filename || ""}>{u.filename || "—"}</td>
                   <td className="num">{u.row_count?.toLocaleString("id-ID") || 0}</td>
-                  <td style={{ maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={u.filename || ""}>{u.filename || "—"}</td>
-                  <td style={{ whiteSpace: "nowrap", color: "var(--muted)", fontSize: 12 }}>{new Date(u.created_at).toLocaleDateString("id-ID")}</td>
+                  <td style={{ fontSize: 11, color: "var(--muted)", maxWidth: 280, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={makeTableId(u.meta, u.source)}>{makeTableId(u.meta, u.source)}</td>
                   <td><button onClick={() => delUpload(u.id)} style={delBtnStyle}>Delete</button></td>
                 </tr>
               ))}
               {shown.length === 0 && (
-                <tr><td colSpan={11} style={{ color: "var(--muted)", textAlign: "center", padding: 20 }}>
+                <tr><td colSpan={7} style={{ color: "var(--muted)", textAlign: "center", padding: 20 }}>
                   {uploads.length ? "No uploads match these filters" : "No uploads yet"}
                 </td></tr>
               )}
