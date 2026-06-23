@@ -92,16 +92,26 @@ export default function UploadPage() {
     }
   }
 
-  // Store selected → auto-fill Owner (pic_client) and Brand from Core List store_links.
-  function pickStore(storeName: string) {
-    const link = links.find((l) => l.store_name === storeName);
-    setManual((m) => ({
-      ...m,
-      store_name: storeName,
-      pic_client: link?.owner ?? m.pic_client,
-      brand: link?.brand ?? m.brand,
-    }));
+  // Cascading Owner → Brand → Store. Each upstream change clears downstream selections.
+  function pickOwner(owner: string) {
+    setManual((m) => ({ ...m, pic_client: owner, brand: "", store_name: "" }));
   }
+  function pickBrand(brand: string) {
+    setManual((m) => ({ ...m, brand, store_name: "" }));
+  }
+  function pickStore(storeName: string) {
+    setManual((m) => ({ ...m, store_name: storeName }));
+  }
+
+  // Derived options based on upstream selection.
+  const brandsForOwner = manual.pic_client
+    ? Array.from(new Set(links.filter((l) => l.owner === manual.pic_client).map((l) => l.brand).filter(Boolean) as string[])).sort()
+    : Array.from(new Set(links.map((l) => l.brand).filter(Boolean) as string[])).sort();
+  const storesForBrand = manual.brand
+    ? links.filter((l) => l.brand === manual.brand && (!manual.pic_client || l.owner === manual.pic_client)).map((l) => l.store_name).filter(Boolean) as string[]
+    : manual.pic_client
+      ? links.filter((l) => l.owner === manual.pic_client).map((l) => l.store_name).filter(Boolean) as string[]
+      : stores;
 
   // Tanggal Mulai: snap to Monday + auto-set Tanggal Akhir (Sunday = +6 days).
   function pickStart(v: string) {
@@ -233,24 +243,23 @@ export default function UploadPage() {
             </select>
           </Field>
           <Field label="Owner">
-            <select value={manual.pic_client} onChange={(e) => setManual((m) => ({ ...m, pic_client: e.target.value, store_name: "", brand: "" }))} disabled={!clientId}>
+            <select value={manual.pic_client} onChange={(e) => pickOwner(e.target.value)} disabled={!clientId}>
               <option value="">Select owner…</option>
               {owners.map((o) => <option key={o} value={o}>{o}</option>)}
             </select>
           </Field>
-          <Field label="Store Name">
-            <select value={manual.store_name} onChange={(e) => pickStore(e.target.value)} disabled={!clientId}>
-              <option value="">Select store…</option>
-              {stores.map((s) => <option key={s} value={s}>{s}</option>)}
+          <Field label="Brand">
+            <select value={manual.brand} onChange={(e) => pickBrand(e.target.value)} disabled={!manual.pic_client}>
+              <option value="">{manual.pic_client ? "Select brand…" : "Pick owner first"}</option>
+              {brandsForOwner.map((b) => <option key={b} value={b}>{b}</option>)}
             </select>
           </Field>
-          {manual.brand && (
-            <Field label="Brand (auto)">
-              <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 14px", borderRadius: 10, border: "1px solid rgba(201,162,39,.3)", background: "rgba(201,162,39,.07)", color: "var(--gold)", fontWeight: 700, fontSize: 13 }}>
-                ✦ {manual.brand}
-              </div>
-            </Field>
-          )}
+          <Field label="Store Name">
+            <select value={manual.store_name} onChange={(e) => pickStore(e.target.value)} disabled={!manual.brand}>
+              <option value="">{manual.brand ? "Select store…" : "Pick brand first"}</option>
+              {storesForBrand.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </Field>
         </div>
 
         {/* 3 dates on their own row */}

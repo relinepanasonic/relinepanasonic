@@ -36,7 +36,7 @@ export default function DashboardPage() {
   const [storeLabel, setStoreLabel] = useState("Store");
   const [filters, setFilters] = useState<Filters>({ years: [], months: [], cities: [], stores: [] });
   const [links, setLinks] = useState<StoreLink[]>([]);
-  const [sel, setSel] = useState({ year: "", month: "", city: "", store: "", owner: "" });
+  const [sel, setSel] = useState({ year: "", month: "", city: "", store: "", owner: "", brand: "" });
   const [d, setD] = useState<Summary | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -71,18 +71,29 @@ export default function DashboardPage() {
   }, [supabase, sel]);
   useEffect(() => { load(); }, [load]);
 
-  // Derive unique owners and filter stores by selected owner.
+  // Cascading Owner → Brand → Store for the filter bar.
   const owners = Array.from(new Set(links.map((l) => l.owner).filter(Boolean) as string[])).sort();
-  const filteredStores = sel.owner
-    ? filters.stores.filter((s) => links.some((l) => l.store_name === s && l.owner === sel.owner))
-    : filters.stores;
+
+  const brandsForOwner = sel.owner
+    ? Array.from(new Set(links.filter((l) => l.owner === sel.owner).map((l) => l.brand).filter(Boolean) as string[])).sort()
+    : Array.from(new Set(links.map((l) => l.brand).filter(Boolean) as string[])).sort();
+
+  const filteredStores = (() => {
+    let base = filters.stores;
+    if (sel.brand) base = base.filter((s) => links.some((l) => l.store_name === s && l.brand === sel.brand && (!sel.owner || l.owner === sel.owner)));
+    else if (sel.owner) base = base.filter((s) => links.some((l) => l.store_name === s && l.owner === sel.owner));
+    return base;
+  })();
 
   function pickOwner(owner: string) {
-    setSel((s) => ({ ...s, owner, store: "" }));
+    setSel((s) => ({ ...s, owner, brand: "", store: "" }));
+  }
+  function pickBrand(brand: string) {
+    setSel((s) => ({ ...s, brand, store: "" }));
   }
   function pickStore(store: string) {
     const link = links.find((l) => l.store_name === store);
-    setSel((s) => ({ ...s, store, owner: link?.owner || s.owner }));
+    setSel((s) => ({ ...s, store, owner: link?.owner || s.owner, brand: link?.brand || s.brand }));
   }
 
   const k = d?.kpis;
@@ -99,8 +110,11 @@ export default function DashboardPage() {
         {owners.length > 0 && (
           <Sel label="Owner" value={sel.owner} onChange={pickOwner} opts={owners} all="All Owners" />
         )}
+        {brandsForOwner.length > 0 && (
+          <Sel label="Brand" value={sel.brand} onChange={pickBrand} opts={brandsForOwner} all={sel.owner ? "All Brands" : "All Brands"} />
+        )}
         <Sel label={storeLabel} value={sel.store} onChange={pickStore} opts={filteredStores} all={`All ${storeLabel}s`} />
-        <button className="btn-ghost" onClick={() => setSel({ year: "", month: "", city: "", store: "", owner: "" })}>Reset</button>
+        <button className="btn-ghost" onClick={() => setSel({ year: "", month: "", city: "", store: "", owner: "", brand: "" })}>Reset</button>
         {loading && <span style={{ alignSelf: "center", color: "var(--gold)", fontSize: 12 }}>Updating…</span>}
       </div>
 
