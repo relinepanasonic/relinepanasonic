@@ -20,8 +20,7 @@ type Summary = {
   traffic_trend: { month: string; traffic: number; in_cart: number }[];
   dealers: { store_name: string; city: string; sales: number; traffic: number; in_cart: number; ad_cost: number; roas: number | null }[];
 };
-type Filters = { years: number[]; months: string[]; cities: string[]; stores: string[] };
-type StoreLink = { owner: string | null; brand: string | null; store_name: string | null };
+type Filters = { years: number[]; quarters: string[]; months: string[]; weeks: string[]; cities: string[]; dealers: string[] };
 
 const MONTH_ORDER = ["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"];
 const byMonth = <T extends { month: string }>(a: T[]) =>
@@ -33,10 +32,8 @@ const PALETTE = ["#c9a227", "#e8c84a", "#94a3b8", "#1e4a7a", "#3b6ea5", "#d4b94e
 
 export default function DashboardPage() {
   const [supabase] = useState(() => createClient());
-  const [storeLabel, setStoreLabel] = useState("Store");
-  const [filters, setFilters] = useState<Filters>({ years: [], months: [], cities: [], stores: [] });
-  const [links, setLinks] = useState<StoreLink[]>([]);
-  const [sel, setSel] = useState({ year: "", month: "", city: "", store: "", owner: "", brand: "" });
+  const [filters, setFilters] = useState<Filters>({ years: [], quarters: ["Q1","Q2","Q3","Q4"], months: [], weeks: [], cities: [], dealers: [] });
+  const [sel, setSel] = useState({ year: "", quarter: "", month: "", week: "", city: "", dealer: "" });
   const [d, setD] = useState<Summary | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -44,57 +41,25 @@ export default function DashboardPage() {
     (async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
-      const { data: p } = await supabase.from("profiles").select("client_id").eq("id", user.id).single();
-      if (p?.client_id) {
-        const { data: c } = await supabase.from("clients").select("store_label").eq("id", p.client_id).single();
-        if (c?.store_label) setStoreLabel(c.store_label);
-      }
-      const [{ data: f }, { data: sl }] = await Promise.all([
-        supabase.rpc("dashboard_filters"),
-        supabase.from("store_links").select("owner,brand,store_name").order("owner"),
-      ]);
+      const { data: f } = await supabase.rpc("dashboard_filters");
       if (f) setFilters(f as Filters);
-      setLinks((sl as StoreLink[]) || []);
     })();
   }, [supabase]);
 
   const load = useCallback(async () => {
     setLoading(true);
     const { data } = await supabase.rpc("dashboard_summary", {
-      p_year: sel.year ? Number(sel.year) : null,
-      p_month: sel.month || null,
-      p_city: sel.city || null,
-      p_store: sel.store || null,
+      p_year:    sel.year    ? Number(sel.year) : null,
+      p_quarter: sel.quarter || null,
+      p_month:   sel.month   || null,
+      p_week:    sel.week    || null,
+      p_city:    sel.city    || null,
+      p_store:   sel.dealer  || null,
     });
     setD(data as Summary);
     setLoading(false);
   }, [supabase, sel]);
   useEffect(() => { load(); }, [load]);
-
-  // Cascading Owner → Brand → Store for the filter bar.
-  const owners = Array.from(new Set(links.map((l) => l.owner).filter(Boolean) as string[])).sort();
-
-  const brandsForOwner = sel.owner
-    ? Array.from(new Set(links.filter((l) => l.owner === sel.owner).map((l) => l.brand).filter(Boolean) as string[])).sort()
-    : Array.from(new Set(links.map((l) => l.brand).filter(Boolean) as string[])).sort();
-
-  const filteredStores = (() => {
-    let base = filters.stores;
-    if (sel.brand) base = base.filter((s) => links.some((l) => l.store_name === s && l.brand === sel.brand && (!sel.owner || l.owner === sel.owner)));
-    else if (sel.owner) base = base.filter((s) => links.some((l) => l.store_name === s && l.owner === sel.owner));
-    return base;
-  })();
-
-  function pickOwner(owner: string) {
-    setSel((s) => ({ ...s, owner, brand: "", store: "" }));
-  }
-  function pickBrand(brand: string) {
-    setSel((s) => ({ ...s, brand, store: "" }));
-  }
-  function pickStore(store: string) {
-    const link = links.find((l) => l.store_name === store);
-    setSel((s) => ({ ...s, store, owner: link?.owner || s.owner, brand: link?.brand || s.brand }));
-  }
 
   const k = d?.kpis;
   const roasPct = k?.roas ? Math.min((k.roas / 5) * 100, 100) : 0;
@@ -102,19 +67,15 @@ export default function DashboardPage() {
 
   return (
     <>
-      {/* Filters */}
+      {/* Filters — matching GAS: Year / Quarter / Month / Week / City / Dealer */}
       <div className="filterbar">
-        <Sel label="Year" value={sel.year} onChange={(v) => setSel((s) => ({ ...s, year: v }))} opts={filters.years.map(String)} all="All Years" />
-        <Sel label="Month" value={sel.month} onChange={(v) => setSel((s) => ({ ...s, month: v }))} opts={filters.months} all="All Months" />
-        <Sel label="City" value={sel.city} onChange={(v) => setSel((s) => ({ ...s, city: v }))} opts={filters.cities} all="All Cities" />
-        {owners.length > 0 && (
-          <Sel label="Owner" value={sel.owner} onChange={pickOwner} opts={owners} all="All Owners" />
-        )}
-        {brandsForOwner.length > 0 && (
-          <Sel label="Brand" value={sel.brand} onChange={pickBrand} opts={brandsForOwner} all={sel.owner ? "All Brands" : "All Brands"} />
-        )}
-        <Sel label={storeLabel} value={sel.store} onChange={pickStore} opts={filteredStores} all={`All ${storeLabel}s`} />
-        <button className="btn-ghost" onClick={() => setSel({ year: "", month: "", city: "", store: "", owner: "", brand: "" })}>Reset</button>
+        <Sel label="Year"    value={sel.year}    onChange={(v) => setSel((s) => ({ ...s, year: v }))}    opts={filters.years.map(String)}    all="All Years" />
+        <Sel label="Quarter" value={sel.quarter} onChange={(v) => setSel((s) => ({ ...s, quarter: v }))} opts={filters.quarters}             all="All Quarters" />
+        <Sel label="Month"   value={sel.month}   onChange={(v) => setSel((s) => ({ ...s, month: v }))}   opts={filters.months}               all="All Months" />
+        <Sel label="Week"    value={sel.week}    onChange={(v) => setSel((s) => ({ ...s, week: v }))}    opts={filters.weeks}                all="All Weeks" />
+        <Sel label="City"    value={sel.city}    onChange={(v) => setSel((s) => ({ ...s, city: v }))}    opts={filters.cities}               all="All Cities" />
+        <Sel label="Dealer"  value={sel.dealer}  onChange={(v) => setSel((s) => ({ ...s, dealer: v }))}  opts={filters.dealers}              all="All Dealers" />
+        <button className="btn-ghost" onClick={() => setSel({ year: "", quarter: "", month: "", week: "", city: "", dealer: "" })}>Reset</button>
         {loading && <span style={{ alignSelf: "center", color: "var(--gold)", fontSize: 12 }}>Updating…</span>}
       </div>
 
@@ -137,7 +98,7 @@ export default function DashboardPage() {
 
       {/* Top products + brand share */}
       <div className="row c2">
-        <Panel title={`Top 10 Best-Selling Products`} hint="Sales · parent rows only">
+        <Panel title="Top 10 Best-Selling Products" hint="Sales · parent rows only">
           <HBarChart data={d?.top_products || []} />
         </Panel>
         <Panel title="Brand Share of Sales" hint="Sales mix by brand · SPOS">
@@ -174,12 +135,12 @@ export default function DashboardPage() {
 
       {/* Dealer table */}
       <div className="panel">
-        <h3>Detail Data per {storeLabel}</h3>
+        <h3>Detail Data per Dealer</h3>
         <div className="hint">Sorted by sales</div>
         <div className="tbl-wrap" style={{ maxHeight: 440 }}>
           <table className="tbl">
             <thead><tr>
-              <th>{storeLabel}</th><th>City</th><th className="num">Sales</th><th className="num">Traffic</th>
+              <th>Dealer</th><th>City</th><th className="num">Sales</th><th className="num">Traffic</th>
               <th className="num">In-Cart</th><th className="num">Cart Rate</th><th className="num">Ads Cost</th><th className="num">ROAS</th>
             </tr></thead>
             <tbody>
@@ -207,12 +168,12 @@ export default function DashboardPage() {
 }
 
 /* ---------- building blocks ---------- */
-function Sel({ label, value, onChange, opts, all }: { label: string; value: string; onChange: (v: string) => void; opts: string[]; all: string }) {
+function Sel({ label, value, onChange, opts, all }: { label: string; value: string; onChange: (v: string) => void; opts: (string | number)[]; all: string }) {
   return (
     <div className="fld"><label>{label}</label>
       <select value={value} onChange={(e) => onChange(e.target.value)}>
         <option value="">{all}</option>
-        {opts.map((o) => <option key={o} value={o}>{o}</option>)}
+        {opts.map((o) => <option key={String(o)} value={String(o)}>{o}</option>)}
       </select>
     </div>
   );
