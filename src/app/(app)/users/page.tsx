@@ -124,37 +124,42 @@ export default function UsersPage() {
       {form && (
         <div onClick={() => setForm(null)} style={overlay}>
           <div onClick={(e) => e.stopPropagation()} style={modal}>
-            <h3 style={{ margin: "0 0 14px", color: "#fff" }}>{editing ? "Edit user" : "Add user"}</h3>
-            <div style={{ display: "grid", gap: 12 }}>
-              {!editing && (
-                <Fld label="Email"><input style={inp} type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></Fld>
-              )}
-              <Fld label="Name"><input style={inp} value={form.display_name} onChange={(e) => setForm({ ...form, display_name: e.target.value })} /></Fld>
-              <Fld label={editing ? "Reset password (blank = keep)" : "Password"}>
-                <input style={inp} type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder={editing ? "leave blank to keep" : ""} />
-              </Fld>
-              <Fld label="Role">
-                <select style={inp} value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>
-                  {ROLES.filter((r) => isSuper || r.v !== "superadmin").map((r) => <option key={r.v} value={r.v}>{r.l}</option>)}
-                </select>
-              </Fld>
-              {isSuper && form.role !== "superadmin" && (
-                <Fld label="Client">
-                  <select style={inp} value={form.client_id} onChange={(e) => setForm({ ...form, client_id: e.target.value })}>
-                    <option value="">Select client…</option>
-                    {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            {/* sticky title */}
+            <h3 style={{ margin: "0 0 14px", color: "#fff", flexShrink: 0 }}>{editing ? "Edit user" : "Add user"}</h3>
+            {/* scrollable fields */}
+            <div style={{ overflowY: "auto", flex: 1, minHeight: 0 }}>
+              <div style={{ display: "grid", gap: 12, paddingRight: 4 }}>
+                {!editing && (
+                  <Fld label="Email"><input style={inp} type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></Fld>
+                )}
+                <Fld label="Name"><input style={inp} value={form.display_name} onChange={(e) => setForm({ ...form, display_name: e.target.value })} /></Fld>
+                <Fld label={editing ? "Reset password (blank = keep)" : "Password"}>
+                  <input style={inp} type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder={editing ? "leave blank to keep" : ""} />
+                </Fld>
+                <Fld label="Role">
+                  <select style={inp} value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>
+                    {ROLES.filter((r) => isSuper || r.v !== "superadmin").map((r) => <option key={r.v} value={r.v}>{r.l}</option>)}
                   </select>
                 </Fld>
-              )}
-              {form.role === "branch_manager" && (
-                <Fld label="City (scope)"><input style={inp} value={form.scope_city} onChange={(e) => setForm({ ...form, scope_city: e.target.value })} /></Fld>
-              )}
-              {form.role === "store_user" && (
-                <Fld label="Store Name (scope)"><input style={inp} value={form.scope_store} onChange={(e) => setForm({ ...form, scope_store: e.target.value })} /></Fld>
-              )}
+                {isSuper && form.role !== "superadmin" && (
+                  <Fld label="Client">
+                    <select style={inp} value={form.client_id} onChange={(e) => setForm({ ...form, client_id: e.target.value })}>
+                      <option value="">Select client…</option>
+                      {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    </select>
+                  </Fld>
+                )}
+                {form.role === "branch_manager" && (
+                  <Fld label="City (scope)"><input style={inp} value={form.scope_city} onChange={(e) => setForm({ ...form, scope_city: e.target.value })} /></Fld>
+                )}
+                {form.role === "store_user" && (
+                  <Fld label="Store Name (scope)"><input style={inp} value={form.scope_store} onChange={(e) => setForm({ ...form, scope_store: e.target.value })} /></Fld>
+                )}
+              </div>
             </div>
-            {msg && <div style={{ color: "#ff9a9a", fontSize: 13, marginTop: 10 }}>{msg}</div>}
-            <div style={{ display: "flex", gap: 10, marginTop: 16, justifyContent: "flex-end" }}>
+            {/* sticky footer */}
+            {msg && <div style={{ color: "#ff9a9a", fontSize: 13, marginTop: 10, flexShrink: 0 }}>{msg}</div>}
+            <div style={{ display: "flex", gap: 10, marginTop: 16, justifyContent: "flex-end", flexShrink: 0 }}>
               <button className="btn-ghost" onClick={() => setForm(null)}>Cancel</button>
               <button className="btn-gold" disabled={busy} onClick={save}>{busy ? "Saving…" : "Save"}</button>
             </div>
@@ -167,8 +172,8 @@ export default function UsersPage() {
 
 const actBtn: React.CSSProperties = { background: "rgba(201,162,39,.15)", border: "1px solid rgba(201,162,39,.3)", color: "var(--gold)", borderRadius: 7, padding: "4px 10px", cursor: "pointer", fontSize: 12, marginRight: 6 };
 const delBtn: React.CSSProperties = { background: "rgba(255,80,80,.12)", borderColor: "rgba(255,90,90,.3)", color: "#ff9a9a" };
-const overlay: React.CSSProperties = { position: "fixed", inset: 0, background: "rgba(2,6,16,.7)", zIndex: 9998, overflowY: "auto", display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "40px 16px" };
-const modal: React.CSSProperties = { width: "min(94vw,440px)", background: "rgba(13,26,54,.98)", border: "1px solid rgba(201,162,39,.3)", borderRadius: 16, padding: 24, boxShadow: "0 24px 70px rgba(0,0,0,.55)", margin: "auto" };
+const overlay: React.CSSProperties = { position: "fixed", inset: 0, background: "rgba(2,6,16,.7)", zIndex: 9998, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 };
+const modal: React.CSSProperties = { width: "min(94vw,440px)", maxHeight: "calc(100vh - 32px)", display: "flex", flexDirection: "column", background: "rgba(13,26,54,.98)", border: "1px solid rgba(201,162,39,.3)", borderRadius: 16, padding: 24, boxShadow: "0 24px 70px rgba(0,0,0,.55)" };
 
 function Fld({ label, children }: { label: string; children: React.ReactNode }) {
   return <div><label style={{ fontSize: 11, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".04em", display: "block", marginBottom: 4 }}>{label}</label>{children}</div>;
