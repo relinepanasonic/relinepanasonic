@@ -8,7 +8,7 @@ import { createClient } from "@/lib/supabase/client";
 type Role = "superadmin" | "client_admin" | "branch_manager" | "store_user";
 
 const NAV: { href: string; icon: string; label: string; roles?: Role[] }[] = [
-  { href: "/",           icon: "📊", label: "Dashboard" },
+  { href: "/",           icon: "📊", label: "Executive Dashboard" },
   { href: "/upload",     icon: "⬆️", label: "Upload Data",        roles: ["superadmin", "client_admin"] },
   { href: "/product",    icon: "📦", label: "Product Performance" },
   { href: "/ads",        icon: "🎯", label: "Ads Performance" },
@@ -77,7 +77,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             </svg>
           </div>
           <div>
-            <div className="t1">Professor Toko Online</div>
+            <div className="t1">Reline</div>
             <div className="t2">{clientName}</div>
           </div>
         </div>
@@ -98,9 +98,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         {/* Mobile header */}
         <div className="mob-header">
           <div className="mob-logo">
-            <div className="badge">PTO</div>
+            <div className="badge">R</div>
             <div>
-              <div className="mob-title">Prof Toko Online</div>
+              <div className="mob-title">Reline</div>
               <div className="mob-sub">{clientName}</div>
             </div>
           </div>
@@ -111,7 +111,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         <div className="topbar">
           <div>
             <div className="page-title">{current?.label || "Dashboard"}</div>
-            <div className="page-sub">Marketplace performance — Shopee</div>
+            <div className="page-sub">Marketplace performance overview — Shopee</div>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <div className="user-badge">

@@ -26,7 +26,15 @@ const MONTH_ORDER = ["Januari","Februari","Maret","April","Mei","Juni","Juli","A
 const byMonth = <T extends { month: string }>(a: T[]) =>
   [...(a || [])].sort((x, y) => MONTH_ORDER.indexOf(x.month) - MONTH_ORDER.indexOf(y.month));
 
-const idr = (n: number) => "Rp " + new Intl.NumberFormat("id-ID", { notation: "compact", maximumFractionDigits: 1 }).format(n || 0);
+const idr = (n: number) => "Rp " + new Intl.NumberFormat("id-ID", { notation: "compact", maximumFractionDigits: 2 }).format(n || 0);
+const idrFull = (n: number) => "Rp" + new Intl.NumberFormat("id-ID").format(Math.round(n || 0));
+const compact = (n: number) => {
+  if (!n) return "0";
+  if (n >= 1e9) return (n / 1e9).toFixed(1) + "B";
+  if (n >= 1e6) return (n / 1e6).toFixed(1) + "M";
+  if (n >= 1e3) return (n / 1e3).toFixed(1) + "K";
+  return String(Math.round(n));
+};
 const num = (n: number) => new Intl.NumberFormat("id-ID").format(Math.round(n || 0));
 const PALETTE = ["#c9a227", "#e8c84a", "#94a3b8", "#1e4a7a", "#3b6ea5", "#d4b94e", "#6b8cae", "#0f2040"];
 
@@ -81,17 +89,17 @@ export default function DashboardPage() {
 
       {/* KPIs */}
       <div className="kpi-grid">
-        <div className="kpi kpi-hero"><div className="kpi-icon">💰</div><div className="lbl">Total Sales</div><div className="val">{k ? idr(k.sales) : "—"}</div><div className="kpi-sub">SPOS · siap dikirim</div></div>
-        <div className="kpi"><div className="kpi-icon">🏪</div><div className="lbl">Total GMV</div><div className="val">{k ? idr(k.gmv) : "—"}</div><div className="kpi-sub">Performa</div></div>
-        <div className="kpi"><div className="kpi-icon">👁</div><div className="lbl">Traffic</div><div className="val">{k ? num(k.traffic) : "—"}</div></div>
-        <div className="kpi"><div className="kpi-icon">🛒</div><div className="lbl">In-Cart</div><div className="val">{k ? num(k.in_cart) : "—"}</div><div className="kpi-sub">{k ? cartRate.toFixed(1) + "% cart rate" : ""}</div></div>
+        <div className="kpi kpi-hero"><div className="kpi-icon">💰</div><div className="lbl">Panasonic Sales</div><div className="val">{k ? idr(k.sales) : "—"}</div><div className="kpi-sub">{k ? idrFull(k.sales) : "SPOS · Siap Dikirim"}</div></div>
+        <div className="kpi"><div className="kpi-icon">🏪</div><div className="lbl">Total GMV</div><div className="val">{k ? idr(k.gmv) : "—"}</div><div className="kpi-sub">{k ? idrFull(k.gmv) : "Performa"}</div></div>
+        <div className="kpi"><div className="kpi-icon">👁</div><div className="lbl">Pana Traffic</div><div className="val">{k ? compact(k.traffic) : "—"}</div></div>
+        <div className="kpi"><div className="kpi-icon">🛒</div><div className="lbl">Pana In-Cart</div><div className="val">{k ? compact(k.in_cart) : "—"}</div><div className="kpi-sub">{k ? cartRate.toFixed(1) + "% cart rate" : ""}</div></div>
         <div className="kpi"><div className="kpi-icon">📣</div><div className="lbl">Ads Cost</div><div className="val">{k ? idr(k.ad_cost) : "—"}</div></div>
         <div className="kpi kpi-roas"><div className="kpi-icon">⚡</div><div className="lbl">ROAS</div><div className="val">{k && k.roas ? k.roas.toFixed(2) + "×" : "—"}</div><div className="roas-bar"><div className="roas-fill" style={{ width: roasPct + "%" }} /></div></div>
       </div>
 
       {/* Monthly sales */}
       <div className="row">
-        <Panel title="Monthly Sales" hint="Penjualan per bulan · SPOS">
+        <Panel title="Panasonic Monthly Sales" hint="Penjualan Siap Dikirim per bulan · SPOS">
           <BarsChart data={byMonth(d?.monthly_sales || [])} x="month" y="sales" color="#c9a227" />
         </Panel>
       </div>
