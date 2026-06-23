@@ -224,7 +224,10 @@ export default function UploadPage() {
               {stores.map((s) => <option key={s} value={s}>{s}</option>)}
             </select>
           </Field>
+        </div>
 
+        {/* 3 dates on their own row */}
+        <div className="upl-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 14, marginTop: 14 }}>
           <Field label="Tanggal Mulai (Senin)">
             <input type="date" value={manual.tanggal_mulai} onChange={(e) => pickStart(e.target.value)} />
             <span style={{ fontSize: 10.5, color: "var(--muted)", marginTop: 3 }}>Auto-snaps to Monday · {fmtID(manual.tanggal_mulai)}</span>
