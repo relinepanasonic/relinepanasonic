@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { createClient } from "@/lib/supabase/client";
 
 export const dynamic = "force-dynamic";
@@ -120,8 +121,8 @@ export default function UsersPage() {
         </table>
       </div>
 
-      {/* Modal */}
-      {form && (
+      {/* Modal — portaled to body so the panel's overflow/backdrop-filter can't clip it */}
+      {form && typeof document !== "undefined" && createPortal(
         <div onClick={() => setForm(null)} style={overlay}>
           <div onClick={(e) => e.stopPropagation()} style={modal}>
             {/* sticky title */}
@@ -164,7 +165,8 @@ export default function UsersPage() {
               <button className="btn-gold" disabled={busy} onClick={save}>{busy ? "Saving…" : "Save"}</button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
