@@ -15,8 +15,6 @@ const SLOTS: { source: DataSource; label: string; hint: string; accept: string }
 const MONTHS = ["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"];
 const WEEKS = ["Week 1", "Week 2", "Week 3", "Week 4", "Week 5"];
 
-type Client = { id: string; name: string };
-
 export default function UploadPage() {
   const [supabase] = useState(() => createClient());
   const [files, setFiles] = useState<Record<string, File | null>>({});
@@ -24,10 +22,9 @@ export default function UploadPage() {
     admin: "", bulan: "Juni", baseline_month: "", year: new Date().getFullYear(),
     city: "", pic_client: "", store_name: "", week: "Week 1", tanggal_mulai: "",
   });
-  const [clientId, setClientId] = useState("");
+  const [clientId, setClientId] = useState(""); // single default workspace
 
   // Core List–driven option lists
-  const [clients, setClients] = useState<Client[]>([]);
   const [admins, setAdmins] = useState<string[]>([]);
   const [cities, setCities] = useState<string[]>([]);
   const [owners, setOwners] = useState<string[]>([]);
@@ -56,28 +53,20 @@ export default function UploadPage() {
 
   useEffect(() => {
     (async () => {
-      // clients (Client ID dropdown) + admin people (Admin dropdown)
+      // default workspace client + admin people (Admin dropdown)
       const [{ data: cs }, { data: ps }] = await Promise.all([
-        supabase.from("clients").select("id,name").order("name"),
+        supabase.from("clients").select("id").order("created_at").limit(1),
         supabase.from("profiles").select("display_name,email,role").in("role", ["superadmin", "client_admin"]),
       ]);
-      const clientList = (cs as Client[]) || [];
-      setClients(clientList);
       const adminNames = ((ps as { display_name: string | null; email: string | null }[]) || [])
         .map((p) => p.display_name || p.email || "")
         .filter(Boolean);
       setAdmins(Array.from(new Set(adminNames)).sort());
-      const first = clientList[0]?.id || "";
+      const first = (cs as { id: string }[])?.[0]?.id || "";
       setClientId(first);
       reload(first);
     })();
   }, [supabase, reload]);
-
-  function pickClient(cid: string) {
-    setClientId(cid);
-    setManual((m) => ({ ...m, city: "", pic_client: "", store_name: "" })); // reset dependent picks
-    reload(cid);
-  }
 
   async function submit() {
     setBusy(true); setLog([]);
@@ -108,12 +97,6 @@ export default function UploadPage() {
         <div className="hint">Pick the week&apos;s details once, attach one or more exports (Performa / SPOS / Ads), then Upload. Brand &amp; Tipe Produk are auto-detected.</div>
 
         <div className="upl-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 14, marginTop: 16 }}>
-          <Field label="Client">
-            <select value={clientId} onChange={(e) => pickClient(e.target.value)}>
-              <option value="">Select client…</option>
-              {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
-          </Field>
           <Field label="Admin">
             <select value={manual.admin} onChange={(e) => setField("admin", e.target.value)}>
               <option value="">Select admin…</option>

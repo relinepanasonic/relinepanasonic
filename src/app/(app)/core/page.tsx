@@ -7,13 +7,10 @@ export const dynamic = "force-dynamic";
 
 type Item = { id: string; kind: string; value: string };
 type Link = { id: string; owner: string | null; store_name: string | null; brand: string | null };
-type Client = { id: string; name: string };
 
 export default function CoreListPage() {
   const [supabase] = useState(() => createClient());
-  const [isSuper, setIsSuper] = useState(false);
-  const [clients, setClients] = useState<Client[]>([]);
-  const [clientId, setClientId] = useState("");
+  const [clientId, setClientId] = useState(""); // single default workspace
   const [items, setItems] = useState<Item[]>([]);
   const [links, setLinks] = useState<Link[]>([]);
   const [msg, setMsg] = useState("");
@@ -32,12 +29,9 @@ export default function CoreListPage() {
     (async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
-      const { data: p } = await supabase.from("profiles").select("role,client_id").eq("id", user.id).single();
-      const sup = p?.role === "superadmin";
-      setIsSuper(sup);
-      const { data: cs } = await supabase.from("clients").select("id,name").order("name");
-      setClients((cs as Client[]) || []);
-      const initial = sup ? ((cs as Client[])?.[0]?.id || "") : (p?.client_id || "");
+      // single workspace: use the default (first) client behind the scenes
+      const { data: cs } = await supabase.from("clients").select("id").order("created_at").limit(1);
+      const initial = (cs as { id: string }[])?.[0]?.id || "";
       setClientId(initial);
       reload(initial);
     })();
@@ -47,7 +41,7 @@ export default function CoreListPage() {
   const platforms = items.filter((i) => i.kind === "platform");
 
   async function addItem(kind: string, value: string) {
-    if (!clientId) { setMsg("Pick a client first"); return; }
+    if (!clientId) { setMsg("Workspace not ready — refresh the page"); return; }
     if (!value.trim()) return;
     setMsg("");
     const { error } = await supabase.from("master_data").insert({ client_id: clientId, kind, value: value.trim() });
@@ -57,7 +51,7 @@ export default function CoreListPage() {
   async function delItem(id: string) { await supabase.from("master_data").delete().eq("id", id); reload(clientId); }
 
   async function addLink(owner: string, store: string, brand: string) {
-    if (!clientId) { setMsg("Pick a client first"); return; }
+    if (!clientId) { setMsg("Workspace not ready — refresh the page"); return; }
     if (!owner.trim() && !store.trim() && !brand.trim()) return;
     setMsg("");
     const { error } = await supabase.from("store_links").insert({
@@ -81,14 +75,6 @@ export default function CoreListPage() {
           <h2 style={{ margin: 0, fontSize: 18, color: "#fff", fontWeight: 800 }}>Core List</h2>
           <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 3 }}>Master data behind every dropdown.</div>
         </div>
-        {isSuper && clients.length > 0 && (
-          <div className="fld" style={{ minWidth: 180 }}>
-            <label>Client</label>
-            <select value={clientId} onChange={(e) => { setClientId(e.target.value); reload(e.target.value); }}>
-              {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
-          </div>
-        )}
       </div>
 
       {msg && <div style={{ color: "#ff9a9a", fontSize: 13, marginBottom: 12, background: "rgba(239,68,68,.1)", border: "1px solid rgba(239,68,68,.2)", borderRadius: 10, padding: "8px 12px" }}>{msg}</div>}
