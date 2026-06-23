@@ -52,11 +52,9 @@ export async function POST(req: NextRequest) {
   const source = String(form.get("source") || "") as DataSource;
   const manual: ManualFields = JSON.parse(String(form.get("manual") || "{}"));
 
-  // superadmin must pass a client_id; client_admin is locked to their own.
-  const clientId =
-    profile.role === "superadmin"
-      ? String(form.get("client_id") || "")
-      : profile.client_id;
+  // superadmin & client_admin are both global → the target client comes from
+  // the form (a dropdown sourced from Core List, never free-typed).
+  const clientId = String(form.get("client_id") || "");
 
   if (!file) return NextResponse.json({ error: "NO_FILE" }, { status: 400 });
   if (!SOURCES.includes(source))

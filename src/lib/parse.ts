@@ -61,7 +61,8 @@ export type DataSource = "spos" | "ads" | "perf";
 // The shared manual fields entered once per upload (same for the whole file).
 export interface ManualFields {
   admin?: string;
-  bulan?: string;       // month name
+  bulan?: string;          // data month name
+  baseline_month?: string; // "Bulan Awal" baseline month for dashboard comparison
   year?: number;
   city?: string;
   pic_client?: string;  // was "PIC Panasonic"
