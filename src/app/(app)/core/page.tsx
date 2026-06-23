@@ -5,31 +5,28 @@ import { createClient } from "@/lib/supabase/client";
 
 export const dynamic = "force-dynamic";
 
-type Item = { id: string; kind: string; value: string };
-type Link = { id: string; owner: string | null; store_name: string | null; brand: string | null };
+type Item = { id: string; kind: string; value: string; pic: string | null; city: string | null };
 
 export default function CoreListPage() {
   const [supabase] = useState(() => createClient());
-  const [clientId, setClientId] = useState(""); // single default workspace
+  const [clientId, setClientId] = useState("");
   const [items, setItems] = useState<Item[]>([]);
-  const [links, setLinks] = useState<Link[]>([]);
   const [msg, setMsg] = useState("");
 
   const reload = useCallback(async (cid: string) => {
-    if (!cid) { setItems([]); setLinks([]); return; }
-    const [{ data: md }, { data: sl }] = await Promise.all([
-      supabase.from("master_data").select("id,kind,value").eq("client_id", cid).in("kind", ["city", "platform"]).order("value"),
-      supabase.from("store_links").select("id,owner,store_name,brand").eq("client_id", cid).order("created_at"),
-    ]);
-    setItems((md as Item[]) || []);
-    setLinks((sl as Link[]) || []);
+    if (!cid) { setItems([]); return; }
+    const { data } = await supabase
+      .from("master_data")
+      .select("id,kind,value,pic,city")
+      .eq("client_id", cid)
+      .order("value");
+    setItems((data as Item[]) || []);
   }, [supabase]);
 
   useEffect(() => {
     (async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
-      // single workspace: use the default (first) client behind the scenes
       const { data: cs } = await supabase.from("clients").select("id").order("created_at").limit(1);
       const initial = (cs as { id: string }[])?.[0]?.id || "";
       setClientId(initial);
@@ -38,75 +35,82 @@ export default function CoreListPage() {
   }, [supabase, reload]);
 
   const cities = items.filter((i) => i.kind === "city");
-  const platforms = items.filter((i) => i.kind === "platform");
+  const dealers = items.filter((i) => i.kind === "dealer");
+  const brands = items.filter((i) => i.kind === "brand");
+  const types = items.filter((i) => i.kind === "product_type");
 
-  async function addItem(kind: string, value: string) {
+  // city -> its PIC, for the dealer auto-PIC
+  const picOfCity = (city: string) => cities.find((c) => c.value === city)?.pic || null;
+
+  async function insertRow(row: Record<string, unknown>) {
     if (!clientId) { setMsg("Workspace not ready — refresh the page"); return; }
-    if (!value.trim()) return;
     setMsg("");
-    const { error } = await supabase.from("master_data").insert({ client_id: clientId, kind, value: value.trim() });
-    if (error) { setMsg(error.code === "23505" ? `"${value}" already exists` : "✗ " + error.message); return; }
+    const { error } = await supabase.from("master_data").insert({ client_id: clientId, ...row });
+    if (error) { setMsg(error.code === "23505" ? `"${row.value}" already exists` : "✗ " + error.message); return; }
     reload(clientId);
   }
   async function delItem(id: string) { await supabase.from("master_data").delete().eq("id", id); reload(clientId); }
 
-  async function addLink(owner: string, store: string, brand: string) {
-    if (!clientId) { setMsg("Workspace not ready — refresh the page"); return; }
-    if (!owner.trim() && !store.trim() && !brand.trim()) return;
-    setMsg("");
-    const { error } = await supabase.from("store_links").insert({
-      client_id: clientId, owner: owner.trim() || null, store_name: store.trim() || null, brand: brand.trim() || null,
-    });
-    if (error) { setMsg("✗ " + error.message); return; }
-    reload(clientId);
-  }
-  async function delLink(id: string) { await supabase.from("store_links").delete().eq("id", id); reload(clientId); }
-
-  // distinct suggestions for the datalists
-  const uniq = (xs: (string | null)[]) => Array.from(new Set(xs.filter(Boolean) as string[]));
-  const owners = uniq(links.map((l) => l.owner));
-  const stores = uniq(links.map((l) => l.store_name));
-  const brands = uniq(links.map((l) => l.brand));
-
   return (
     <>
-      {msg &&<div style={{ color: "#ff9a9a", fontSize: 13, marginBottom: 12, background: "rgba(239,68,68,.1)", border: "1px solid rgba(239,68,68,.2)", borderRadius: 10, padding: "8px 12px" }}>{msg}</div>}
+      {msg && <div style={{ color: "#ff9a9a", fontSize: 13, marginBottom: 12, background: "rgba(239,68,68,.1)", border: "1px solid rgba(239,68,68,.2)", borderRadius: 10, padding: "8px 12px" }}>{msg}</div>}
 
-      {/* Top: City + Platform (standalone, 2 columns) */}
-      <div className="core-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 16 }}>
-        <Card icon="🏙️" title="Cities" count={cities.length}>
-          <ItemList items={cities} onDel={delItem} />
-          <SimpleAdd placeholder="Add city…" onAdd={(v) => addItem("city", v)} />
-        </Card>
-        <Card icon="🛒" title="Platforms" count={platforms.length}>
-          <ItemList items={platforms} onDel={delItem} />
-          <SimpleAdd placeholder="Add platform…" onAdd={(v) => addItem("platform", v)} />
-        </Card>
+      <div style={{ marginBottom: 16 }}>
+        <h3 style={{ margin: 0 }}>Core List</h3>
+        <div style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 4 }}>
+          The master data behind every dropdown — City, PIC, Dealer, Brand &amp; Product Type — used across Upload, Invites and filters. Add an entry here and it appears everywhere.
+        </div>
       </div>
 
-      {/* Combined: Owner · Brand · Store Name */}
-      <Card icon="🔗" title="Owners · Brands · Store Names" count={links.length}>
-        <div style={{ fontSize: 11.5, color: "var(--muted)", marginBottom: 4 }}>
-          One owner can have many brands; one brand many stores. Add each combination as a row.
-        </div>
-        <LinkTable rows={links} onDel={delLink} />
-        <LinkAdd owners={owners} stores={stores} brands={brands} onAdd={addLink} />
-      </Card>
+      <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1.4fr 1fr 1fr", gap: 16, alignItems: "start" }}>
+        {/* City & PIC */}
+        <Card icon="🏙️" title="City & PIC Panasonic" hint="1 city = 1 PIC" count={cities.length}>
+          <DealerOrCityList
+            rows={cities.map((c) => ({ id: c.id, main: c.value, sub: c.pic }))}
+            onDel={delItem}
+          />
+          <CityAdd onAdd={(city, pic) => insertRow({ kind: "city", value: city, pic: pic || null })} />
+        </Card>
 
-      <datalist id="dl-owner">{owners.map((o) => <option key={o} value={o} />)}</datalist>
-      <datalist id="dl-store">{stores.map((s) => <option key={s} value={s} />)}</datalist>
-      <datalist id="dl-brand">{brands.map((b) => <option key={b} value={b} />)}</datalist>
+        {/* Dealers */}
+        <Card icon="🏬" title="Dealers" count={dealers.length}>
+          <DealerOrCityList
+            rows={dealers.map((d) => ({ id: d.id, main: d.value, sub: [d.city, d.pic].filter(Boolean).join(" — ") }))}
+            onDel={delItem}
+          />
+          <DealerAdd
+            cities={cities.map((c) => c.value)}
+            picOfCity={picOfCity}
+            onAdd={(name, city) => insertRow({ kind: "dealer", value: name, city: city || null, pic: picOfCity(city) })}
+          />
+        </Card>
+
+        {/* Brands */}
+        <Card icon="🏷️" title="Brands" count={brands.length}>
+          <PlainList items={brands} onDel={delItem} />
+          <SimpleAdd placeholder="Add brand" onAdd={(v) => insertRow({ kind: "brand", value: v })} />
+        </Card>
+
+        {/* Product Types */}
+        <Card icon="📦" title="Product Types" count={types.length}>
+          <PlainList items={types} onDel={delItem} />
+          <SimpleAdd placeholder="Add type" onAdd={(v) => insertRow({ kind: "product_type", value: v })} />
+        </Card>
+      </div>
     </>
   );
 }
 
 /* ---------- shared ---------- */
-function Card({ icon, title, count, children }: { icon: string; title: string; count: number; children: React.ReactNode }) {
+function Card({ icon, title, hint, count, children }: { icon: string; title: string; hint?: string; count: number; children: React.ReactNode }) {
   return (
     <div className="panel" style={{ display: "flex", flexDirection: "column", padding: 0, overflow: "hidden" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "14px 16px", borderBottom: "1px solid var(--line)" }}>
         <span style={{ fontSize: 18 }}>{icon}</span>
-        <h3 style={{ margin: 0, flex: 1 }}>{title}</h3>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <h3 style={{ margin: 0, fontSize: 15 }}>{title}</h3>
+          {hint && <div style={{ fontSize: 10.5, color: "var(--muted)" }}>{hint}</div>}
+        </div>
         <span style={{ fontSize: 11, fontWeight: 700, color: "var(--gold)", background: "rgba(201,162,39,.12)", border: "1px solid rgba(201,162,39,.25)", borderRadius: 999, padding: "2px 10px" }}>{count}</span>
       </div>
       <div style={{ padding: 14, display: "flex", flexDirection: "column", gap: 12, flex: 1 }}>{children}</div>
@@ -114,10 +118,27 @@ function Card({ icon, title, count, children }: { icon: string; title: string; c
   );
 }
 
-function ItemList({ items, onDel }: { items: Item[]; onDel: (id: string) => void }) {
-  if (!items.length) return <div style={{ color: "var(--muted)", fontSize: 12.5, padding: "10px 4px", textAlign: "center" }}>No entries yet</div>;
+// list with a main label + optional grey sub-label (used by City and Dealer)
+function DealerOrCityList({ rows, onDel }: { rows: { id: string; main: string; sub: string | null }[]; onDel: (id: string) => void }) {
+  if (!rows.length) return <Empty />;
   return (
-    <div style={{ maxHeight: 220, overflowY: "auto", display: "flex", flexDirection: "column", gap: 6 }}>
+    <div style={{ maxHeight: 300, overflowY: "auto", display: "flex", flexDirection: "column", gap: 6 }}>
+      {rows.map((r) => (
+        <div key={r.id} style={rowStyle}>
+          <span style={{ flex: 1, fontSize: 13, minWidth: 0 }}>
+            {r.main}{r.sub ? <span style={{ color: "var(--muted)" }}> — {r.sub}</span> : null}
+          </span>
+          <DelBtn onClick={() => onDel(r.id)} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function PlainList({ items, onDel }: { items: Item[]; onDel: (id: string) => void }) {
+  if (!items.length) return <Empty />;
+  return (
+    <div style={{ maxHeight: 300, overflowY: "auto", display: "flex", flexDirection: "column", gap: 6 }}>
       {items.map((i) => (
         <div key={i.id} style={rowStyle}>
           <span style={{ flex: 1, fontSize: 13 }}>{i.value}</span>
@@ -128,35 +149,29 @@ function ItemList({ items, onDel }: { items: Item[]; onDel: (id: string) => void
   );
 }
 
-function LinkTable({ rows, onDel }: { rows: Link[]; onDel: (id: string) => void }) {
-  if (!rows.length) return <div style={{ color: "var(--muted)", fontSize: 12.5, padding: "10px 4px", textAlign: "center" }}>No entries yet</div>;
+function CityAdd({ onAdd }: { onAdd: (city: string, pic: string) => void }) {
+  const [city, setCity] = useState(""); const [pic, setPic] = useState("");
+  const go = () => { if (city.trim()) { onAdd(city.trim(), pic.trim()); setCity(""); setPic(""); } };
   return (
-    <div style={{ maxHeight: 300, overflowY: "auto" }}>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 28px", gap: 8, fontSize: 10, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".05em", padding: "0 12px 6px" }}>
-        <span>Owner</span><span>Brand</span><span>Store Name</span><span />
-      </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-        {rows.map((r) => (
-          <div key={r.id} style={{ ...rowStyle, display: "grid", gridTemplateColumns: "1fr 1fr 1fr 28px", gap: 8, alignItems: "center" }}>
-            <span style={{ fontSize: 13 }}>{r.owner || "—"}</span>
-            <span style={{ fontSize: 13 }}>{r.brand || "—"}</span>
-            <span style={{ fontSize: 13 }}>{r.store_name || "—"}</span>
-            <DelBtn onClick={() => onDel(r.id)} />
-          </div>
-        ))}
-      </div>
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 40px", gap: 8, marginTop: "auto" }}>
+      <input style={fieldStyle} placeholder="City" value={city} onChange={(e) => setCity(e.target.value)} onKeyDown={(e) => e.key === "Enter" && go()} />
+      <input style={fieldStyle} placeholder="PIC for this city" value={pic} onChange={(e) => setPic(e.target.value)} onKeyDown={(e) => e.key === "Enter" && go()} />
+      <button style={plusStyle} onClick={go}>+</button>
     </div>
   );
 }
 
-function LinkAdd({ owners, stores, brands, onAdd }: { owners: string[]; stores: string[]; brands: string[]; onAdd: (o: string, s: string, b: string) => void }) {
-  const [o, setO] = useState(""); const [s, setS] = useState(""); const [b, setB] = useState("");
-  const go = () => { onAdd(o, s, b); setO(""); setS(""); setB(""); };
+function DealerAdd({ cities, picOfCity, onAdd }: { cities: string[]; picOfCity: (c: string) => string | null; onAdd: (name: string, city: string) => void }) {
+  const [name, setName] = useState(""); const [city, setCity] = useState("");
+  const go = () => { if (name.trim()) { onAdd(name.trim(), city); setName(""); setCity(""); } };
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 40px", gap: 8, marginTop: "auto" }}>
-      <input list="dl-owner" style={fieldStyle} placeholder="Owner…" value={o} onChange={(e) => setO(e.target.value)} onKeyDown={(e) => e.key === "Enter" && go()} />
-      <input list="dl-brand" style={fieldStyle} placeholder="Brand…" value={b} onChange={(e) => setB(e.target.value)} onKeyDown={(e) => e.key === "Enter" && go()} />
-      <input list="dl-store" style={fieldStyle} placeholder="Store name…" value={s} onChange={(e) => setS(e.target.value)} onKeyDown={(e) => e.key === "Enter" && go()} />
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 40px", gap: 8, marginTop: "auto" }}>
+      <input style={{ ...fieldStyle, gridColumn: "1 / -1" }} placeholder="Dealer name" value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && go()} />
+      <select style={fieldStyle} value={city} onChange={(e) => setCity(e.target.value)}>
+        <option value="">Select city</option>
+        {cities.map((c) => <option key={c} value={c}>{c}</option>)}
+      </select>
+      <input style={fieldStyle} placeholder="PIC (auto)" value={city ? (picOfCity(city) || "") : ""} disabled />
       <button style={plusStyle} onClick={go}>+</button>
     </div>
   );
@@ -164,7 +179,7 @@ function LinkAdd({ owners, stores, brands, onAdd }: { owners: string[]; stores: 
 
 function SimpleAdd({ placeholder, onAdd }: { placeholder: string; onAdd: (v: string) => void }) {
   const [v, setV] = useState("");
-  const go = () => { if (v.trim()) { onAdd(v); setV(""); } };
+  const go = () => { if (v.trim()) { onAdd(v.trim()); setV(""); } };
   return (
     <div style={{ display: "flex", gap: 8, marginTop: "auto" }}>
       <input style={{ ...fieldStyle, flex: 1 }} placeholder={placeholder} value={v} onChange={(e) => setV(e.target.value)} onKeyDown={(e) => e.key === "Enter" && go()} />
@@ -173,6 +188,7 @@ function SimpleAdd({ placeholder, onAdd }: { placeholder: string; onAdd: (v: str
   );
 }
 
+function Empty() { return <div style={{ color: "var(--muted)", fontSize: 12.5, padding: "10px 4px", textAlign: "center" }}>No entries yet</div>; }
 function DelBtn({ onClick }: { onClick: () => void }) {
   return (
     <button onClick={onClick} title="Remove"
