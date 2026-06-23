@@ -70,14 +70,7 @@ export default function CoreListPage() {
 
   return (
     <>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", flexWrap: "wrap", gap: 12, marginBottom: 16 }}>
-        <div>
-          <h2 style={{ margin: 0, fontSize: 18, color: "#fff", fontWeight: 800 }}>Core List</h2>
-          <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 3 }}>Master data behind every dropdown.</div>
-        </div>
-      </div>
-
-      {msg && <div style={{ color: "#ff9a9a", fontSize: 13, marginBottom: 12, background: "rgba(239,68,68,.1)", border: "1px solid rgba(239,68,68,.2)", borderRadius: 10, padding: "8px 12px" }}>{msg}</div>}
+      {msg &&<div style={{ color: "#ff9a9a", fontSize: 13, marginBottom: 12, background: "rgba(239,68,68,.1)", border: "1px solid rgba(239,68,68,.2)", borderRadius: 10, padding: "8px 12px" }}>{msg}</div>}
 
       {/* Top: City + Platform (standalone, 2 columns) */}
       <div className="core-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 16 }}>
