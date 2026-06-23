@@ -24,7 +24,7 @@ const NAV: { href: string; icon: string; label: string; roles?: Role[] }[] = [
 const ROLE_LABEL: Record<Role, string> = {
   superadmin: "Super Admin",
   client_admin: "Client Admin",
-  branch_manager: "Branch Manager",
+  branch_manager: "Owner",
   store_user: "Store",
 };
 

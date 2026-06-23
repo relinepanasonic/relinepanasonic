@@ -68,10 +68,13 @@ function fmtIDR(n: number): string {
   return "Rp " + n.toLocaleString("id-ID");
 }
 
+type StoreLink = { owner: string | null; brand: string | null; store_name: string | null };
+
 export default function InvoicePage() {
   const [supabase] = useState(() => createClient());
   const [clientId, setClientId] = useState("");
   const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [links, setLinks] = useState<StoreLink[]>([]);
   const [owners, setOwners] = useState<string[]>([]);
   const [brands, setBrands] = useState<string[]>([]);
   const [stores, setStores] = useState<string[]>([]);
@@ -101,11 +104,12 @@ export default function InvoicePage() {
       if (!cid) return;
       const { data: sl } = await supabase
         .from("store_links").select("owner,brand,store_name").eq("client_id", cid).order("created_at");
-      const links = (sl as { owner: string | null; brand: string | null; store_name: string | null }[]) || [];
+      const linkData = (sl as StoreLink[]) || [];
+      setLinks(linkData);
       const uniq = (xs: (string | null)[]) => Array.from(new Set(xs.filter(Boolean) as string[])).sort();
-      setOwners(uniq(links.map((l) => l.owner)));
-      setBrands(uniq(links.map((l) => l.brand)));
-      setStores(uniq(links.map((l) => l.store_name)));
+      setOwners(uniq(linkData.map((l) => l.owner)));
+      setBrands(uniq(linkData.map((l) => l.brand)));
+      setStores(uniq(linkData.map((l) => l.store_name)));
       load(cid);
     })();
   }, [supabase, load]);
@@ -327,7 +331,16 @@ export default function InvoicePage() {
               </div>
 
               <MFld label="Store Name">
-                <select value={form.store_name} onChange={(e) => setF("store_name", e.target.value)}>
+                <select value={form.store_name} onChange={(e) => {
+                  const store = e.target.value;
+                  const link = links.find((l) => l.store_name === store);
+                  setForm((f) => ({
+                    ...f,
+                    store_name: store,
+                    owner: link?.owner || f.owner,
+                    brand: link?.brand || f.brand,
+                  }));
+                }}>
                   <option value="">— Select —</option>
                   {stores.map((s) => <option key={s} value={s}>{s}</option>)}
                 </select>

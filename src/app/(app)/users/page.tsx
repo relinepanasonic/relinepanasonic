@@ -11,18 +11,19 @@ type Profile = {
   role: string; client_id: string | null; scope_city: string | null; scope_store: string | null;
 };
 type Client = { id: string; name: string };
+type StoreLink = { owner: string | null; brand: string | null; store_name: string | null };
 
 const ROLES = [
-  { v: "superadmin", l: "Super Admin" },
-  { v: "client_admin", l: "Client Admin" },
-  { v: "branch_manager", l: "Branch Manager (one city)" },
-  { v: "store_user", l: "Store (one store)" },
+  { v: "superadmin",     l: "Super Admin" },
+  { v: "client_admin",   l: "Client Admin" },
+  { v: "branch_manager", l: "Owner" },
+  { v: "store_user",     l: "Store" },
 ];
 const roleLabel = (r: string) => ROLES.find((x) => x.v === r)?.l || r;
 
 const blank = {
   id: "", email: "", password: "", display_name: "",
-  role: "store_user", client_id: "", scope_city: "", scope_store: "",
+  role: "branch_manager", client_id: "", scope_city: "", scope_store: "",
 };
 
 export default function UsersPage() {
@@ -30,6 +31,7 @@ export default function UsersPage() {
   const [me, setMe] = useState<{ role: string; client_id: string | null }>();
   const [rows, setRows] = useState<Profile[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
+  const [links, setLinks] = useState<StoreLink[]>([]);
   const [form, setForm] = useState<typeof blank | null>(null);
   const [editing, setEditing] = useState(false);
   const [msg, setMsg] = useState("");
@@ -48,8 +50,13 @@ export default function UsersPage() {
       if (!user) return;
       const { data: p } = await supabase.from("profiles").select("role,client_id").eq("id", user.id).single();
       setMe(p as { role: string; client_id: string | null });
-      const { data: cs } = await supabase.from("clients").select("id,name").order("name");
+      // Load clients + store_links for dropdowns
+      const [{ data: cs }, { data: sl }] = await Promise.all([
+        supabase.from("clients").select("id,name").order("name"),
+        supabase.from("store_links").select("owner,brand,store_name").order("owner"),
+      ]);
       setClients((cs as Client[]) || []);
+      setLinks((sl as StoreLink[]) || []);
       reload();
     })();
   }, [supabase, reload]);
@@ -101,7 +108,7 @@ export default function UsersPage() {
 
       <div className="tbl-wrap" style={{ marginTop: 14 }}>
         <table className="tbl">
-          <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>City</th><th>Store</th><th></th></tr></thead>
+          <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Owner</th><th>Store</th><th></th></tr></thead>
           <tbody>
             {rows.map((r) => (
               <tr key={r.id}>
@@ -150,12 +157,44 @@ export default function UsersPage() {
                     </select>
                   </Fld>
                 )}
-                {form.role === "branch_manager" && (
-                  <Fld label="City (scope)"><input style={inp} value={form.scope_city} onChange={(e) => setForm({ ...form, scope_city: e.target.value })} /></Fld>
-                )}
-                {form.role === "store_user" && (
-                  <Fld label="Store Name (scope)"><input style={inp} value={form.scope_store} onChange={(e) => setForm({ ...form, scope_store: e.target.value })} /></Fld>
-                )}
+                {/* Owner role: pick owner from Core List */}
+                {form.role === "branch_manager" && (() => {
+                  const ownerOpts = Array.from(new Set(links.map((l) => l.owner).filter(Boolean) as string[])).sort();
+                  return (
+                    <Fld label="Owner">
+                      <select style={inp} value={form.scope_city}
+                        onChange={(e) => setForm({ ...form, scope_city: e.target.value, scope_store: "" })}>
+                        <option value="">Select owner…</option>
+                        {ownerOpts.map((o) => <option key={o} value={o}>{o}</option>)}
+                      </select>
+                    </Fld>
+                  );
+                })()}
+                {/* Store role: pick store → auto-fills Owner */}
+                {form.role === "store_user" && (() => {
+                  const storeOpts = Array.from(new Set(links.map((l) => l.store_name).filter(Boolean) as string[])).sort();
+                  const autoOwner = links.find((l) => l.store_name === form.scope_store)?.owner || "";
+                  return (
+                    <>
+                      <Fld label="Store">
+                        <select style={inp} value={form.scope_store}
+                          onChange={(e) => {
+                            const store = e.target.value;
+                            const link = links.find((l) => l.store_name === store);
+                            setForm({ ...form, scope_store: store, scope_city: link?.owner || "" });
+                          }}>
+                          <option value="">Select store…</option>
+                          {storeOpts.map((s) => <option key={s} value={s}>{s}</option>)}
+                        </select>
+                      </Fld>
+                      {autoOwner && (
+                        <div style={{ fontSize: 12, color: "var(--gold)", background: "rgba(201,162,39,.08)", border: "1px solid rgba(201,162,39,.2)", borderRadius: 8, padding: "7px 12px" }}>
+                          Owner: <strong>{autoOwner}</strong>
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
               </div>
             </div>
             {/* sticky footer */}
