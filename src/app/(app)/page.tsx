@@ -75,6 +75,21 @@ export default function DashboardPage() {
 
   return (
     <>
+      <style>{`
+        @keyframes spin { to { transform: rotate(360deg); } }
+        @keyframes shimmer {
+          0%   { background-position: -200% 0; }
+          100% { background-position:  200% 0; }
+        }
+        .ske {
+          display: inline-block;
+          background: linear-gradient(90deg,rgba(255,255,255,.05) 25%,rgba(255,255,255,.14) 50%,rgba(255,255,255,.05) 75%);
+          background-size: 200% 100%;
+          animation: shimmer 1.4s ease-in-out infinite;
+          border-radius: 6px;
+        }
+      `}</style>
+
       {/* Filters — matching GAS: Year / Quarter / Month / Week / City / Dealer */}
       <div className="filterbar">
         <Sel label="Year"    value={sel.year}    onChange={(v) => setSel((s) => ({ ...s, year: v }))}    opts={filters.years.map(String)}    all="All Years" />
@@ -84,17 +99,31 @@ export default function DashboardPage() {
         <Sel label="City"    value={sel.city}    onChange={(v) => setSel((s) => ({ ...s, city: v }))}    opts={filters.cities}               all="All Cities" />
         <Sel label="Dealer"  value={sel.dealer}  onChange={(v) => setSel((s) => ({ ...s, dealer: v }))}  opts={filters.dealers}              all="All Dealers" />
         <button className="btn-ghost" onClick={() => setSel({ year: "", quarter: "", month: "", week: "", city: "", dealer: "" })}>Reset</button>
-        {loading && <span style={{ alignSelf: "center", color: "var(--gold)", fontSize: 12 }}>Updating…</span>}
+        {loading && (
+          <span style={{ alignSelf: "center", display: "flex", alignItems: "center", gap: 6, color: "var(--gold)", fontSize: 12 }}>
+            <span style={{ display: "inline-block", width: 14, height: 14, borderRadius: "50%", border: "2px solid rgba(201,162,39,.3)", borderTopColor: "#c9a227", animation: "spin .7s linear infinite" }} />
+            Memuat data…
+          </span>
+        )}
       </div>
 
       {/* KPIs */}
-      <div className="kpi-grid">
-        <div className="kpi kpi-hero"><div className="kpi-icon">💰</div><div className="lbl">Panasonic Sales</div><div className="val">{k ? idr(k.sales) : "—"}</div><div className="kpi-sub">{k ? idrFull(k.sales) : "SPOS · Siap Dikirim"}</div></div>
-        <div className="kpi"><div className="kpi-icon">🏪</div><div className="lbl">Total GMV</div><div className="val">{k ? idr(k.gmv) : "—"}</div><div className="kpi-sub">{k ? idrFull(k.gmv) : "Performa"}</div></div>
-        <div className="kpi"><div className="kpi-icon">👁</div><div className="lbl">Pana Traffic</div><div className="val">{k ? compact(k.traffic) : "—"}</div></div>
-        <div className="kpi"><div className="kpi-icon">🛒</div><div className="lbl">Pana In-Cart</div><div className="val">{k ? compact(k.in_cart) : "—"}</div><div className="kpi-sub">{k ? cartRate.toFixed(1) + "% cart rate" : ""}</div></div>
-        <div className="kpi"><div className="kpi-icon">📣</div><div className="lbl">Ads Cost</div><div className="val">{k ? idr(k.ad_cost) : "—"}</div></div>
-        <div className="kpi kpi-roas"><div className="kpi-icon">⚡</div><div className="lbl">ROAS</div><div className="val">{k && k.roas ? k.roas.toFixed(2) + "×" : "—"}</div><div className="roas-bar"><div className="roas-fill" style={{ width: roasPct + "%" }} /></div></div>
+      <div style={{ position: "relative" }}>
+        {/* Full overlay spinner — only on initial load (no data yet) */}
+        {loading && !d && (
+          <div style={{ position: "absolute", inset: 0, zIndex: 10, background: "rgba(10,22,40,.6)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", borderRadius: 12, gap: 12, backdropFilter: "blur(3px)" }}>
+            <div style={{ width: 40, height: 40, borderRadius: "50%", border: "3px solid rgba(201,162,39,.25)", borderTopColor: "#c9a227", animation: "spin .8s linear infinite" }} />
+            <span style={{ color: "var(--gold)", fontSize: 13 }}>Memuat data…</span>
+          </div>
+        )}
+        <div className="kpi-grid" style={{ opacity: loading && d ? 0.55 : 1, transition: "opacity .2s" }}>
+          <div className="kpi kpi-hero"><div className="kpi-icon">💰</div><div className="lbl">Panasonic Sales</div><div className="val">{!k && loading ? <span className="ske" style={{ width: 140, height: 36 }} /> : k ? idr(k.sales) : "—"}</div><div className="kpi-sub">{k ? idrFull(k.sales) : "SPOS · Siap Dikirim"}</div></div>
+          <div className="kpi"><div className="kpi-icon">🏪</div><div className="lbl">Total GMV</div><div className="val">{!k && loading ? <span className="ske" style={{ width: 130, height: 36 }} /> : k ? idr(k.gmv) : "—"}</div><div className="kpi-sub">{k ? idrFull(k.gmv) : "Performa"}</div></div>
+          <div className="kpi"><div className="kpi-icon">👁</div><div className="lbl">Pana Traffic</div><div className="val">{!k && loading ? <span className="ske" style={{ width: 80, height: 36 }} /> : k ? compact(k.traffic) : "—"}</div></div>
+          <div className="kpi"><div className="kpi-icon">🛒</div><div className="lbl">Pana In-Cart</div><div className="val">{!k && loading ? <span className="ske" style={{ width: 80, height: 36 }} /> : k ? compact(k.in_cart) : "—"}</div><div className="kpi-sub">{k ? cartRate.toFixed(1) + "% cart rate" : ""}</div></div>
+          <div className="kpi"><div className="kpi-icon">📣</div><div className="lbl">Ads Cost</div><div className="val">{!k && loading ? <span className="ske" style={{ width: 110, height: 36 }} /> : k ? idr(k.ad_cost) : "—"}</div></div>
+          <div className="kpi kpi-roas"><div className="kpi-icon">⚡</div><div className="lbl">ROAS</div><div className="val">{!k && loading ? <span className="ske" style={{ width: 70, height: 36 }} /> : k && k.roas ? k.roas.toFixed(2) + "×" : "—"}</div><div className="roas-bar"><div className="roas-fill" style={{ width: roasPct + "%" }} /></div></div>
+        </div>
       </div>
 
       {/* Monthly sales */}
