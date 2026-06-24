@@ -36,22 +36,17 @@ export function bqCol(h: unknown): string {
   return String(h).trim().replace(/[^A-Za-z0-9]/g, "_");
 }
 
-// Parse Indonesian-formatted / messy numeric strings to a number or null.
-// Handles "1.234.567,89" (id) and "1,234,567.89" (en) and stray currency text.
+// Parse a Shopee numeric string to a whole number or null.
+// Shopee xlsx exports use Indonesian formatting where dots/commas are THOUSAND
+// separators (e.g. "24.759.000" = 24759000). Strip Rp, dots, commas, spaces, %
+// — identical to the GAS sqlIDR_/sqlNum_ SQL parsers.
 export function toNum(v: unknown): number | null {
-  if (v === null || v === undefined || v === "") return null;
+  if (v === null || v === undefined) return null;
   if (typeof v === "number") return Number.isFinite(v) ? v : null;
-  let s = String(v).trim().replace(/[^0-9.,-]/g, "");
-  if (!s) return null;
-  const lastComma = s.lastIndexOf(",");
-  const lastDot = s.lastIndexOf(".");
-  if (lastComma > lastDot) {
-    // comma is decimal separator (id) -> drop dots, comma -> dot
-    s = s.replace(/\./g, "").replace(",", ".");
-  } else {
-    // dot is decimal separator (en) -> drop commas
-    s = s.replace(/,/g, "");
-  }
+  let s = String(v).trim();
+  if (!s || s === "-") return null;
+  s = s.replace(/rp/i, "").replace(/[.,\s%]/g, "");
+  if (!s || s === "-") return null;
   const n = Number(s);
   return Number.isFinite(n) ? n : null;
 }
@@ -93,8 +88,17 @@ export function mapRow(
 
   const nameCol = NAME_COL[source];
   const name = nameCol ? get(nameCol) : null;
-  const brand = nameCol ? detectBrand(name) : null;
-  const product_type = nameCol ? detectCategory(name) : null;
+
+  // Prefer the Brand / Tipe Produk column if the export already carries it;
+  // otherwise auto-detect from the product/campaign name.
+  const storedBrand = String(get("Brand") ?? "").trim();
+  const storedType = String(get("Tipe Produk") ?? "").trim();
+  const brand = (storedBrand && storedBrand !== "-")
+    ? storedBrand
+    : (nameCol ? detectBrand(name) : null);
+  const product_type = (storedType && storedType !== "-")
+    ? storedType
+    : (nameCol ? detectCategory(name) : null);
 
   // SPOS parent-row rule: count only rows where traffic (visitors) is present.
   const visitorsSpos = toNum(get("Pengunjung Produk (Kunjungan)"));
@@ -110,7 +114,8 @@ export function mapRow(
   let in_cart: number | null = null;
 
   if (source === "spos") {
-    sales_idr = toNum(get("Total Penjualan (Pesanan Dibuat) (IDR)"));
+    // GAS uses "Pesanan Siap Dikirim" (ready-to-ship), NOT "Pesanan Dibuat"
+    sales_idr = toNum(get("Penjualan (Pesanan Siap Dikirim) (IDR)"));
     orders = toNum(get("Total Pembeli (Pesanan Dibuat)"));
     units = toNum(get("Produk (Pesanan Dibuat)"));
     visitors = visitorsSpos;
@@ -122,8 +127,8 @@ export function mapRow(
     visitors = toNum(get("Dilihat"));
     ad_cost = toNum(get("Biaya"));
   } else {
-    // perf
-    sales_idr = toNum(get("Penjualan (Pesanan Dibuat) (IDR)"));
+    // perf — GMV = "Penjualan (Pesanan Siap Dikirim) (IDR)"
+    sales_idr = toNum(get("Penjualan (Pesanan Siap Dikirim) (IDR)"));
     orders = toNum(get("Total Pembeli (Pesanan Dibuat)"));
     units = toNum(get("Total Produk Dipesan"));
     visitors = toNum(get("Total Pengunjung (Kunjungan)"));
