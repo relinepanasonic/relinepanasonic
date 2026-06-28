@@ -63,12 +63,7 @@ export default function LoginPage() {
         style={{ boxShadow: "0 25px 60px rgba(0,0,0,0.5), 0 0 0 1px rgba(201,162,39,0.1)" }}
       >
         <div className="mb-6 flex flex-col items-center gap-3">
-          <div style={{ width: 56, height: 56, borderRadius: "50%", background: "linear-gradient(135deg, #1a3461, #0a1628)", border: "2px solid rgba(201,162,39,0.4)", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 0 20px rgba(201,162,39,0.15)" }}>
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
-              <path d="M12 2L3 7v5c0 5.25 3.75 10.15 9 11.35C17.25 22.15 21 17.25 21 12V7L12 2z" fill="rgba(201,162,39,0.2)" stroke="#c9a227" strokeWidth="1.5" strokeLinejoin="round"/>
-              <path d="M9 12l2 2 4-4" stroke="#c9a227" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-            </svg>
-          </div>
+          <img src="/logo.svg" alt="ProfTokoOnline" style={{ width: 90, height: 90, objectFit: "contain" }} />
           <div className="text-center">
             <h1 className="text-xl font-bold tracking-wide" style={{ color: "#e8edf8" }}>ProfTokoOnline</h1>
             <p className="mt-0.5 text-xs" style={{ color: "#7b8db0" }}>Dashboard Analytics</p>
