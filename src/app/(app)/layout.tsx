@@ -8,17 +8,17 @@ import { createClient } from "@/lib/supabase/client";
 type Role = "superadmin" | "client_admin" | "branch_manager" | "store_user";
 
 const NAV: { href: string; icon: string; label: string; roles?: Role[] }[] = [
-  { href: "/",           icon: "📊", label: "Executive Dashboard" },
-  { href: "/upload",     icon: "⬆️", label: "Upload Data",        roles: ["superadmin", "client_admin"] },
-  { href: "/product",    icon: "📦", label: "Product Performance" },
-  { href: "/ads",        icon: "🎯", label: "Ads Performance" },
-  { href: "/store",      icon: "🏬", label: "Store Performance" },
-  { href: "/users",      icon: "👥", label: "Users",              roles: ["superadmin"] },
-  { href: "/invoice",    icon: "🧾", label: "Invoice",             roles: ["superadmin"] },
-  { href: "/core",       icon: "🗂️", label: "Core List",          roles: ["superadmin", "client_admin"] },
-  { href: "/calc",       icon: "🧮", label: "Price Calculator" },
-  { href: "/marketfee",  icon: "💰", label: "Market Place Fee" },
-  { href: "/priceall",   icon: "📋", label: "Price All User",     roles: ["superadmin"] },
+  { href: "/",          icon: "📊", label: "Dashboard",           roles: ["superadmin", "branch_manager"] },
+  { href: "/upload",    icon: "⬆️", label: "Upload Data",         roles: ["superadmin", "client_admin"] },
+  { href: "/product",   icon: "📦", label: "Product Performance", roles: ["superadmin", "branch_manager"] },
+  { href: "/ads",       icon: "🎯", label: "Ads Performance",     roles: ["superadmin", "branch_manager"] },
+  { href: "/store",     icon: "🏬", label: "Store Performance",   roles: ["superadmin", "branch_manager"] },
+  { href: "/users",     icon: "👥", label: "Users",               roles: ["superadmin"] },
+  { href: "/invoice",   icon: "🧾", label: "Invoice",             roles: ["superadmin"] },
+  { href: "/core",      icon: "🗂️", label: "Core List",          roles: ["superadmin", "client_admin"] },
+  { href: "/calc",      icon: "🧮", label: "Price Calculator",    roles: ["superadmin", "branch_manager"] },
+  { href: "/marketfee", icon: "💰", label: "Market Place Fee",    roles: ["superadmin", "branch_manager", "client_admin"] },
+  { href: "/priceall",  icon: "📋", label: "Price All User",      roles: ["superadmin"] },
 ];
 
 const ROLE_LABEL: Record<Role, string> = {
