@@ -39,7 +39,7 @@ type GroupRow = { store: string; grup: string; ads_level: string | null; cells: 
 type DetailRow = {
   item_name: string; kode_produk: string | null;
   month: string | null; week: string | null;
-  biaya: number; gmv: number; omzet: number; roas: number | null;
+  biaya: number; gmv: number; roas: number | null;  // gmv = Omzet Penjualan
 };
 type PeriodCell = { biaya: number; gmv: number; roas: number | null };
 type ProductPivot = {
@@ -62,7 +62,7 @@ const roasStr = (gmv: number, biaya: number) => biaya > 0 ? (gmv / biaya).toFixe
 function aggregateRows(list: AdsRow[]): Cell {
   return {
     biaya: list.reduce((s, r) => s + (r.biaya || 0), 0),
-    penj:  list.reduce((s, r) => s + (r.penjualan_langsung || 0), 0),
+    penj:  list.reduce((s, r) => s + (r.omzet || 0), 0),  // Omzet Penjualan as GMV
     omzet: list.reduce((s, r) => s + (r.omzet || 0), 0),
     modal: (() => {
       const v = list.map((r) => r.modal_harian).filter((m): m is number => m != null);
@@ -292,7 +292,7 @@ export default function AdsPage() {
   }, [rows, mode]);
 
   /* ── pivot detail modal (week or month) ── */
-  const { detailPivot, detailPeriods } = useMemo(() => {
+  const { detailPivot, groupSummary, detailPeriods } = useMemo(() => {
     const periodKey = (r: DetailRow) => mode === "week" ? (r.week ?? "") : (r.month ?? "");
     const periodSet = new Set<string>();
     for (const r of detailRows) { const k = periodKey(r); if (k) periodSet.add(k); }
@@ -317,8 +317,13 @@ export default function AdsPage() {
     for (const p of map.values())
       for (const cell of Object.values(p.periods))
         cell.roas = cell.biaya > 0 ? cell.gmv / cell.biaya : null;
+
+    const all = [...map.values()];
+    // Shopee exports include a group-level summary row with no real Kode Produk
+    const isGroupRow = (p: ProductPivot) => !p.kode_produk || p.kode_produk === "-";
     return {
-      detailPivot:   [...map.values()].sort((a, b) => b.total.biaya - a.total.biaya),
+      groupSummary: all.filter(isGroupRow),
+      detailPivot:  all.filter((p) => !isGroupRow(p)).sort((a, b) => b.total.biaya - a.total.biaya),
       detailPeriods,
     };
   }, [detailRows, mode]);
@@ -350,6 +355,38 @@ export default function AdsPage() {
           ⚠ {detailError}
         </div>
       )}
+
+      {/* ── Group-level summary row (from Shopee export header) ── */}
+      {!detailLoading && groupSummary.length > 0 && (() => {
+        const gs = groupSummary[0];
+        const totalBiaya = Object.values(gs.periods).reduce((s, c) => s + c.biaya, 0);
+        const totalGmv   = Object.values(gs.periods).reduce((s, c) => s + c.gmv, 0);
+        return (
+          <div style={{ display:"flex", gap:0, marginBottom:14, borderRadius:12, overflow:"hidden", border:"1px solid rgba(201,162,39,.2)" }}>
+            <div style={{ padding:"10px 16px", background:"rgba(201,162,39,.08)", borderRight:"1px solid rgba(201,162,39,.15)", minWidth:160 }}>
+              <div style={{ fontSize:10, color:"rgba(201,162,39,.7)", textTransform:"uppercase", letterSpacing:".06em", marginBottom:3 }}>Grup Iklan Total</div>
+              <div style={{ fontWeight:700, color:"#e8edf8", fontSize:13 }}>{gs.item_name}</div>
+            </div>
+            {detailPeriods.map((p) => {
+              const c = gs.periods[p];
+              return (
+                <div key={p} style={{ padding:"10px 14px", borderRight:"1px solid rgba(255,255,255,.06)", flex:1, minWidth:110 }}>
+                  <div style={{ fontSize:10, color:"rgba(255,255,255,.4)", marginBottom:3 }}>{p}</div>
+                  <div style={{ fontSize:12, color:"#e8edf8", fontWeight:600 }}>{c?.biaya ? idrShort(c.biaya) : "—"}</div>
+                  <div style={{ fontSize:11, color:"rgba(255,255,255,.6)" }}>{c?.gmv ? idrShort(c.gmv) : "—"}</div>
+                  <div style={{ fontSize:11, color:"rgba(201,162,39,.9)", fontWeight:700 }}>{c ? roasStr(c.gmv, c.biaya) : "—"}</div>
+                </div>
+              );
+            })}
+            <div style={{ padding:"10px 14px", background:"rgba(255,255,255,.04)", minWidth:120 }}>
+              <div style={{ fontSize:10, color:"rgba(255,255,255,.4)", marginBottom:3 }}>Total</div>
+              <div style={{ fontSize:13, color:"#e8edf8", fontWeight:800 }}>{idrShort(totalBiaya)}</div>
+              <div style={{ fontSize:12, color:"rgba(255,255,255,.7)", fontWeight:600 }}>{idrShort(totalGmv)}</div>
+              <div style={{ fontSize:12, color:"var(--gold)", fontWeight:800 }}>{roasStr(totalGmv, totalBiaya)}</div>
+            </div>
+          </div>
+        );
+      })()}
 
       {detailLoading ? (
         <div style={{ display:"flex", alignItems:"center", justifyContent:"center", flex:1, color:"rgba(255,255,255,.5)", fontSize:14 }}>
