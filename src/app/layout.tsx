@@ -15,6 +15,11 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Reline Dashboard",
   description: "Reline Panasonic sales analytics dashboard",
+  icons: {
+    icon: "/icon.svg",
+    apple: "/icon.svg",
+    shortcut: "/icon.svg",
+  },
 };
 
 export default function RootLayout({

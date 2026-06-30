@@ -74,8 +74,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             <img src="/logo.svg" alt="logo" style={{ width: 36, height: 36, objectFit: "contain" }} />
           </div>
           <div>
-            <div className="t1">Reline</div>
-            <div className="t2">{clientName}</div>
+            <div className="t1">Reline Project</div>
+            <div className="t2">by {clientName}</div>
           </div>
         </div>
         <ul className="nav-list">
@@ -97,8 +97,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           <div className="mob-logo">
             <div className="badge">R</div>
             <div>
-              <div className="mob-title">Reline</div>
-              <div className="mob-sub">{clientName}</div>
+              <div className="mob-title">Reline Project</div>
+              <div className="mob-sub">by {clientName}</div>
             </div>
           </div>
           <button className="btn-logout" onClick={logout}>Logout</button>
