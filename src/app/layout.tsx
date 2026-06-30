@@ -16,9 +16,9 @@ export const metadata: Metadata = {
   title: "Reline Dashboard",
   description: "Reline Panasonic sales analytics dashboard",
   icons: {
-    icon: "/icon.svg",
-    apple: "/icon.svg",
-    shortcut: "/icon.svg",
+    icon: "/icon.jpg",
+    apple: "/icon.jpg",
+    shortcut: "/icon.jpg",
   },
 };
 
