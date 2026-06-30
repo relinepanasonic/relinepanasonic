@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "ProfTokoOnline Dashboard",
-  description: "Multi-client Shopee sales dashboard",
+  title: "Reline Dashboard",
+  description: "Reline Panasonic sales analytics dashboard",
 };
 
 export default function RootLayout({

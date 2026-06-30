@@ -95,9 +95,9 @@ export default function JoinPage() {
 
         {/* Logo */}
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10, marginBottom: 22 }}>
-          <img src="/logo.svg" alt="ProfTokoOnline" style={{ width: 80, height: 80, objectFit: "contain" }} />
+          <img src="/logo.svg" alt="Reline" style={{ width: 80, height: 80, objectFit: "contain" }} />
           <div style={{ textAlign: "center" }}>
-            <div style={{ fontWeight: 700, fontSize: 17, color: "#e8edf8" }}>ProfTokoOnline</div>
+            <div style={{ fontWeight: 700, fontSize: 17, color: "#e8edf8" }}>Reline</div>
             <div style={{ fontSize: 12, color: "#7b8db0", marginTop: 2 }}>Create your account</div>
           </div>
         </div>

@@ -202,7 +202,7 @@ export default function InvoicePage() {
             <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
               <div>
                 <h3 style={{ margin:0 }}>Product Packages</h3>
-                <div className="hint">Service packages offered by ProfTokoOnline</div>
+                <div className="hint">Service packages offered by Reline Panasonic</div>
               </div>
               <button className="btn-gold" onClick={openAddPkg}>+ New Package</button>
             </div>
