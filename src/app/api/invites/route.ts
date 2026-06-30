@@ -37,7 +37,7 @@ export async function POST(req: NextRequest) {
   const caller = await verifyAdmin(req);
   if (!caller) return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
 
-  const body = await req.json() as { owner_name: string; store_name?: string; role: string; username?: string | null };
+  const body = await req.json() as { owner_name: string; store_name?: string; role: string; username?: string | null; client_id?: string | null };
   if (!body.owner_name?.trim()) return NextResponse.json({ error: "Owner name is required" }, { status: 400 });
 
   const db = admin();
@@ -48,7 +48,7 @@ export async function POST(req: NextRequest) {
       store_name: body.store_name?.trim() || null,
       role:       body.role || "branch_manager",
       username:   body.username?.trim() || null,
-      client_id:  caller.client_id,
+      client_id:  body.client_id || caller.client_id,
       created_by: caller.user.id,
     })
     .select("token")

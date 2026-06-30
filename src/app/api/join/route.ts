@@ -63,7 +63,8 @@ export async function POST(req: NextRequest) {
 
   const uid = authData.user.id;
 
-  // Update profile (trigger creates the row; we patch it)
+  // pic_panasonic is city-scoped; all other roles use scope_store.
+  const isPicPanasonic = inv.role === "pic_panasonic";
   const { error: pe } = await db.from("profiles").upsert({
     id:           uid,
     email:        email,
@@ -72,7 +73,8 @@ export async function POST(req: NextRequest) {
     phone:        phone ?? null,
     role:         inv.role,
     client_id:    inv.client_id,
-    scope_store:  inv.store_name ?? null,
+    scope_city:   isPicPanasonic ? (inv.store_name ?? null) : null,
+    scope_store:  isPicPanasonic ? null : (inv.store_name ?? null),
   });
 
   if (pe) {

@@ -7,9 +7,12 @@ import { createClient } from "@/lib/supabase/client";
 type Invite = { owner_name: string; store_name: string | null; role: string; username?: string | null };
 
 const ROLE_LABEL: Record<string, string> = {
-  branch_manager: "Owner",
+  superadmin:     "Superadmin",
+  pic_panasonic:  "PIC Panasonic",
+  branch_manager: "Dealer Owner",
   client_admin:   "Admin",
   store_user:     "Store",
+  advertiser:     "Advertiser",
 };
 
 export default function JoinPage() {

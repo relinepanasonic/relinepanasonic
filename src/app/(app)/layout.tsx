@@ -5,32 +5,32 @@ import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
-type Role = "superadmin" | "client_admin" | "branch_manager" | "store_user" | "advertiser";
+type Role = "superadmin" | "client_admin" | "branch_manager" | "store_user" | "advertiser" | "pic_panasonic";
 
 const NAV: { href: string; icon: string; label: string; roles?: Role[] }[] = [
-  { href: "/",          icon: "📊", label: "Dashboard",           roles: ["superadmin", "branch_manager", "advertiser"] },
+  { href: "/",          icon: "📊", label: "Dashboard",           roles: ["superadmin", "branch_manager", "advertiser", "pic_panasonic"] },
   { href: "/upload",    icon: "⬆️", label: "Upload Data",         roles: ["superadmin", "client_admin"] },
+  { href: "/ads",       icon: "🎯", label: "Ads Performance",     roles: ["superadmin", "advertiser"] },
   { href: "/product",   icon: "📦", label: "Product Performance", roles: ["superadmin", "branch_manager"] },
-  { href: "/ads",       icon: "🎯", label: "Ads Performance",     roles: ["superadmin", "branch_manager", "advertiser"] },
   { href: "/store",     icon: "🏬", label: "Store Performance",   roles: ["superadmin", "branch_manager"] },
+  { href: "/core",      icon: "🗂️", label: "Core List",          roles: ["superadmin", "client_admin", "advertiser"] },
+  { href: "/calc",      icon: "🧮", label: "Price Calculator",    roles: ["superadmin", "branch_manager", "pic_panasonic"] },
+  { href: "/marketfee", icon: "💰", label: "Market Place Fee",    roles: ["superadmin", "branch_manager", "pic_panasonic"] },
   { href: "/users",     icon: "👥", label: "Users",               roles: ["superadmin"] },
   { href: "/invoice",   icon: "🧾", label: "Invoice",             roles: ["superadmin"] },
-  { href: "/core",      icon: "🗂️", label: "Core List",          roles: ["superadmin", "client_admin"] },
-  { href: "/calc",      icon: "🧮", label: "Price Calculator",    roles: ["superadmin", "branch_manager"] },
-  { href: "/marketfee", icon: "💰", label: "Market Place Fee",    roles: ["superadmin", "branch_manager", "client_admin"] },
-  { href: "/priceall",  icon: "📋", label: "Price All User",      roles: ["superadmin"] },
 ];
 
 const ROLE_LABEL: Record<Role, string> = {
-  superadmin: "Super Admin",
-  client_admin: "Client Admin",
-  branch_manager: "Owner",
-  store_user: "Store",
-  advertiser: "Advertiser",
+  superadmin:     "Super Admin",
+  client_admin:   "Admin",
+  branch_manager: "Dealer Owner",
+  store_user:     "Store",
+  advertiser:     "Advertiser",
+  pic_panasonic:  "PIC Panasonic",
 };
 
-// Mobile bottom-nav: 6 most-used destinations
-const BOTTOM = ["/", "/product", "/ads", "/store", "/upload", "/calc"];
+// Mobile bottom-nav: 5 most-used destinations
+const BOTTOM = ["/", "/ads", "/product", "/store", "/calc"];
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();

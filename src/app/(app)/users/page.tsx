@@ -8,29 +8,34 @@ export const dynamic = "force-dynamic";
 
 type Profile = {
   id: string; email: string | null; display_name: string | null;
-  username: string | null; role: string; scope_store: string | null;
+  username: string | null; role: string; scope_store: string | null; scope_city: string | null;
 };
 type Invite = {
   id: string; token: string; owner_name: string;
   store_name: string | null; role: string;
   created_at: string; expires_at: string; used_at: string | null;
 };
-type StoreLink = { store_name: string | null };
+type Client = { id: string; name: string };
 
 const INVITE_ROLES = [
-  { v: "branch_manager", l: "Owner" },
-  { v: "client_admin",   l: "Admin" },
-  { v: "advertiser",     l: "Advertiser" },
-];
+  { v: "superadmin",    l: "Superadmin",    scope: null },
+  { v: "pic_panasonic", l: "PIC Panasonic", scope: "city" },
+  { v: "branch_manager",l: "Dealer Owner",  scope: "store" },
+  { v: "client_admin",  l: "Admin",         scope: null },
+  { v: "advertiser",    l: "Advertiser",    scope: null },
+] as const;
+
 const ROLE_LABEL: Record<string, string> = {
-  superadmin:     "Super Admin",
-  branch_manager: "Owner",
+  superadmin:     "Superadmin",
+  pic_panasonic:  "PIC Panasonic",
+  branch_manager: "Dealer Owner",
   client_admin:   "Admin",
   store_user:     "Store",
   advertiser:     "Advertiser",
 };
 const roleColor: Record<string, string> = {
   superadmin:     "#22c55e",
+  pic_panasonic:  "#60a5fa",
   branch_manager: "#3b82f6",
   client_admin:   "#f59e0b",
   store_user:     "#a78bfa",
@@ -61,16 +66,30 @@ function Fld({ label, children }: { label: string; children: React.ReactNode }) 
   );
 }
 
+function RolePill({ role }: { role: string }) {
+  const color = roleColor[role] ?? "#888";
+  return (
+    <span style={{
+      padding: "3px 10px", borderRadius: 999, fontSize: 11, fontWeight: 700,
+      background: `${color}22`, color, border: `1px solid ${color}44`,
+    }}>
+      {ROLE_LABEL[role] || role}
+    </span>
+  );
+}
+
 function copyText(t: string) { navigator.clipboard.writeText(t).catch(() => {}); }
 
 export default function UsersPage() {
   const [supabase] = useState(() => createClient());
   const [rows,    setRows]    = useState<Profile[]>([]);
   const [invites, setInvites] = useState<Invite[]>([]);
-  const [stores,  setStores]  = useState<StoreLink[]>([]);
+  const [clients, setClients] = useState<Client[]>([]);
   const [token,   setToken]   = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ owner_name: "", store_name: "", role: "branch_manager", username: "" });
+  const [form, setForm] = useState({
+    owner_name: "", client_id: "", role: "branch_manager", scope: "", username: "",
+  });
   const [busy, setBusy] = useState(false);
   const [msg,  setMsg]  = useState("");
   const [copied, setCopied] = useState(false);
@@ -82,7 +101,7 @@ export default function UsersPage() {
 
   const reload = useCallback(async () => {
     const [{ data: p }, h] = await Promise.all([
-      supabase.from("profiles").select("id,email,display_name,username,role,scope_store").order("display_name"),
+      supabase.from("profiles").select("id,email,display_name,username,role,scope_store,scope_city").order("display_name"),
       getAuthHeader(),
     ]);
     setRows((p as Profile[]) || []);
@@ -92,20 +111,46 @@ export default function UsersPage() {
 
   useEffect(() => {
     (async () => {
-      const { data: sl } = await supabase.from("store_links").select("store_name").order("store_name");
-      setStores((sl as StoreLink[]) || []);
+      const { data: cl } = await supabase.from("clients").select("id,name").order("name");
+      const clientList = (cl as Client[]) || [];
+      setClients(clientList);
       reload();
+      // auto-select first client in form
+      if (clientList.length > 0) {
+        setForm((f) => ({ ...f, client_id: clientList[0].id }));
+      }
     })();
   }, [supabase, reload]);
 
+  const selectedRoleDef = INVITE_ROLES.find((r) => r.v === form.role);
+  const scopeType = selectedRoleDef?.scope ?? null; // "city" | "store" | null
+
+  function openForm() {
+    setShowForm(true); setToken(null); setMsg("");
+    setForm({
+      owner_name: "", client_id: clients[0]?.id ?? "", role: "branch_manager",
+      scope: "", username: "",
+    });
+  }
+
   async function createInvite() {
-    if (!form.owner_name.trim()) { setMsg("Owner name is required"); return; }
+    if (!form.owner_name.trim()) { setMsg("Name is required"); return; }
+    if (scopeType && !form.scope.trim()) {
+      setMsg(`${scopeType === "city" ? "City" : "Store"} is required for this role`);
+      return;
+    }
     setBusy(true); setMsg(""); setToken(null);
     try {
       const h = await getAuthHeader();
       const res = await fetch("/api/invites", {
         method: "POST", headers: { ...h, "Content-Type": "application/json" },
-        body: JSON.stringify({ ...form, username: form.username.trim() || null }),
+        body: JSON.stringify({
+          owner_name: form.owner_name.trim(),
+          role:       form.role,
+          client_id:  form.client_id || null,
+          store_name: form.scope.trim() || null,  // re-used for city or store
+          username:   form.username.trim() || null,
+        }),
       });
       const j = await res.json();
       if (!res.ok) { setMsg(j.error || "Failed"); setBusy(false); return; }
@@ -134,23 +179,27 @@ export default function UsersPage() {
   const inviteUrl = token && typeof window !== "undefined" ? `${window.location.origin}/join/${token}` : "";
   const pending = invites.filter((i) => !i.used_at && new Date(i.expires_at) > new Date());
 
+  const scopeOf = (r: Profile) => {
+    if (r.scope_city)  return `📍 ${r.scope_city}`;
+    if (r.scope_store) return `🏬 ${r.scope_store}`;
+    return "—";
+  };
+
   return (
     <div className="panel">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10, marginBottom: 18 }}>
         <div>
           <h3 style={{ margin: 0 }}>User Management</h3>
-          <div className="hint">Invite owners and admins · they set their own credentials</div>
+          <div className="hint">Invite team members · they set their own credentials</div>
         </div>
-        <button className="btn-gold" onClick={() => { setShowForm(true); setToken(null); setMsg(""); setForm({ owner_name: "", store_name: "", role: "branch_manager", username: "" }); }}>
-          + Invite User
-        </button>
+        <button className="btn-gold" onClick={openForm}>+ Invite User</button>
       </div>
 
       {/* ── Active Users ── */}
       <div className="tbl-wrap">
         <table className="tbl">
           <thead>
-            <tr><th>Name</th><th>Username</th><th>Email</th><th>Role</th><th>Store</th><th></th></tr>
+            <tr><th>Name</th><th>Username</th><th>Email</th><th>Role</th><th>Scope</th><th></th></tr>
           </thead>
           <tbody>
             {rows.map((r) => (
@@ -158,14 +207,8 @@ export default function UsersPage() {
                 <td>{r.display_name || "—"}</td>
                 <td style={{ color: "#c9a227", fontFamily: "monospace", fontSize: 12 }}>{r.username || "—"}</td>
                 <td style={{ fontSize: 12, color: "var(--muted)" }}>{r.email || "—"}</td>
-                <td>
-                  <span style={{ padding: "3px 10px", borderRadius: 999, fontSize: 11, fontWeight: 700,
-                    background: `${roleColor[r.role] ?? "#888"}22`, color: roleColor[r.role] ?? "#888",
-                    border: `1px solid ${roleColor[r.role] ?? "#888"}44` }}>
-                    {ROLE_LABEL[r.role] || r.role}
-                  </span>
-                </td>
-                <td style={{ fontSize: 12 }}>{r.scope_store || "—"}</td>
+                <td><RolePill role={r.role} /></td>
+                <td style={{ fontSize: 12, color: "var(--muted)" }}>{scopeOf(r)}</td>
                 <td>
                   <button onClick={() => deleteUser(r)}
                     style={{ padding: "4px 10px", borderRadius: 7, border: "1px solid rgba(239,68,68,0.35)", background: "rgba(239,68,68,0.1)", color: "#f87171", fontSize: 12, cursor: "pointer" }}>
@@ -194,7 +237,9 @@ export default function UsersPage() {
                 <div key={inv.id} style={{ background: "rgba(201,162,39,0.05)", border: "1px solid rgba(201,162,39,0.15)", borderRadius: 12, padding: "12px 16px", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
                   <div style={{ flex: 1, minWidth: 140 }}>
                     <div style={{ fontWeight: 600, fontSize: 14, color: "#e8edf8" }}>{inv.owner_name}</div>
-                    <div style={{ fontSize: 12, color: "#7b8db0" }}>{ROLE_LABEL[inv.role] || inv.role}{inv.store_name ? ` · ${inv.store_name}` : ""}</div>
+                    <div style={{ fontSize: 12, color: "#7b8db0" }}>
+                      {ROLE_LABEL[inv.role] || inv.role}{inv.store_name ? ` · ${inv.store_name}` : ""}
+                    </div>
                   </div>
                   <div style={{ fontSize: 11, color: "#7b8db0" }}>Expires {new Date(inv.expires_at).toLocaleDateString()}</div>
                   <button onClick={() => copyText(url)}
@@ -212,12 +257,30 @@ export default function UsersPage() {
         </div>
       )}
 
+      {/* ── Role legend ── */}
+      <div style={{ marginTop: 28, padding: "14px 16px", background: "rgba(201,162,39,0.04)", border: "1px solid rgba(201,162,39,0.12)", borderRadius: 12 }}>
+        <div style={{ fontSize: 11, fontWeight: 600, color: "#7b8db0", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 10 }}>Role Permissions</div>
+        <div style={{ display: "grid", gap: 6 }}>
+          {[
+            { role: "superadmin",    desc: "Full access — all pages, all data, all clients" },
+            { role: "pic_panasonic", desc: "Dashboard (city) · Price Calculator · Market Place Fee" },
+            { role: "branch_manager",desc: "Dashboard (store) · Product · Store · Price Calculator · Market Fee" },
+            { role: "client_admin",  desc: "Upload Data · Core List" },
+            { role: "advertiser",    desc: "Dashboard (all) · Ads Performance · Core List" },
+          ].map(({ role, desc }) => (
+            <div key={role} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <RolePill role={role} />
+              <span style={{ fontSize: 12, color: "#7b8db0" }}>{desc}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
       {/* ── Modal ── */}
       {showForm && typeof document !== "undefined" && createPortal(
         <div onClick={() => { if (!token) setShowForm(false); }} style={overlay}>
           <div onClick={(e) => e.stopPropagation()} style={modal}>
             {token ? (
-              /* ── Link generated ── */
               <div style={{ display: "grid", gap: 16 }}>
                 <h3 style={{ margin: 0, color: "#e8edf8" }}>Invite Created ✅</h3>
                 <p style={{ margin: 0, fontSize: 13, color: "#7b8db0" }}>
@@ -239,34 +302,50 @@ export default function UsersPage() {
                 </div>
               </div>
             ) : (
-              /* ── Invite form ── */
               <div style={{ display: "grid", gap: 16 }}>
                 <h3 style={{ margin: 0, color: "#e8edf8" }}>Invite New User</h3>
                 <p style={{ margin: 0, fontSize: 13, color: "#7b8db0" }}>
-                  A link will be sent for the user to create their own account.
+                  Generate a link for the user to create their own account.
                 </p>
 
-                <Fld label="Owner Name">
+                <Fld label="Full Name">
                   <input style={inp} placeholder="e.g. Yunita" value={form.owner_name}
                     onChange={(e) => setForm({ ...form, owner_name: e.target.value })} />
                 </Fld>
 
-                <Fld label="Store Name">
-                  <select style={inp} value={form.store_name}
-                    onChange={(e) => setForm({ ...form, store_name: e.target.value })}>
-                    <option value="">— select store (optional) —</option>
-                    {stores.map((s, i) => (
-                      <option key={i} value={s.store_name || ""}>{s.store_name}</option>
-                    ))}
-                  </select>
-                </Fld>
-
                 <Fld label="Role">
                   <select style={inp} value={form.role}
-                    onChange={(e) => setForm({ ...form, role: e.target.value })}>
+                    onChange={(e) => setForm({ ...form, role: e.target.value, scope: "" })}>
                     {INVITE_ROLES.map((r) => <option key={r.v} value={r.v}>{r.l}</option>)}
                   </select>
                 </Fld>
+
+                {/* Client assignment — hidden for superadmin */}
+                {form.role !== "superadmin" && clients.length > 0 && (
+                  <Fld label="Client">
+                    <select style={inp} value={form.client_id}
+                      onChange={(e) => setForm({ ...form, client_id: e.target.value })}>
+                      <option value="">— select client —</option>
+                      {clients.map((c) => (
+                        <option key={c.id} value={c.id}>{c.name}</option>
+                      ))}
+                    </select>
+                  </Fld>
+                )}
+
+                {/* Scope field — only shown when role needs it */}
+                {scopeType === "city" && (
+                  <Fld label="City (scope)">
+                    <input style={inp} placeholder="e.g. DKI Jakarta" value={form.scope}
+                      onChange={(e) => setForm({ ...form, scope: e.target.value })} />
+                  </Fld>
+                )}
+                {scopeType === "store" && (
+                  <Fld label="Store / Dealer (scope)">
+                    <input style={inp} placeholder="e.g. Hero Panasonic Jakarta" value={form.scope}
+                      onChange={(e) => setForm({ ...form, scope: e.target.value })} />
+                  </Fld>
+                )}
 
                 <Fld label="Username (optional — user can set their own)">
                   <input style={inp} placeholder="e.g. yunita_owner"
