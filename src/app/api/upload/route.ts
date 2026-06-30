@@ -42,7 +42,7 @@ export async function POST(req: NextRequest) {
     .single();
 
   if (!profile) return NextResponse.json({ error: "NO_PROFILE" }, { status: 403 });
-  if (!["superadmin", "client_admin"].includes(profile.role)) {
+  if (!["superadmin", "client_admin", "advertiser"].includes(profile.role)) {
     return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
   }
 
@@ -60,6 +60,9 @@ export async function POST(req: NextRequest) {
   if (!SOURCES.includes(source))
     return NextResponse.json({ error: "BAD_SOURCE" }, { status: 400 });
   if (!clientId) return NextResponse.json({ error: "NO_CLIENT" }, { status: 400 });
+  // Advertisers may only upload Ads exports.
+  if (profile.role === "advertiser" && source !== "ads")
+    return NextResponse.json({ error: "ADVERTISER_ADS_ONLY" }, { status: 403 });
 
   // 3. Parse the file (xlsx or csv) with SheetJS.
   const buf = Buffer.from(await file.arrayBuffer());

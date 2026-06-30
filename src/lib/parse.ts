@@ -64,6 +64,7 @@ export interface ManualFields {
   store_name?: string;  // was "Dealer"
   brand?: string;       // auto-filled from store_links when store is picked
   week?: string;
+  grup_iklan?: string;       // Ads: the ad group this whole file belongs to (one group per file)
   tanggal_mulai?: string;    // Monday — start of the data week
   tanggal_berakhir?: string; // Sunday — auto = tanggal_mulai + 6 days
   tanggal_input?: string;    // ISO timestamp when the upload was entered (log)
@@ -112,6 +113,7 @@ export function mapRow(
   let visitors: number | null = null;
   let ad_cost: number | null = null;
   let in_cart: number | null = null;
+  let penjualan_langsung: number | null = null;
 
   if (source === "spos") {
     // GAS uses "Pesanan Siap Dikirim" (ready-to-ship), NOT "Pesanan Dibuat"
@@ -126,6 +128,9 @@ export function mapRow(
     units = toNum(get("Produk Terjual"));
     visitors = toNum(get("Dilihat"));
     ad_cost = toNum(get("Biaya"));
+    // "Penjualan Langsung (GMV Langsung)" — the direct sales used for group ROAS.
+    penjualan_langsung = toNum(get("Penjualan Langsung (GMV Langsung)"))
+      ?? toNum(get("Penjualan Langsung"));
   } else {
     // perf — GMV = "Penjualan (Pesanan Siap Dikirim) (IDR)"
     sales_idr = toNum(get("Penjualan (Pesanan Siap Dikirim) (IDR)"));
@@ -145,6 +150,7 @@ export function mapRow(
     brand,
     product_type,
     item_name: name != null ? String(name) : null,
+    grup_iklan: source === "ads" ? (manual.grup_iklan ?? null) : null,
     tanggal: manual.tanggal || manual.tanggal_mulai || null,
     sales_idr,
     orders,
@@ -152,6 +158,7 @@ export function mapRow(
     visitors,
     ad_cost,
     in_cart,
+    penjualan_langsung,
     is_parent: isParent,
     raw,
   };
