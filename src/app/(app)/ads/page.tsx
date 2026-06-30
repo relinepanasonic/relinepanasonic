@@ -325,11 +325,23 @@ export default function AdsPage() {
   const grandTotal = useMemo(() => aggregateRows(rows), [rows]);
 
   /* ── Detail Modal ─────────────────────────────────────────────────── */
+  const detailLevel = groups.find((g) => g.store === detailStore && g.grup === detailGrup)?.ads_level ?? null;
+
   const detailModal = showDetail && mounted && createPortal(
     <div style={{ position:"fixed", inset:0, zIndex:9999, background:"rgba(2,6,16,.92)", backdropFilter:"blur(10px)", display:"flex", flexDirection:"column", padding:20 }}>
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:14, flexWrap:"wrap", gap:10 }}>
         <div>
-          <div style={{ fontSize:20, fontWeight:800, color:"#fff" }}>{detailStore}</div>
+          <div style={{ fontSize:20, fontWeight:800, color:"#fff", display:"flex", alignItems:"center", gap:10, flexWrap:"wrap" }}>
+            {detailStore}
+            {detailLevel && (
+              <span style={{
+                padding:"3px 12px", borderRadius:20, fontSize:13, fontWeight:700,
+                background:(LEVEL_COLOR[detailLevel as AdsLevel] ?? "#94a3b8") + "22",
+                border:`1px solid ${(LEVEL_COLOR[detailLevel as AdsLevel] ?? "#94a3b8")}55`,
+                color: LEVEL_COLOR[detailLevel as AdsLevel] ?? "#94a3b8",
+              }}>{detailLevel}</span>
+            )}
+          </div>
           <div style={{ fontSize:13, color:"rgba(255,255,255,.6)", marginTop:3 }}>
             Grup Iklan: <strong style={{ color:"#fff" }}>{detailGrup}</strong>
             {fltMonth && mode === "week" && <span style={{ marginLeft:12 }}>{fltMonth} {fltYear}</span>}
