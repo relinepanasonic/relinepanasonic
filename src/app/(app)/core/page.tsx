@@ -34,10 +34,10 @@ export default function CoreListPage() {
     })();
   }, [supabase, reload]);
 
-  const cities = items.filter((i) => i.kind === "city");
-  const dealers = items.filter((i) => i.kind === "dealer");
-  const brands = items.filter((i) => i.kind === "brand");
-  const types = items.filter((i) => i.kind === "product_type");
+  const cities  = items.filter((i) => i.kind === "city");
+  const dealers = items.filter((i) => i.kind === "store");   // 'store' since migration 0004
+  const brands  = items.filter((i) => i.kind === "brand");
+  const types   = items.filter((i) => i.kind === "platform"); // 'platform' since migration 0004
 
   // city -> its PIC, for the dealer auto-PIC
   const picOfCity = (city: string) => cities.find((c) => c.value === city)?.pic || null;
@@ -81,7 +81,7 @@ export default function CoreListPage() {
           <DealerAdd
             cities={cities.map((c) => c.value)}
             picOfCity={picOfCity}
-            onAdd={(name, city) => insertRow({ kind: "dealer", value: name, city: city || null, pic: picOfCity(city) })}
+            onAdd={(name, city) => insertRow({ kind: "store", value: name, city: city || null, pic: picOfCity(city) })}
           />
         </Card>
 
@@ -94,7 +94,7 @@ export default function CoreListPage() {
         {/* Product Types */}
         <Card icon="📦" title="Product Types" count={types.length}>
           <PlainList items={types} onDel={delItem} />
-          <SimpleAdd placeholder="Add type" onAdd={(v) => insertRow({ kind: "product_type", value: v })} />
+          <SimpleAdd placeholder="Add type" onAdd={(v) => insertRow({ kind: "platform", value: v })} />
         </Card>
       </div>
     </>
