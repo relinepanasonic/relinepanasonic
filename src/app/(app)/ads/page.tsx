@@ -54,6 +54,7 @@ export default function AdsPage() {
   const [rows, setRows]       = useState<AdsRow[]>([]);
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
   const [loading, setLoading] = useState(false);
+  const [rpcError, setRpcError] = useState("");
 
   // analysis controls
   const [mode, setMode]         = useState<"week" | "month">("week");
@@ -71,29 +72,33 @@ export default function AdsPage() {
   const [log, setLog]   = useState<string[]>([]);
 
   /* ── load analysis data ── */
-  // Yield a microtask before the first setState so this stays clean under
-  // React 19's set-state-in-effect rule when called from an effect.
   const loadData = useCallback(async () => {
     await Promise.resolve();
     setLoading(true);
-    const { data, error } = await supabase.rpc("ads_groups", {
-      p_year:  fltYear ? Number(fltYear) : null,
-      p_month: mode === "week" && fltMonth ? fltMonth : null,
-      p_week:  null,
-      p_city:  null,
-      p_store: fltStore || null,
-      p_grup:  fltGrup || null,
-    });
-    if (!error && data) {
-      const f = (data.filters as Filters) || EMPTY_FILTERS;
-      setRows((data.rows as AdsRow[]) || []);
-      setFilters(f);
-      // default Year / Month to the latest available
-      if (!fltYear && f.years.length) setFltYear(String(f.years[0]));
-      if (mode === "week" && !fltMonth && f.months.length) {
-        const present = MONTHS.filter((m) => f.months.includes(m));
-        if (present.length) setFltMonth(present[present.length - 1]);
+    setRpcError("");
+    try {
+      // Only pass non-null params so PostgREST uses SQL defaults for the rest.
+      const params: Record<string, unknown> = {};
+      if (fltYear)                          params.p_year  = Number(fltYear);
+      if (mode === "week" && fltMonth)      params.p_month = fltMonth;
+      if (fltStore)                         params.p_store = fltStore;
+      if (fltGrup)                          params.p_grup  = fltGrup;
+
+      const { data, error } = await supabase.rpc("ads_groups", params);
+      if (error) {
+        setRpcError(error.message);
+      } else if (data) {
+        const f = (data.filters as Filters) || EMPTY_FILTERS;
+        setRows((data.rows as AdsRow[]) || []);
+        setFilters(f);
+        if (!fltYear && f.years.length) setFltYear(String(f.years[0]));
+        if (mode === "week" && !fltMonth && f.months.length) {
+          const present = MONTHS.filter((m) => f.months.includes(m));
+          if (present.length) setFltMonth(present[present.length - 1]);
+        }
       }
+    } catch (e) {
+      setRpcError(String(e));
     }
     setLoading(false);
   }, [supabase, fltYear, fltMonth, fltStore, fltGrup, mode]);
@@ -123,8 +128,9 @@ export default function AdsPage() {
   async function pickCity(city: string) {
     setUp((u) => ({ ...u, city, dealer: "" }));
     if (!city || !clientId) { setDealers([]); return; }
+    // master_data uses kind='store' (renamed from 'dealer' in migration 0004)
     const { data } = await supabase.from("master_data")
-      .select("value").eq("kind", "dealer").eq("client_id", clientId).eq("city", city).order("value");
+      .select("value").eq("kind", "store").eq("client_id", clientId).eq("city", city).order("value");
     setDealers(((data as { value: string }[]) || []).map((d) => d.value));
   }
 
@@ -328,7 +334,13 @@ export default function AdsPage() {
           </span>
         </div>
 
-        {mode === "week" && !fltMonth && (
+        {rpcError && (
+          <div style={{ padding: 12, background: "rgba(239,68,68,.1)", border: "1px solid rgba(239,68,68,.25)", borderRadius: 10, fontSize: 12, color: "#fca5a5", marginBottom: 14, fontFamily: "monospace" }}>
+            ⚠ RPC error: {rpcError}
+          </div>
+        )}
+
+        {mode === "week" && !fltMonth && !rpcError && (
           <div style={{ padding: 14, background: "rgba(201,162,39,.06)", border: "1px solid rgba(201,162,39,.2)", borderRadius: 10, fontSize: 13, color: "var(--gold)", marginBottom: 14 }}>
             Pick a <strong>Month</strong> to compare its weeks side by side.
           </div>
@@ -382,7 +394,7 @@ export default function AdsPage() {
               ))}
               {groups.length === 0 && (
                 <tr><td colSpan={periods.length + 3} style={{ textAlign: "center", color: "var(--muted)", padding: 22 }}>
-                  {loading ? "Loading…" : "No ad-group data for these filters. Upload an Iklan file above."}
+                  {loading ? "Loading…" : rpcError ? "Error — see message above." : "No data yet. Use the Upload Iklan form above — make sure to fill in Grup Iklan and select a Dealer."}
                 </td></tr>
               )}
             </tbody>
