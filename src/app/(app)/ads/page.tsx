@@ -174,7 +174,7 @@ export default function AdsPage() {
       const res = await fetch("/api/upload", { method: "POST", body: fd });
       const j = await res.json();
       setLog([res.ok ? `✓ ${up.grup.trim()} · ${up.dealer} · ${up.month} ${up.week}: ${j.rows} rows` : `✗ ${j.error}`]);
-      if (res.ok) { setFile(null); loadData(); }
+      if (res.ok) { setFile(null); setFltMonth(""); setFltYear(""); }
     } catch (e) {
       setLog([`✗ ${String(e)}`]);
     }
