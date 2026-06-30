@@ -1,15 +1,16 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo } from "react";
+import { createPortal } from "react-dom";
 import { createClient } from "@/lib/supabase/client";
 
 export const dynamic = "force-dynamic";
 
 /* ── Constants ──────────────────────────────────────────────────────────── */
-const MONTHS = ["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"];
-const WEEKS  = ["Week 1","Week 2","Week 3","Week 4","Week 5"];
+const MONTHS   = ["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"];
+const WEEKS    = ["Week 1","Week 2","Week 3","Week 4","Week 5"];
 const THIS_YEAR = new Date().getFullYear();
-const YEARS = Array.from({ length: 6 }, (_, i) => THIS_YEAR - 2 + i);
+const YEARS    = Array.from({ length: 6 }, (_, i) => THIS_YEAR - 2 + i);
 
 /* ── Types ──────────────────────────────────────────────────────────────── */
 type AdsRow = {
@@ -21,8 +22,18 @@ type AdsRow = {
 type Filters = { years: number[]; months: string[]; weeks: string[]; cities: string[]; stores: string[]; grups: string[] };
 const EMPTY_FILTERS: Filters = { years: [], months: [], weeks: [], cities: [], stores: [], grups: [] };
 
-type Cell = { biaya: number; penj: number; omzet: number; modal: number | null; weeks: string[] };
+type Cell = { biaya: number; penj: number; omzet: number; modal: number | null };
 type GroupRow = { store: string; grup: string; cells: Record<string, Cell>; total: Cell };
+
+type DetailRow = {
+  item_name: string; kode_produk: string | null; week: string | null;
+  biaya: number; penjualan_langsung: number; omzet: number; roas: number | null;
+};
+type ProductPivot = {
+  item_name: string; kode_produk: string | null;
+  weeks: Record<string, { biaya: number; penj: number; roas: number | null }>;
+  total: { biaya: number; penj: number };
+};
 
 /* ── Helpers ────────────────────────────────────────────────────────────── */
 const idr = (n: number) => "Rp " + new Intl.NumberFormat("id-ID").format(Math.round(n || 0));
@@ -35,54 +46,67 @@ const idrShort = (n: number) => {
 };
 const roasStr = (penj: number, biaya: number) => biaya > 0 ? (penj / biaya).toFixed(2) + "×" : "—";
 
-function aggregate(list: AdsRow[]): Cell {
-  const biaya = list.reduce((s, r) => s + (r.biaya || 0), 0);
-  const penj  = list.reduce((s, r) => s + (r.penjualan_langsung || 0), 0);
-  const omzet = list.reduce((s, r) => s + (r.omzet || 0), 0);
-  const modalVals = list.map((r) => r.modal_harian).filter((m): m is number => m != null);
-  const modal = modalVals.length ? modalVals.reduce((s, m) => s + m, 0) : null;
-  return { biaya, penj, omzet, modal, weeks: list.map((r) => r.week || "").filter(Boolean) };
+function aggregateRows(list: AdsRow[]): Cell {
+  return {
+    biaya: list.reduce((s, r) => s + (r.biaya || 0), 0),
+    penj:  list.reduce((s, r) => s + (r.penjualan_langsung || 0), 0),
+    omzet: list.reduce((s, r) => s + (r.omzet || 0), 0),
+    modal: (() => {
+      const vals = list.map((r) => r.modal_harian).filter((m): m is number => m != null);
+      return vals.length ? vals.reduce((s, m) => s + m, 0) : null;
+    })(),
+  };
 }
 
 /* ════════════════════════════════════════════════════════════════════════ */
 export default function AdsPage() {
-  const [supabase] = useState(() => createClient());
+  const [supabase]  = useState(() => createClient());
   const [clientId, setClientId] = useState("");
-  const [userId, setUserId]     = useState("");
+  const [userId,   setUserId]   = useState("");
+  const [mounted,  setMounted]  = useState(false);
 
-  // analysis data
-  const [rows, setRows]       = useState<AdsRow[]>([]);
-  const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
-  const [loading, setLoading] = useState(false);
+  // analysis
+  const [rows,     setRows]     = useState<AdsRow[]>([]);
+  const [filters,  setFilters]  = useState<Filters>(EMPTY_FILTERS);
+  const [loading,  setLoading]  = useState(false);
   const [rpcError, setRpcError] = useState("");
 
-  // analysis controls
-  const [mode, setMode]         = useState<"week" | "month">("week");
-  const [fltYear, setFltYear]   = useState("");
+  // analysis filters
+  const [mode,     setMode]     = useState<"week" | "month">("week");
+  const [fltYear,  setFltYear]  = useState("");
   const [fltMonth, setFltMonth] = useState("");
   const [fltStore, setFltStore] = useState("");
-  const [fltGrup, setFltGrup]   = useState("");
+  const [fltGrup,  setFltGrup]  = useState("");
 
   // upload form
-  const [cities, setCities]   = useState<{ value: string; pic: string | null }[]>([]);
-  const [dealers, setDealers] = useState<string[]>([]);
+  const [cities,  setCities]   = useState<{ value: string; pic: string | null }[]>([]);
+  const [dealers, setDealers]  = useState<string[]>([]);
   const [up, setUp] = useState({ city: "", dealer: "", year: THIS_YEAR, month: "", week: "", grup: "" });
-  const [file, setFile] = useState<File | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [log, setLog]   = useState<string[]>([]);
+  const [file, setFile]  = useState<File | null>(null);
+  const [busy, setBusy]  = useState(false);
+  const [log,  setLog]   = useState<string[]>([]);
 
-  /* ── load analysis data ── */
+  // detail modal
+  const [showDetail,    setShowDetail]    = useState(false);
+  const [detailStore,   setDetailStore]   = useState("");
+  const [detailGrup,    setDetailGrup]    = useState("");
+  const [detailRows,    setDetailRows]    = useState<DetailRow[]>([]);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError,   setDetailError]   = useState("");
+
+  useEffect(() => { setMounted(true); }, []);
+
+  /* ── load summary data ── */
   const loadData = useCallback(async () => {
     await Promise.resolve();
     setLoading(true);
     setRpcError("");
     try {
-      // Only pass non-null params so PostgREST uses SQL defaults for the rest.
       const params: Record<string, unknown> = {};
-      if (fltYear)                          params.p_year  = Number(fltYear);
-      if (mode === "week" && fltMonth)      params.p_month = fltMonth;
-      if (fltStore)                         params.p_store = fltStore;
-      if (fltGrup)                          params.p_grup  = fltGrup;
+      if (fltYear)                     params.p_year  = Number(fltYear);
+      if (mode === "week" && fltMonth) params.p_month = fltMonth;
+      if (fltStore)                    params.p_store = fltStore;
+      if (fltGrup)                     params.p_grup  = fltGrup;
 
       const { data, error } = await supabase.rpc("ads_groups", params);
       if (error) {
@@ -108,19 +132,15 @@ export default function AdsPage() {
     (async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (user) setUserId(user.id);
-
       const { data: cs } = await supabase.from("clients").select("id").order("created_at").limit(1);
       const cid = (cs as { id: string }[])?.[0]?.id || "";
       setClientId(cid);
-
       const { data: cityRows } = await supabase.from("master_data")
         .select("value,pic").eq("kind", "city").eq("client_id", cid).order("value");
       setCities((cityRows as { value: string; pic: string | null }[]) || []);
     })();
   }, [supabase]);
 
-  // Data fetch on mount + whenever filters/mode change. setState happens only
-  // after an await inside loadData; the rule's static check can't see that.
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { void loadData(); }, [loadData]);
 
@@ -128,18 +148,17 @@ export default function AdsPage() {
   async function pickCity(city: string) {
     setUp((u) => ({ ...u, city, dealer: "" }));
     if (!city || !clientId) { setDealers([]); return; }
-    // master_data uses kind='store' (renamed from 'dealer' in migration 0004)
     const { data } = await supabase.from("master_data")
       .select("value").eq("kind", "store").eq("client_id", clientId).eq("city", city).order("value");
     setDealers(((data as { value: string }[]) || []).map((d) => d.value));
   }
 
   async function submitUpload() {
-    if (!file)        { setLog(["Pick an Ads file first."]); return; }
-    if (!up.dealer)   { setLog(["Select a Dealer."]); return; }
-    if (!up.grup.trim()) { setLog(["Enter the Grup Iklan name (one ad group per file)."]); return; }
-    if (!up.month)    { setLog(["Select a Bulan."]); return; }
-    if (!up.week)     { setLog(["Select a Week."]); return; }
+    if (!file)            { setLog(["Pick an Ads file first."]); return; }
+    if (!up.dealer)       { setLog(["Select a Dealer."]); return; }
+    if (!up.grup.trim())  { setLog(["Enter the Grup Iklan name (one ad group per file)."]); return; }
+    if (!up.month)        { setLog(["Select a Bulan."]); return; }
+    if (!up.week)         { setLog(["Select a Week."]); return; }
     setBusy(true); setLog([]);
     const pic = cities.find((c) => c.value === up.city)?.pic || "";
     const manual = {
@@ -162,39 +181,31 @@ export default function AdsPage() {
     setBusy(false);
   }
 
-  /* ── pivot ── */
-  const { groups, periods } = useMemo(() => {
-    // period columns
-    const periods = mode === "week"
-      ? WEEKS.filter((w) => rows.some((r) => r.week === w))
-      : MONTHS.filter((m) => rows.some((r) => r.month === m));
-
-    // group by store + grup
-    const map = new Map<string, AdsRow[]>();
-    for (const r of rows) {
-      const k = `${r.store_name}|||${r.grup_iklan}`;
-      if (!map.has(k)) map.set(k, []);
-      map.get(k)!.push(r);
+  /* ── open detail modal ── */
+  async function openDetail(store: string, grup: string) {
+    setDetailStore(store);
+    setDetailGrup(grup);
+    setDetailRows([]);
+    setDetailError("");
+    setDetailLoading(true);
+    setShowDetail(true);
+    try {
+      const params: Record<string, unknown> = { p_store: store, p_grup: grup };
+      if (fltYear)                     params.p_year  = Number(fltYear);
+      if (mode === "week" && fltMonth) params.p_month = fltMonth;
+      const { data, error } = await supabase.rpc("ads_detail", params);
+      if (error) setDetailError(error.message);
+      else       setDetailRows((data as DetailRow[]) || []);
+    } catch (e) {
+      setDetailError(String(e));
     }
+    setDetailLoading(false);
+  }
 
-    const groups: GroupRow[] = [...map.entries()].map(([k, list]) => {
-      const [store, grup] = k.split("|||");
-      const cells: Record<string, Cell> = {};
-      for (const p of periods) {
-        const sub = list.filter((r) => (mode === "week" ? r.week : r.month) === p);
-        cells[p] = aggregate(sub);
-      }
-      return { store, grup, cells, total: aggregate(list) };
-    }).sort((a, b) => b.total.biaya - a.total.biaya);
-
-    return { groups, periods };
-  }, [rows, mode]);
-
-  /* ── edit Modal Harian (week mode only) ── */
+  /* ── save Modal Harian ── */
   async function saveModal(store: string, grup: string, week: string, raw: string) {
     const val = raw.trim() === "" ? null : Number(raw.replace(/[^\d.-]/g, ""));
     if (raw.trim() !== "" && !Number.isFinite(val as number)) return;
-    // optimistic
     setRows((prev) => prev.map((r) =>
       r.store_name === store && r.grup_iklan === grup && r.month === fltMonth && r.week === week && r.year === Number(fltYear)
         ? { ...r, modal_harian: val } : r));
@@ -205,7 +216,193 @@ export default function AdsPage() {
     }, { onConflict: "client_id,store_name,grup_iklan,year,month,week" });
   }
 
-  const grandTotal = useMemo(() => aggregate(rows), [rows]);
+  /* ── pivot summary ── */
+  const { groups, periods } = useMemo(() => {
+    const periods = mode === "week"
+      ? WEEKS.filter((w) => rows.some((r) => r.week === w))
+      : MONTHS.filter((m) => rows.some((r) => r.month === m));
+    const map = new Map<string, AdsRow[]>();
+    for (const r of rows) {
+      const k = `${r.store_name}|||${r.grup_iklan}`;
+      if (!map.has(k)) map.set(k, []);
+      map.get(k)!.push(r);
+    }
+    const groups: GroupRow[] = [...map.entries()].map(([k, list]) => {
+      const [store, grup] = k.split("|||");
+      const cells: Record<string, Cell> = {};
+      for (const p of periods) {
+        const sub = list.filter((r) => (mode === "week" ? r.week : r.month) === p);
+        cells[p] = aggregateRows(sub);
+      }
+      return { store, grup, cells, total: aggregateRows(list) };
+    }).sort((a, b) => b.total.biaya - a.total.biaya);
+    return { groups, periods };
+  }, [rows, mode]);
+
+  /* ── pivot detail rows for modal ── */
+  const { detailPivot, detailWeeks } = useMemo(() => {
+    const weekSet = new Set<string>();
+    for (const r of detailRows) if (r.week) weekSet.add(r.week);
+    const detailWeeks = WEEKS.filter((w) => weekSet.has(w));
+
+    const map = new Map<string, ProductPivot>();
+    for (const r of detailRows) {
+      const key = `${r.item_name}|||${r.kode_produk ?? ""}`;
+      if (!map.has(key)) map.set(key, { item_name: r.item_name, kode_produk: r.kode_produk, weeks: {}, total: { biaya: 0, penj: 0 } });
+      const p = map.get(key)!;
+      if (r.week) {
+        p.weeks[r.week] = { biaya: r.biaya, penj: r.penjualan_langsung, roas: r.roas };
+      }
+      p.total.biaya += r.biaya;
+      p.total.penj  += r.penjualan_langsung;
+    }
+    const detailPivot = [...map.values()].sort((a, b) => b.total.biaya - a.total.biaya);
+    return { detailPivot, detailWeeks };
+  }, [detailRows]);
+
+  const grandTotal = useMemo(() => aggregateRows(rows), [rows]);
+
+  /* ════════════════════════════════════════════════════════════════════ */
+
+  /* ── Detail Modal ── */
+  const detailModal = showDetail && mounted && createPortal(
+    <div style={{
+      position: "fixed", inset: 0, zIndex: 9999,
+      background: "rgba(2,6,16,.92)", backdropFilter: "blur(10px)",
+      display: "flex", flexDirection: "column", padding: 20,
+    }}>
+      {/* Modal header */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16, flexWrap: "wrap", gap: 12 }}>
+        <div>
+          <div style={{ fontSize: 20, fontWeight: 800, color: "#e8edf8", lineHeight: 1.2 }}>{detailStore}</div>
+          <div style={{ fontSize: 13, color: "var(--gold)", marginTop: 3 }}>Grup Iklan: <strong>{detailGrup}</strong></div>
+          {(fltMonth || fltYear) && (
+            <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>
+              {[fltMonth, fltYear].filter(Boolean).join(" ")}
+            </div>
+          )}
+        </div>
+        <button onClick={() => setShowDetail(false)}
+          style={{ padding: "8px 20px", borderRadius: 10, border: "1px solid rgba(201,162,39,.3)",
+            background: "rgba(201,162,39,.08)", color: "var(--gold)", fontWeight: 700, cursor: "pointer", fontSize: 13 }}>
+          ✕ Close
+        </button>
+      </div>
+
+      {/* Divider */}
+      <div style={{ height: 1, background: "linear-gradient(90deg,transparent,rgba(201,162,39,.4),transparent)", marginBottom: 16 }} />
+
+      {detailError && (
+        <div style={{ padding: 12, background: "rgba(239,68,68,.1)", border: "1px solid rgba(239,68,68,.25)", borderRadius: 10, color: "#fca5a5", fontSize: 13, marginBottom: 14, fontFamily: "monospace" }}>
+          ⚠ {detailError}
+        </div>
+      )}
+
+      {detailLoading ? (
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", flex: 1, color: "var(--muted)", fontSize: 14 }}>
+          Loading product data…
+        </div>
+      ) : (
+        <div style={{ overflow: "auto", flex: 1, borderRadius: 14, border: "1px solid var(--line)" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+            <thead>
+              {/* Row 1: group headers */}
+              <tr style={{ background: "#0f2040", position: "sticky", top: 0, zIndex: 2 }}>
+                <th rowSpan={2} style={{ ...thS, minWidth: 110, borderRight: "1px solid rgba(255,255,255,.08)", textAlign: "left" }}>Kode Produk</th>
+                <th rowSpan={2} style={{ ...thS, minWidth: 220, borderRight: "1px solid rgba(255,255,255,.08)", textAlign: "left" }}>Nama Iklan / Produk</th>
+                {detailWeeks.map((w) => (
+                  <th key={w} colSpan={3} style={{ ...thS, textAlign: "center", borderRight: "1px solid rgba(255,255,255,.08)", background: "rgba(201,162,39,.08)", color: "var(--gold)" }}>{w}</th>
+                ))}
+                <th colSpan={3} style={{ ...thS, textAlign: "center", background: "rgba(201,162,39,.14)", color: "var(--gold)", fontWeight: 800 }}>Total</th>
+              </tr>
+              {/* Row 2: sub-headers */}
+              <tr style={{ background: "#0a1628", position: "sticky", top: "38px", zIndex: 2 }}>
+                {detailWeeks.flatMap((w) => [
+                  <th key={`${w}-b`} style={{ ...subThS, color: "#f59e0b" }}>Biaya</th>,
+                  <th key={`${w}-p`} style={{ ...subThS, color: "#22c55e" }}>Penj.</th>,
+                  <th key={`${w}-r`} style={{ ...subThS, color: "var(--gold)", borderRight: "1px solid rgba(255,255,255,.08)" }}>ROAS</th>,
+                ])}
+                <th style={{ ...subThS, color: "#f59e0b" }}>Biaya</th>
+                <th style={{ ...subThS, color: "#22c55e" }}>Penj.</th>
+                <th style={{ ...subThS, color: "var(--gold)" }}>ROAS</th>
+              </tr>
+            </thead>
+            <tbody>
+              {detailPivot.length === 0 && (
+                <tr><td colSpan={2 + detailWeeks.length * 3 + 3}
+                  style={{ textAlign: "center", color: "var(--muted)", padding: 32 }}>
+                  No product data found for this group.
+                </td></tr>
+              )}
+              {detailPivot.map((p, i) => (
+                <tr key={`${p.item_name}|${i}`}
+                  style={{ background: i % 2 === 0 ? "rgba(255,255,255,.02)" : "transparent",
+                    borderBottom: "1px solid rgba(255,255,255,.04)" }}>
+                  <td style={{ padding: "7px 10px", color: "var(--muted)", fontFamily: "monospace", fontSize: 11, borderRight: "1px solid rgba(255,255,255,.04)" }}>
+                    {p.kode_produk || "—"}
+                  </td>
+                  <td style={{ padding: "7px 10px", color: "#c8d8f0", lineHeight: 1.35, borderRight: "1px solid rgba(255,255,255,.04)" }}>
+                    {p.item_name}
+                  </td>
+                  {detailWeeks.flatMap((w) => {
+                    const cell = p.weeks[w];
+                    return [
+                      <td key={`${w}-b`} style={numCellS}>
+                        {cell?.biaya ? <span style={{ color: "#f59e0b" }}>{idrShort(cell.biaya)}</span> : <span style={{ color: "var(--muted)" }}>—</span>}
+                      </td>,
+                      <td key={`${w}-p`} style={numCellS}>
+                        {cell?.penj ? <span style={{ color: "#22c55e" }}>{idrShort(cell.penj)}</span> : <span style={{ color: "var(--muted)" }}>—</span>}
+                      </td>,
+                      <td key={`${w}-r`} style={{ ...numCellS, borderRight: "1px solid rgba(255,255,255,.06)" }}>
+                        {cell ? <span style={{ color: "var(--gold)", fontWeight: 700 }}>{roasStr(cell.penj, cell.biaya)}</span> : <span style={{ color: "var(--muted)" }}>—</span>}
+                      </td>,
+                    ];
+                  })}
+                  <td style={{ ...numCellS, fontWeight: 700 }}><span style={{ color: "#f59e0b" }}>{idrShort(p.total.biaya)}</span></td>
+                  <td style={{ ...numCellS, fontWeight: 700 }}><span style={{ color: "#22c55e" }}>{idrShort(p.total.penj)}</span></td>
+                  <td style={{ ...numCellS, fontWeight: 700 }}><span style={{ color: "var(--gold)" }}>{roasStr(p.total.penj, p.total.biaya)}</span></td>
+                </tr>
+              ))}
+            </tbody>
+            {detailPivot.length > 0 && (
+              <tfoot>
+                <tr style={{ background: "rgba(201,162,39,.10)", borderTop: "2px solid rgba(201,162,39,.4)" }}>
+                  <td colSpan={2} style={{ padding: "8px 10px", fontWeight: 800, color: "#fff", fontSize: 12 }}>TOTAL</td>
+                  {detailWeeks.flatMap((w) => {
+                    const b = detailPivot.reduce((s, p) => s + (p.weeks[w]?.biaya || 0), 0);
+                    const v = detailPivot.reduce((s, p) => s + (p.weeks[w]?.penj  || 0), 0);
+                    return [
+                      <td key={`${w}-b`} style={{ ...numCellS, fontWeight: 800 }}><span style={{ color: "#f59e0b" }}>{b ? idrShort(b) : "—"}</span></td>,
+                      <td key={`${w}-p`} style={{ ...numCellS, fontWeight: 800 }}><span style={{ color: "#22c55e" }}>{v ? idrShort(v) : "—"}</span></td>,
+                      <td key={`${w}-r`} style={{ ...numCellS, fontWeight: 800, borderRight: "1px solid rgba(255,255,255,.08)" }}>
+                        <span style={{ color: "var(--gold)" }}>{roasStr(v, b)}</span>
+                      </td>,
+                    ];
+                  })}
+                  {(() => {
+                    const tb = detailPivot.reduce((s, p) => s + p.total.biaya, 0);
+                    const tp = detailPivot.reduce((s, p) => s + p.total.penj,  0);
+                    return [
+                      <td key="t-b" style={{ ...numCellS, fontWeight: 800 }}><span style={{ color: "#f59e0b" }}>{idr(tb)}</span></td>,
+                      <td key="t-p" style={{ ...numCellS, fontWeight: 800 }}><span style={{ color: "#22c55e" }}>{idr(tp)}</span></td>,
+                      <td key="t-r" style={{ ...numCellS, fontWeight: 800 }}><span style={{ color: "var(--gold)" }}>{roasStr(tp, tb)}</span></td>,
+                    ];
+                  })()}
+                </tr>
+              </tfoot>
+            )}
+          </table>
+        </div>
+      )}
+
+      <div style={{ display: "flex", gap: 18, marginTop: 12, fontSize: 11, color: "var(--muted)", flexWrap: "wrap" }}>
+        <span><span style={{ color: "#f59e0b", fontWeight: 700 }}>■</span> Biaya</span>
+        <span><span style={{ color: "#22c55e", fontWeight: 700 }}>■</span> Penjualan Langsung</span>
+        <span><span style={{ color: "var(--gold)", fontWeight: 700 }}>■</span> ROAS</span>
+      </div>
+    </div>,
+    document.body
+  );
 
   /* ════════════════════════════════════════════════════════════════════ */
   return (
@@ -221,13 +418,17 @@ export default function AdsPage() {
         .mode-tab{padding:7px 16px;border-radius:9px;border:1px solid var(--card-border);background:var(--glass);
           color:var(--text-2);font-weight:700;font-size:13px;cursor:pointer}
         .mode-tab.on{background:linear-gradient(135deg,var(--gold),var(--gold-soft));color:var(--navy-deep);border-color:transparent}
+        .grp-row{cursor:pointer;transition:background .15s}
+        .grp-row:hover{background:rgba(201,162,39,.07)!important}
       `}</style>
+
+      {detailModal}
 
       {/* ───── Upload Iklan ───── */}
       <div className="panel">
         <h3 style={{ margin: "0 0 4px" }}>Upload Iklan</h3>
         <div className="hint" style={{ marginBottom: 16 }}>
-          Export <strong>one ad group per file</strong> from Shopee (e.g. “Grup Hero Panasonic”), pick the period &amp; dealer, then upload. Modal Harian is filled later in the table below.
+          Export <strong>one ad group per file</strong> from Shopee (e.g. "Grup Hero Panasonic"), pick the period &amp; dealer, then upload.
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 14, marginBottom: 14 }}>
@@ -286,15 +487,17 @@ export default function AdsPage() {
         )}
       </div>
 
-      {/* ───── Analysis ───── */}
+      {/* ───── Grup Iklan Performance ───── */}
       <div className="panel" style={{ marginTop: 18 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12, marginBottom: 8 }}>
           <div>
             <h3 style={{ margin: 0 }}>Grup Iklan Performance</h3>
-            <div className="hint">Compare ad groups across {mode === "week" ? "weeks within a month" : "months"}. Biaya · Penjualan Langsung · ROAS per period.</div>
+            <div className="hint">
+              Click any row to see the product-level breakdown &nbsp;↗
+            </div>
           </div>
           <div style={{ display: "flex", gap: 8 }}>
-            <button className={`mode-tab ${mode === "week" ? "on" : ""}`} onClick={() => setMode("week")}>Week vs Week</button>
+            <button className={`mode-tab ${mode === "week"  ? "on" : ""}`} onClick={() => setMode("week")}>Week vs Week</button>
             <button className={`mode-tab ${mode === "month" ? "on" : ""}`} onClick={() => setMode("month")}>Month vs Month</button>
           </div>
         </div>
@@ -354,11 +557,13 @@ export default function AdsPage() {
                 <th>Grup Iklan</th>
                 {periods.map((p) => <th key={p} className="num" style={{ minWidth: 120 }}>{p}</th>)}
                 <th className="num" style={{ minWidth: 120 }}>Total</th>
+                <th style={{ width: 60 }}></th>
               </tr>
             </thead>
             <tbody>
               {groups.map((g) => (
-                <tr key={`${g.store}|${g.grup}`}>
+                <tr key={`${g.store}|${g.grup}`} className="grp-row"
+                  onClick={() => openDetail(g.store, g.grup)}>
                   <td style={{ fontWeight: 600, whiteSpace: "nowrap" }}>{g.store}</td>
                   <td style={{ whiteSpace: "nowrap" }}>{g.grup}</td>
                   {periods.map((p) => {
@@ -370,13 +575,14 @@ export default function AdsPage() {
                           <div className="ads-cell">
                             <span className="b" title="Biaya">{idrShort(c.biaya)}</span>
                             <span className="p" title="Penjualan Langsung">{idrShort(c.penj)}</span>
-                            <span className="r" title="ROAS = Penj. Langsung / Biaya">{roasStr(c.penj, c.biaya)}</span>
+                            <span className="r" title="ROAS">{roasStr(c.penj, c.biaya)}</span>
                             {mode === "week" ? (
                               <input className="ads-modal-inp" defaultValue={c.modal ?? ""} placeholder="Modal/hari"
                                 key={`${g.store}|${g.grup}|${p}|${c.modal ?? ""}`}
-                                onBlur={(e) => saveModal(g.store, g.grup, p, e.target.value)} />
+                                onClick={(e) => e.stopPropagation()}
+                                onBlur={(e) => { e.stopPropagation(); saveModal(g.store, g.grup, p, e.target.value); }} />
                             ) : (
-                              c.modal != null && <span style={{ fontSize: 10, color: "var(--muted)" }} title="Σ Modal Harian">Modal {idrShort(c.modal)}</span>
+                              c.modal != null && <span style={{ fontSize: 10, color: "var(--muted)" }}>Modal {idrShort(c.modal)}</span>
                             )}
                           </div>
                         ) : <span style={{ color: "var(--muted)" }}>—</span>}
@@ -390,11 +596,12 @@ export default function AdsPage() {
                       <span className="r">{roasStr(g.total.penj, g.total.biaya)}</span>
                     </div>
                   </td>
+                  <td style={{ textAlign: "center", color: "var(--gold)", fontSize: 16 }}>↗</td>
                 </tr>
               ))}
               {groups.length === 0 && (
-                <tr><td colSpan={periods.length + 3} style={{ textAlign: "center", color: "var(--muted)", padding: 22 }}>
-                  {loading ? "Loading…" : rpcError ? "Error — see message above." : "No data yet. Use the Upload Iklan form above — make sure to fill in Grup Iklan and select a Dealer."}
+                <tr><td colSpan={periods.length + 4} style={{ textAlign: "center", color: "var(--muted)", padding: 22 }}>
+                  {loading ? "Loading…" : rpcError ? "Error — see message above." : "No data yet. Upload via the form above with Grup Iklan and Dealer filled in."}
                 </td></tr>
               )}
             </tbody>
@@ -403,7 +610,7 @@ export default function AdsPage() {
                 <tr style={{ borderTop: "2px solid rgba(201,162,39,.3)" }}>
                   <td colSpan={2} style={{ fontWeight: 800, color: "#fff" }}>TOTAL</td>
                   {periods.map((p) => {
-                    const sub = aggregate(rows.filter((r) => (mode === "week" ? r.week : r.month) === p));
+                    const sub = aggregateRows(rows.filter((r) => (mode === "week" ? r.week : r.month) === p));
                     return (
                       <td key={p} className="num">
                         <div className="ads-cell">
@@ -421,6 +628,7 @@ export default function AdsPage() {
                       <span className="r">{roasStr(grandTotal.penj, grandTotal.biaya)}</span>
                     </div>
                   </td>
+                  <td />
                 </tr>
               </tfoot>
             )}
@@ -431,12 +639,25 @@ export default function AdsPage() {
           <span><span style={{ color: "#f59e0b", fontWeight: 700 }}>■</span> Biaya</span>
           <span><span style={{ color: "#22c55e", fontWeight: 700 }}>■</span> Penjualan Langsung</span>
           <span><span style={{ color: "var(--gold)", fontWeight: 700 }}>■</span> ROAS (Penj. Langsung ÷ Biaya)</span>
-          <span>Modal/hari editable in Week view</span>
+          <span>Modal/hari editable in Week view &nbsp;·&nbsp; Click any row to drill down ↗</span>
         </div>
       </div>
     </>
   );
 }
+
+/* ── Shared styles ──────────────────────────────────────────────────────── */
+const thS: React.CSSProperties = {
+  padding: "10px 10px", fontWeight: 700, fontSize: 12, color: "#c8d8f0",
+  borderBottom: "1px solid rgba(255,255,255,.1)", whiteSpace: "nowrap",
+};
+const subThS: React.CSSProperties = {
+  padding: "5px 8px", fontWeight: 600, fontSize: 11,
+  borderBottom: "1px solid rgba(255,255,255,.1)", textAlign: "right", whiteSpace: "nowrap",
+};
+const numCellS: React.CSSProperties = {
+  padding: "6px 8px", textAlign: "right", whiteSpace: "nowrap",
+};
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return <div className="fld" style={{ minWidth: 0 }}><label>{label}</label>{children}</div>;
