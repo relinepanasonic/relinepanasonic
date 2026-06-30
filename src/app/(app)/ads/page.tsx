@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
 import { createClient } from "@/lib/supabase/client";
 
@@ -86,6 +86,10 @@ export default function AdsPage() {
   const [busy, setBusy]  = useState(false);
   const [log,  setLog]   = useState<string[]>([]);
 
+  // tracks whether the month was auto-selected on first load.
+  // When true, loadData won't override a user-cleared month selection.
+  const monthLockedRef = useRef(false);
+
   // detail modal
   const [showDetail,    setShowDetail]    = useState(false);
   const [detailStore,   setDetailStore]   = useState("");
@@ -116,7 +120,9 @@ export default function AdsPage() {
         setRows((data.rows as AdsRow[]) || []);
         setFilters(f);
         if (!fltYear && f.years.length) setFltYear(String(f.years[0]));
-        if (mode === "week" && !fltMonth && f.months.length) {
+        // Only auto-select month on first load; never override a user-cleared selection.
+        if (mode === "week" && !fltMonth && !monthLockedRef.current && f.months.length) {
+          monthLockedRef.current = true;
           const present = MONTHS.filter((m) => f.months.includes(m));
           if (present.length) setFltMonth(present[present.length - 1]);
         }
@@ -174,7 +180,7 @@ export default function AdsPage() {
       const res = await fetch("/api/upload", { method: "POST", body: fd });
       const j = await res.json();
       setLog([res.ok ? `✓ ${up.grup.trim()} · ${up.dealer} · ${up.month} ${up.week}: ${j.rows} rows` : `✗ ${j.error}`]);
-      if (res.ok) { setFile(null); setFltMonth(""); setFltYear(""); }
+      if (res.ok) { setFile(null); monthLockedRef.current = false; setFltMonth(""); setFltYear(""); }
     } catch (e) {
       setLog([`✗ ${String(e)}`]);
     }
@@ -497,7 +503,7 @@ export default function AdsPage() {
             </div>
           </div>
           <div style={{ display: "flex", gap: 8 }}>
-            <button className={`mode-tab ${mode === "week"  ? "on" : ""}`} onClick={() => setMode("week")}>Week vs Week</button>
+            <button className={`mode-tab ${mode === "week"  ? "on" : ""}`} onClick={() => { monthLockedRef.current = false; setMode("week"); }}>Week vs Week</button>
             <button className={`mode-tab ${mode === "month" ? "on" : ""}`} onClick={() => setMode("month")}>Month vs Month</button>
           </div>
         </div>
@@ -512,8 +518,8 @@ export default function AdsPage() {
           </Field>
           {mode === "week" && (
             <Field label="Month">
-              <select value={fltMonth} onChange={(e) => setFltMonth(e.target.value)}>
-                <option value="">Select month</option>
+              <select value={fltMonth} onChange={(e) => { monthLockedRef.current = true; setFltMonth(e.target.value); }}>
+                <option value="">All Months</option>
                 {MONTHS.filter((m) => filters.months.includes(m)).map((m) => <option key={m} value={m}>{m}</option>)}
               </select>
             </Field>
