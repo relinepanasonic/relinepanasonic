@@ -65,6 +65,7 @@ export interface ManualFields {
   brand?: string;       // auto-filled from store_links when store is picked
   week?: string;
   grup_iklan?: string;       // Ads: the ad group this whole file belongs to (one group per file)
+  ads_level?: string;        // Ads: Incubation | Hero | Regular | Low Conversion
   tanggal_mulai?: string;    // Monday — start of the data week
   tanggal_berakhir?: string; // Sunday — auto = tanggal_mulai + 6 days
   tanggal_input?: string;    // ISO timestamp when the upload was entered (log)
@@ -154,6 +155,7 @@ export function mapRow(
     product_type,
     item_name: name != null ? String(name) : null,
     grup_iklan: source === "ads" ? (manual.grup_iklan ?? null) : null,
+    ads_level:  source === "ads" ? (manual.ads_level  ?? null) : null,
     tanggal: manual.tanggal || manual.tanggal_mulai || null,
     sales_idr,
     orders,

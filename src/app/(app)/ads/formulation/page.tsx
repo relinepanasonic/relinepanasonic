@@ -9,21 +9,21 @@ const MONTHS = ["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustu
 const THIS_YEAR = new Date().getFullYear();
 const YEARS = Array.from({ length: 4 }, (_, i) => THIS_YEAR - 1 + i);
 
-type Category = "incubation" | "hero" | "independent" | "low_conversion";
+type Category = "incubation" | "hero" | "regular" | "low_conversion";
 type CatData  = { ads_spent: string; roas: string };
 type FormData = Record<Category, CatData>;
 
 const CAT_LABELS: Record<Category, string> = {
-  incubation:      "Incubation",
-  hero:            "Hero",
-  independent:     "Independent",
-  low_conversion:  "Low Conversion",
+  incubation:     "Incubation",
+  hero:           "Hero",
+  regular:        "Regular",
+  low_conversion: "Low Conversion",
 };
 
 const CAT_HINTS: Record<Category, string> = {
   incubation:     "New / growing ads — still building ROAS",
   hero:           "Top-performing ads with strong consistent ROAS",
-  independent:    "Standalone ads running without group dependency",
+  regular:        "Standard performing ads — stable spend and ROAS",
   low_conversion: "High spend, low conversion — review or cut",
 };
 
@@ -31,7 +31,7 @@ const EMPTY_CAT: CatData = { ads_spent: "", roas: "" };
 const EMPTY_FORM: FormData = {
   incubation:     { ...EMPTY_CAT },
   hero:           { ...EMPTY_CAT },
-  independent:    { ...EMPTY_CAT },
+  regular:        { ...EMPTY_CAT },
   low_conversion: { ...EMPTY_CAT },
 };
 
@@ -195,7 +195,7 @@ export default function FormulationPage() {
 const CAT_COLOR: Record<Category, string> = {
   incubation:     "#60a5fa",
   hero:           "#facc15",
-  independent:    "#4ade80",
+  regular:        "#4ade80",
   low_conversion: "#f87171",
 };
 

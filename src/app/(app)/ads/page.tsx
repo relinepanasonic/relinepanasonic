@@ -12,18 +12,28 @@ const MONTHS    = ["Januari","Februari","Maret","April","Mei","Juni","Juli","Agu
 const WEEKS     = ["Week 1","Week 2","Week 3","Week 4","Week 5"];
 const THIS_YEAR = new Date().getFullYear();
 const YEARS     = Array.from({ length: 6 }, (_, i) => THIS_YEAR - 2 + i);
+const ADS_LEVELS = ["Incubation", "Hero", "Regular", "Low Conversion"] as const;
+type AdsLevel = typeof ADS_LEVELS[number];
+
+const LEVEL_COLOR: Record<AdsLevel, string> = {
+  "Incubation":     "#60a5fa",
+  "Hero":           "#facc15",
+  "Regular":        "#4ade80",
+  "Low Conversion": "#f87171",
+};
 
 /* ── Types ──────────────────────────────────────────────────────────────── */
 type AdsRow = {
   store_name: string; city: string | null; grup_iklan: string;
+  ads_level: string | null;
   year: number | null; month: string | null; week: string | null;
   biaya: number; penjualan_langsung: number; omzet: number;
   roas: number | null; modal_harian: number | null;
 };
-type Filters = { years: number[]; months: string[]; weeks: string[]; cities: string[]; stores: string[]; grups: string[] };
-const EMPTY_FILTERS: Filters = { years: [], months: [], weeks: [], cities: [], stores: [], grups: [] };
+type Filters = { years: number[]; months: string[]; weeks: string[]; cities: string[]; stores: string[]; grups: string[]; levels: string[] };
+const EMPTY_FILTERS: Filters = { years: [], months: [], weeks: [], cities: [], stores: [], grups: [], levels: [] };
 type Cell = { biaya: number; penj: number; omzet: number; modal: number | null };
-type GroupRow = { store: string; grup: string; cells: Record<string, Cell>; total: Cell };
+type GroupRow = { store: string; grup: string; ads_level: string | null; cells: Record<string, Cell>; total: Cell };
 
 // Detail modal types
 type DetailRow = {
@@ -61,6 +71,17 @@ function aggregateRows(list: AdsRow[]): Cell {
   };
 }
 
+function LevelBadge({ level }: { level: string | null }) {
+  if (!level) return null;
+  const color = LEVEL_COLOR[level as AdsLevel] ?? "#94a3b8";
+  return (
+    <span style={{
+      display:"inline-block", padding:"1px 7px", borderRadius:20, fontSize:10, fontWeight:700,
+      background:color + "22", border:`1px solid ${color}55`, color, marginLeft:6, verticalAlign:"middle",
+    }}>{level}</span>
+  );
+}
+
 /* ════════════════════════════════════════════════════════════════════════ */
 export default function AdsPage() {
   const [supabase]  = useState(() => createClient());
@@ -75,17 +96,22 @@ export default function AdsPage() {
   const [rpcError, setRpcError] = useState("");
 
   // analysis filters
-  const [mode,     setMode]     = useState<"week" | "month">("week");
-  const [fltYear,  setFltYear]  = useState("");
-  const [fltMonth, setFltMonth] = useState("");
-  const [fltStore, setFltStore] = useState("");
-  const [fltGrup,  setFltGrup]  = useState("");
+  const [mode,      setMode]      = useState<"week" | "month">("week");
+  const [fltYear,   setFltYear]   = useState("");
+  const [fltMonth,  setFltMonth]  = useState("");
+  const [fltStore,  setFltStore]  = useState("");
+  const [fltGrup,   setFltGrup]   = useState("");
+  const [fltLevel,  setFltLevel]  = useState("");
   const monthLockedRef = useRef(false);
+
+  // delete feedback
+  const [deleteMsg, setDeleteMsg] = useState("");
+  const [deleting,  setDeleting]  = useState("");
 
   // upload form
   const [cities,  setCities]  = useState<{ value: string; pic: string | null }[]>([]);
   const [dealers, setDealers] = useState<string[]>([]);
-  const [up, setUp] = useState({ city: "", dealer: "", year: THIS_YEAR, month: "", week: "", grup: "" });
+  const [up, setUp] = useState({ city: "", dealer: "", year: THIS_YEAR, month: "", week: "", grup: "", level: "" });
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [log,  setLog]  = useState<string[]>([]);
@@ -111,6 +137,7 @@ export default function AdsPage() {
       if (mode === "week" && fltMonth) params.p_month = fltMonth;
       if (fltStore)                    params.p_store = fltStore;
       if (fltGrup)                     params.p_grup  = fltGrup;
+      if (fltLevel)                    params.p_level = fltLevel;
 
       const { data, error } = await supabase.rpc("ads_groups", params);
       if (error) {
@@ -130,7 +157,7 @@ export default function AdsPage() {
       setRpcError(String(e));
     }
     setLoading(false);
-  }, [supabase, fltYear, fltMonth, fltStore, fltGrup, mode]);
+  }, [supabase, fltYear, fltMonth, fltStore, fltGrup, fltLevel, mode]);
 
   /* ── initial load ── */
   useEffect(() => {
@@ -146,7 +173,6 @@ export default function AdsPage() {
     })();
   }, [supabase]);
 
-  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { void loadData(); }, [loadData]);
 
   /* ── upload: city → dealers ── */
@@ -162,6 +188,7 @@ export default function AdsPage() {
     if (!file)           { setLog(["Pick an Ads file first."]); return; }
     if (!up.dealer)      { setLog(["Select a Dealer."]); return; }
     if (!up.grup.trim()) { setLog(["Enter the Grup Iklan name."]); return; }
+    if (!up.level)       { setLog(["Select an Ads Level."]); return; }
     if (!up.month)       { setLog(["Select a Bulan."]); return; }
     if (!up.week)        { setLog(["Select a Week."]); return; }
     setBusy(true); setLog([]);
@@ -171,13 +198,16 @@ export default function AdsPage() {
     fd.append("source", "ads");
     fd.append("manual", JSON.stringify({
       admin: "", city: up.city, pic_client: pic, store_name: up.dealer,
-      year: up.year, bulan: up.month, week: up.week, grup_iklan: up.grup.trim(),
+      year: up.year, bulan: up.month, week: up.week,
+      grup_iklan: up.grup.trim(), ads_level: up.level,
     }));
     fd.append("client_id", clientId);
     try {
       const res = await fetch("/api/upload", { method: "POST", body: fd });
       const j   = await res.json();
-      setLog([res.ok ? `✓ ${up.grup.trim()} · ${up.dealer} · ${up.month} ${up.week}: ${j.rows} rows` : `✗ ${j.error}`]);
+      setLog([res.ok
+        ? `✓ [${up.level}] ${up.grup.trim()} · ${up.dealer} · ${up.month} ${up.week}: ${j.rows} rows`
+        : `✗ ${j.error}`]);
       if (res.ok) { setFile(null); monthLockedRef.current = false; setFltMonth(""); setFltYear(""); }
     } catch (e) {
       setLog([`✗ ${String(e)}`]);
@@ -214,6 +244,28 @@ export default function AdsPage() {
     }, { onConflict: "client_id,store_name,grup_iklan,year,month,week" });
   }
 
+  /* ── delete group data ── */
+  async function deleteGroup(store: string, grup: string, e: React.MouseEvent) {
+    e.stopPropagation();
+    const scope = [fltMonth, fltYear].filter(Boolean).join(" ") || "all periods";
+    if (!confirm(`Delete "${grup}" data for "${store}" (${scope})?\n\nThis cannot be undone.`)) return;
+    setDeleting(`${store}|||${grup}`);
+    setDeleteMsg("");
+    const params: Record<string, unknown> = { p_store: store, p_grup: grup };
+    if (fltYear)                     params.p_year  = Number(fltYear);
+    if (mode === "week" && fltMonth) params.p_month = fltMonth;
+    try {
+      const { data, error } = await supabase.rpc("delete_ads_rows", params);
+      if (error) setDeleteMsg(`✗ Delete failed: ${error.message}`);
+      else {
+        setDeleteMsg(`✓ Deleted ${data as number} rows — ${grup} · ${store}`);
+        void loadData();
+      }
+    } catch (err) { setDeleteMsg(`✗ ${String(err)}`); }
+    setDeleting("");
+    setTimeout(() => setDeleteMsg(""), 6000);
+  }
+
   /* ── pivot summary table ── */
   const { groups, periods } = useMemo(() => {
     const periods = mode === "week"
@@ -227,10 +279,14 @@ export default function AdsPage() {
     }
     const groups: GroupRow[] = [...map.entries()].map(([k, list]) => {
       const [store, grup] = k.split("|||");
+      // Most common ads_level for this store+grup
+      const levelCounts = new Map<string, number>();
+      for (const r of list) if (r.ads_level) levelCounts.set(r.ads_level, (levelCounts.get(r.ads_level) || 0) + 1);
+      const ads_level = [...levelCounts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
       const cells: Record<string, Cell> = {};
       for (const p of periods)
         cells[p] = aggregateRows(list.filter((r) => (mode === "week" ? r.week : r.month) === p));
-      return { store, grup, cells, total: aggregateRows(list) };
+      return { store, grup, ads_level, cells, total: aggregateRows(list) };
     }).sort((a, b) => b.total.biaya - a.total.biaya);
     return { groups, periods };
   }, [rows, mode]);
@@ -258,11 +314,9 @@ export default function AdsPage() {
       p.total.biaya += r.biaya;
       p.total.gmv   += r.gmv;
     }
-    // Recalculate ROAS after full aggregation
-    for (const p of map.values()) {
+    for (const p of map.values())
       for (const cell of Object.values(p.periods))
         cell.roas = cell.biaya > 0 ? cell.gmv / cell.biaya : null;
-    }
     return {
       detailPivot:   [...map.values()].sort((a, b) => b.total.biaya - a.total.biaya),
       detailPeriods,
@@ -274,7 +328,6 @@ export default function AdsPage() {
   /* ── Detail Modal ─────────────────────────────────────────────────── */
   const detailModal = showDetail && mounted && createPortal(
     <div style={{ position:"fixed", inset:0, zIndex:9999, background:"rgba(2,6,16,.92)", backdropFilter:"blur(10px)", display:"flex", flexDirection:"column", padding:20 }}>
-      {/* Header */}
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:14, flexWrap:"wrap", gap:10 }}>
         <div>
           <div style={{ fontSize:20, fontWeight:800, color:"#fff" }}>{detailStore}</div>
@@ -309,7 +362,6 @@ export default function AdsPage() {
               <tr style={{ background:"#0a1628", position:"sticky", top:0, zIndex:2 }}>
                 <th rowSpan={2} style={{ ...thS, minWidth:110, textAlign:"left" }}>Kode Produk</th>
                 <th rowSpan={2} style={{ ...thS, minWidth:220, textAlign:"left", borderRight:"1px solid rgba(255,255,255,.08)" }}>Nama Iklan / Produk</th>
-                {/* Analisa placeholder column */}
                 <th rowSpan={2} style={{ ...thS, minWidth:70, textAlign:"center", background:"rgba(201,162,39,.06)", borderRight:"1px solid rgba(255,255,255,.08)" }}>
                   <span style={{ color:"rgba(201,162,39,.7)", fontSize:10 }}>ANALISA</span>
                 </th>
@@ -345,7 +397,6 @@ export default function AdsPage() {
                   <td style={{ padding:"7px 10px", color:"#fff", lineHeight:1.35, borderRight:"1px solid rgba(255,255,255,.04)" }}>
                     {p.item_name}
                   </td>
-                  {/* Analisa placeholder */}
                   <td style={{ padding:"7px 8px", textAlign:"center", color:"rgba(255,255,255,.3)", fontSize:11, borderRight:"1px solid rgba(255,255,255,.04)" }}>—</td>
                   {detailPeriods.flatMap((w) => {
                     const c = p.periods[w];
@@ -416,6 +467,10 @@ export default function AdsPage() {
         .mode-tab.on{background:linear-gradient(135deg,var(--gold),var(--gold-soft));color:var(--navy-deep);border-color:transparent}
         .grp-row{cursor:pointer;transition:background .15s}
         .grp-row:hover{background:rgba(201,162,39,.07)!important}
+        .del-btn{background:none;border:none;cursor:pointer;padding:4px 7px;border-radius:7px;
+          color:rgba(239,68,68,.45);font-size:14px;transition:color .15s,background .15s;line-height:1}
+        .del-btn:hover{color:#f87171;background:rgba(239,68,68,.08)}
+        .del-btn:disabled{opacity:.3;cursor:not-allowed}
       `}</style>
 
       {detailModal}
@@ -430,10 +485,10 @@ export default function AdsPage() {
       <div className="panel">
         <h3 style={{ margin:"0 0 4px" }}>Upload Iklan</h3>
         <div className="hint" style={{ marginBottom:16 }}>
-          Export <strong>one ad group per file</strong> from Shopee, pick the period &amp; dealer, then upload.
+          Export <strong>one ad group per file</strong> from Shopee. Select dealer, level &amp; period, then upload.
         </div>
 
-        <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:14, marginBottom:14 }}>
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:14, marginBottom:14 }}>
           <Field label="City">
             <select value={up.city} onChange={(e) => pickCity(e.target.value)}>
               <option value="">Select city</option>
@@ -449,6 +504,14 @@ export default function AdsPage() {
           <Field label="Grup Iklan">
             <input type="text" placeholder="e.g. Grup Hero" value={up.grup}
               onChange={(e) => setUp((u) => ({ ...u, grup: e.target.value }))} />
+          </Field>
+          <Field label="Ads Level">
+            <select value={up.level} onChange={(e) => setUp((u) => ({ ...u, level: e.target.value }))}>
+              <option value="">Select level</option>
+              {ADS_LEVELS.map((l) => (
+                <option key={l} value={l}>{l}</option>
+              ))}
+            </select>
           </Field>
         </div>
 
@@ -494,7 +557,7 @@ export default function AdsPage() {
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:12, marginBottom:8 }}>
           <div>
             <h3 style={{ margin:0 }}>Grup Iklan Performance</h3>
-            <div className="hint">Click any row to see the product-level breakdown ↗</div>
+            <div className="hint">Click a row to drill down ↗ · Trash 🗑 to delete data for that group</div>
           </div>
           <div style={{ display:"flex", gap:8 }}>
             <button className={`mode-tab ${mode==="week"?"on":""}`}
@@ -504,8 +567,17 @@ export default function AdsPage() {
           </div>
         </div>
 
+        {deleteMsg && (
+          <div style={{
+            padding:"10px 14px", marginBottom:12, borderRadius:10, fontSize:13, fontFamily:"monospace",
+            background:deleteMsg.startsWith("✓") ? "rgba(74,222,128,.07)" : "rgba(239,68,68,.07)",
+            border:deleteMsg.startsWith("✓") ? "1px solid rgba(74,222,128,.22)" : "1px solid rgba(239,68,68,.22)",
+            color:deleteMsg.startsWith("✓") ? "#86efac" : "#fca5a5",
+          }}>{deleteMsg}</div>
+        )}
+
         {/* filter bar */}
-        <div style={{ display:"grid", gridTemplateColumns:`repeat(${mode==="week"?4:3},1fr) auto auto`, gap:10, marginBottom:16, alignItems:"end" }}>
+        <div style={{ display:"grid", gridTemplateColumns:`repeat(${mode==="week"?5:4},1fr) auto auto`, gap:10, marginBottom:16, alignItems:"end" }}>
           <Field label="Year">
             <select value={fltYear} onChange={(e) => setFltYear(e.target.value)}>
               <option value="">All Years</option>
@@ -520,6 +592,12 @@ export default function AdsPage() {
               </select>
             </Field>
           )}
+          <Field label="Level">
+            <select value={fltLevel} onChange={(e) => setFltLevel(e.target.value)}>
+              <option value="">All Levels</option>
+              {(filters.levels.length ? filters.levels : [...ADS_LEVELS]).map((l) => <option key={l} value={l}>{l}</option>)}
+            </select>
+          </Field>
           <Field label="Dealer">
             <select value={fltStore} onChange={(e) => setFltStore(e.target.value)}>
               <option value="">All Dealers</option>
@@ -533,7 +611,7 @@ export default function AdsPage() {
             </select>
           </Field>
           <button className="btn-ghost" style={{ height:38 }}
-            onClick={() => { setFltStore(""); setFltGrup(""); }}>Reset</button>
+            onClick={() => { setFltStore(""); setFltGrup(""); setFltLevel(""); }}>Reset</button>
           <span style={{ alignSelf:"end", fontSize:12, color:"var(--muted)", whiteSpace:"nowrap", paddingBottom:8 }}>
             {loading ? "Loading…" : `${groups.length} groups`}
           </span>
@@ -559,14 +637,18 @@ export default function AdsPage() {
                 <th>Grup Iklan</th>
                 {periods.map((p) => <th key={p} className="num" style={{ minWidth:120 }}>{p}</th>)}
                 <th className="num" style={{ minWidth:120 }}>Total</th>
-                <th style={{ width:40 }}></th>
+                <th style={{ width:30 }}></th>
+                <th style={{ width:36 }}></th>
               </tr>
             </thead>
             <tbody>
               {groups.map((g) => (
                 <tr key={`${g.store}|${g.grup}`} className="grp-row" onClick={() => openDetail(g.store, g.grup)}>
                   <td style={{ fontWeight:600, whiteSpace:"nowrap" }}>{g.store}</td>
-                  <td style={{ whiteSpace:"nowrap" }}>{g.grup}</td>
+                  <td style={{ whiteSpace:"nowrap" }}>
+                    {g.grup}
+                    <LevelBadge level={g.ads_level} />
+                  </td>
                   {periods.map((p) => {
                     const c   = g.cells[p];
                     const has = c && (c.biaya || c.penj);
@@ -596,10 +678,18 @@ export default function AdsPage() {
                     </div>
                   </td>
                   <td style={{ textAlign:"center", color:"var(--gold)", fontSize:16 }}>↗</td>
+                  <td onClick={(e) => e.stopPropagation()} style={{ textAlign:"center" }}>
+                    <button className="del-btn"
+                      disabled={deleting === `${g.store}|||${g.grup}`}
+                      title={`Delete ${g.grup} data (current filter scope)`}
+                      onClick={(e) => deleteGroup(g.store, g.grup, e)}>
+                      {deleting === `${g.store}|||${g.grup}` ? "…" : "🗑"}
+                    </button>
+                  </td>
                 </tr>
               ))}
               {groups.length === 0 && (
-                <tr><td colSpan={periods.length+4} style={{ textAlign:"center", color:"var(--muted)", padding:22 }}>
+                <tr><td colSpan={periods.length+5} style={{ textAlign:"center", color:"var(--muted)", padding:22 }}>
                   {loading ? "Loading…" : rpcError ? "Error — see message above." : "No data yet. Upload via the form above."}
                 </td></tr>
               )}
@@ -627,7 +717,7 @@ export default function AdsPage() {
                       <span className="r">{roasStr(grandTotal.penj, grandTotal.biaya)}</span>
                     </div>
                   </td>
-                  <td />
+                  <td /><td />
                 </tr>
               </tfoot>
             )}
@@ -635,10 +725,11 @@ export default function AdsPage() {
         </div>
 
         <div style={{ display:"flex", gap:18, marginTop:12, fontSize:11, color:"var(--muted)", flexWrap:"wrap" }}>
-          <span>■ Biaya</span>
-          <span>■ GMV (Penjualan Langsung)</span>
-          <span>■ ROAS = GMV ÷ Biaya</span>
-          <span>Modal/hari editable in Week view · Click row to drill down ↗</span>
+          <span>■ Biaya · GMV · ROAS</span>
+          {ADS_LEVELS.map((l) => (
+            <span key={l} style={{ color:LEVEL_COLOR[l] }}>■ {l}</span>
+          ))}
+          <span>· Modal/hari editable in Week view · 🗑 deletes visible scope</span>
         </div>
       </div>
     </>
