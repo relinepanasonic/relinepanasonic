@@ -74,8 +74,8 @@ export interface ManualFields {
 // Which raw column holds the name we derive brand/category from, per source.
 const NAME_COL: Record<DataSource, string | null> = {
   spos: "Produk",
-  ads: "Nama Iklan",
-  perf: null, // Performa has neither brand nor category
+  ads: "Nama Iklan/Produk", // Shopee keyword-placement report column; falls back below
+  perf: null,
 };
 
 // Map a parsed raw row -> the typed sales_rows fields. Metric extraction picks
@@ -88,7 +88,10 @@ export function mapRow(
   const get = (k: string) => raw[k] ?? raw[bqCol(k)];
 
   const nameCol = NAME_COL[source];
-  const name = nameCol ? get(nameCol) : null;
+  // For ads, the Shopee export may use "Nama Iklan/Produk" or just "Nama Iklan"
+  const name = nameCol
+    ? (get(nameCol) ?? (source === "ads" ? get("Nama Iklan") : null))
+    : null;
 
   // Prefer the Brand / Tipe Produk column if the export already carries it;
   // otherwise auto-detect from the product/campaign name.
