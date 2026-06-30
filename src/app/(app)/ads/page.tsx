@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
@@ -102,7 +102,6 @@ export default function AdsPage() {
   const [fltStore,  setFltStore]  = useState("");
   const [fltGrup,   setFltGrup]   = useState("");
   const [fltLevel,  setFltLevel]  = useState("");
-  const monthLockedRef = useRef(false);
 
   // delete feedback
   const [deleteMsg, setDeleteMsg] = useState("");
@@ -147,11 +146,6 @@ export default function AdsPage() {
         setRows((data.rows as AdsRow[]) || []);
         setFilters(f);
         if (!fltYear && f.years.length) setFltYear(String(f.years[0]));
-        if (mode === "week" && !fltMonth && !monthLockedRef.current && f.months.length) {
-          monthLockedRef.current = true;
-          const present = MONTHS.filter((m) => f.months.includes(m));
-          if (present.length) setFltMonth(present[present.length - 1]);
-        }
       }
     } catch (e) {
       setRpcError(String(e));
@@ -208,7 +202,7 @@ export default function AdsPage() {
       setLog([res.ok
         ? `✓ [${up.level}] ${up.grup.trim()} · ${up.dealer} · ${up.month} ${up.week}: ${j.rows} rows`
         : `✗ ${j.error}`]);
-      if (res.ok) { setFile(null); monthLockedRef.current = false; setFltMonth(""); setFltYear(""); }
+      if (res.ok) { setFile(null); setFltMonth(""); setFltYear(""); }
     } catch (e) {
       setLog([`✗ ${String(e)}`]);
     }
@@ -598,7 +592,7 @@ export default function AdsPage() {
           </div>
           <div style={{ display:"flex", gap:8 }}>
             <button className={`mode-tab ${mode==="week"?"on":""}`}
-              onClick={() => { monthLockedRef.current=false; setMode("week"); }}>Week vs Week</button>
+              onClick={() => setMode("week")}>Week vs Week</button>
             <button className={`mode-tab ${mode==="month"?"on":""}`}
               onClick={() => setMode("month")}>Month vs Month</button>
           </div>
@@ -623,7 +617,7 @@ export default function AdsPage() {
           </Field>
           {mode === "week" && (
             <Field label="Month">
-              <select value={fltMonth} onChange={(e) => { monthLockedRef.current=true; setFltMonth(e.target.value); }}>
+              <select value={fltMonth} onChange={(e) => setFltMonth(e.target.value)}>
                 <option value="">All Months</option>
                 {MONTHS.filter((m) => filters.months.includes(m)).map((m) => <option key={m} value={m}>{m}</option>)}
               </select>
