@@ -81,6 +81,17 @@ export async function POST(req: NextRequest) {
   //    then map to typed sales_rows fields.
   const admin = createAdminClient();
 
+  // Source brand/category detection from this workspace's live Core List
+  // (master_data) so admin-added brands are picked up without a code deploy.
+  // Falls back to the hardcoded lists in parse.ts if the Core List is empty.
+  const { data: dictRows } = await admin
+    .from("master_data")
+    .select("kind,value")
+    .eq("client_id", clientId)
+    .in("kind", ["brand", "platform"]);
+  const brands = (dictRows || []).filter((r) => r.kind === "brand").map((r) => r.value);
+  const categories = (dictRows || []).filter((r) => r.kind === "platform").map((r) => r.value);
+
   // Create the upload record first so rows can FK to it.
   const { data: upload, error: upErr } = await admin
     .from("uploads")
@@ -106,7 +117,7 @@ export async function POST(req: NextRequest) {
         raw[h] = val;
         raw[bqCol(h)] = val; // also store sanitized key so mapRow's get() hits
       });
-      const row = mapRow(source, raw, manual);
+      const row = mapRow(source, raw, manual, { brands, categories });
       return { ...row, client_id: clientId, upload_id: upload.id };
     });
 

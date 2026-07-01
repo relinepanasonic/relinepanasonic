@@ -11,20 +11,32 @@ export const dynamic = "force-dynamic";
 
 type Summary = {
   kpis: { sales: number; gmv: number; traffic: number; in_cart: number; ad_cost: number; roas: number | null };
-  monthly_sales: { month: string; sales: number }[];
-  store_monthly: { month: string; gmv: number }[];
+  monthly_sales: { year: number | null; month: string; sales: number }[];
+  store_monthly: { year: number | null; month: string; gmv: number }[];
   top_products: { name: string; sales: number }[];
   brand_share: { brand: string; sales: number }[];
   by_category: { category: string; sales: number }[];
-  cost_roas: { month: string; cost: number; roas: number | null }[];
-  traffic_trend: { month: string; traffic: number; in_cart: number }[];
+  cost_roas: { year: number | null; month: string; cost: number; roas: number | null }[];
+  traffic_trend: { year: number | null; month: string; traffic: number; in_cart: number }[];
   dealers: { store_name: string; city: string; sales: number; traffic: number; in_cart: number; ad_cost: number; roas: number | null }[];
 };
 type Filters = { years: number[]; quarters: string[]; months: string[]; weeks: string[]; cities: string[]; dealers: string[] };
 
-const MONTH_ORDER = ["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"];
-const byMonth = <T extends { month: string }>(a: T[]) =>
-  [...(a || [])].sort((x, y) => MONTH_ORDER.indexOf(x.month) - MONTH_ORDER.indexOf(y.month));
+const MONTH_ORDER = ["Januari","Februari","Febuari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"];
+const MONTH_SHORT: Record<string, string> = {
+  Januari: "Jan", Februari: "Feb", Febuari: "Feb", Maret: "Mar", April: "Apr", Mei: "Mei", Juni: "Jun",
+  Juli: "Jul", Agustus: "Agu", September: "Sep", Oktober: "Okt", November: "Nov", Desember: "Des",
+};
+// Sort chronologically by year+month, and label bars "Mon YYYY" so
+// e.g. Nov 2025 renders to the left of Jan 2026 instead of alphabetically.
+const byMonth = <T extends { year: number | null; month: string }>(a: T[]) =>
+  [...(a || [])]
+    .sort((x, y) => {
+      const yx = x.year ?? 0, yy = y.year ?? 0;
+      if (yx !== yy) return yx - yy;
+      return MONTH_ORDER.indexOf(x.month) - MONTH_ORDER.indexOf(y.month);
+    })
+    .map((r) => ({ ...r, label: `${MONTH_SHORT[r.month] || r.month} ${r.year ?? ""}`.trim() }));
 
 const idr = (n: number) => "Rp " + new Intl.NumberFormat("id-ID", { notation: "compact", maximumFractionDigits: 2 }).format(n || 0);
 const idrFull = (n: number) => "Rp" + new Intl.NumberFormat("id-ID").format(Math.round(n || 0));
@@ -37,6 +49,19 @@ const compact = (n: number) => {
 };
 const num = (n: number) => new Intl.NumberFormat("id-ID").format(Math.round(n || 0));
 const PALETTE = ["#c9a227", "#e8c84a", "#94a3b8", "#1e4a7a", "#3b6ea5", "#d4b94e", "#6b8cae", "#0f2040"];
+
+// Collapse the full brand mix down to Panasonic vs everything else.
+function panasonicVsOther(brandShare: { brand: string; sales: number }[]) {
+  let panasonic = 0, other = 0;
+  for (const b of brandShare) {
+    if ((b.brand || "").toLowerCase() === "panasonic") panasonic += b.sales;
+    else other += b.sales;
+  }
+  return [
+    { name: "Panasonic", value: panasonic },
+    { name: "Other",     value: other },
+  ];
+}
 
 export default function DashboardPage() {
   const [supabase] = useState(() => createClient());
@@ -129,7 +154,7 @@ export default function DashboardPage() {
       {/* Monthly sales */}
       <div className="row">
         <Panel title="Panasonic Monthly Sales" hint="Penjualan Siap Dikirim per bulan · SPOS">
-          <BarsChart data={byMonth(d?.monthly_sales || [])} x="month" y="sales" color="#c9a227" />
+          <BarsChart data={byMonth(d?.monthly_sales || [])} x="label" y="sales" color="#c9a227" />
         </Panel>
       </div>
 
@@ -138,8 +163,8 @@ export default function DashboardPage() {
         <Panel title="Top 10 Best-Selling Products" hint="Sales · parent rows only">
           <HBarChart data={d?.top_products || []} />
         </Panel>
-        <Panel title="Brand Share of Sales" hint="Sales mix by brand · SPOS">
-          <Donut data={(d?.brand_share || []).map((b) => ({ name: b.brand, value: b.sales }))} />
+        <Panel title="Brand Share of Sales" hint="Panasonic vs Other · SPOS">
+          <Donut data={panasonicVsOther(d?.brand_share || [])} colors={["#c9a227", "#3b6ea5"]} />
         </Panel>
       </div>
 
@@ -156,7 +181,7 @@ export default function DashboardPage() {
       {/* Store monthly */}
       <div className="row">
         <Panel title="Store Sales by Month" hint="All brands GMV · Performa">
-          <BarsChart data={byMonth(d?.store_monthly || [])} x="month" y="gmv" color="#1e4a7a" />
+          <BarsChart data={byMonth(d?.store_monthly || [])} x="label" y="gmv" color="#1e4a7a" />
         </Panel>
       </div>
 
@@ -258,15 +283,16 @@ function HBarChart({ data }: { data: { name: string; sales: number }[] }) {
   );
 }
 
-function Donut({ data }: { data: { name: string; value: number }[] }) {
+function Donut({ data, colors }: { data: { name: string; value: number }[]; colors?: string[] }) {
   const filtered = data.filter((x) => x.value > 0);
   if (!filtered.length) return <Empty />;
+  const palette = colors || PALETTE;
   return (
     <div style={{ width: "100%", height: 300 }}>
       <ResponsiveContainer>
         <PieChart>
           <Pie data={filtered} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={55} outerRadius={90} paddingAngle={2}>
-            {filtered.map((_, i) => <Cell key={i} fill={PALETTE[i % PALETTE.length]} stroke="#0a1628" strokeWidth={2} />)}
+            {filtered.map((_, i) => <Cell key={i} fill={palette[i % palette.length]} stroke="#0a1628" strokeWidth={2} />)}
           </Pie>
           <Tooltip contentStyle={tooltip} formatter={(v) => idr(Number(v))} />
           <Legend wrapperStyle={{ fontSize: 11, color: "#bcd0ee" }} />
@@ -276,14 +302,14 @@ function Donut({ data }: { data: { name: string; value: number }[] }) {
   );
 }
 
-function CostRoas({ data }: { data: { month: string; cost: number; roas: number | null }[] }) {
+function CostRoas({ data }: { data: { label: string; cost: number; roas: number | null }[] }) {
   if (!data.length) return <Empty />;
   return (
     <div style={{ width: "100%", height: 300 }}>
       <ResponsiveContainer>
         <ComposedChart data={data} margin={{ left: 0, right: 8, top: 6, bottom: 40 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,.05)" vertical={false} />
-          <XAxis dataKey="month" tick={axis} interval={0} angle={-25} textAnchor="end" height={50} axisLine={false} tickLine={false} />
+          <XAxis dataKey="label" tick={axis} interval={0} angle={-25} textAnchor="end" height={50} axisLine={false} tickLine={false} />
           <YAxis yAxisId="l" tick={axis} tickFormatter={(v) => idr(Number(v))} axisLine={false} tickLine={false} width={52} />
           <YAxis yAxisId="r" orientation="right" tick={axis} axisLine={false} tickLine={false} width={32} />
           <Tooltip contentStyle={tooltip} formatter={(v, n) => n === "roas" ? [(Number(v) || 0).toFixed(2) + "×", "ROAS"] : [idr(Number(v)), "Cost"]} cursor={{ fill: "rgba(201,162,39,.05)" }} />
@@ -295,14 +321,14 @@ function CostRoas({ data }: { data: { month: string; cost: number; roas: number 
   );
 }
 
-function TrafficTrend({ data }: { data: { month: string; traffic: number; in_cart: number }[] }) {
+function TrafficTrend({ data }: { data: { label: string; traffic: number; in_cart: number }[] }) {
   if (!data.length) return <Empty />;
   return (
     <div style={{ width: "100%", height: 300 }}>
       <ResponsiveContainer>
         <LineChart data={data} margin={{ left: 0, right: 8, top: 6, bottom: 40 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,.05)" vertical={false} />
-          <XAxis dataKey="month" tick={axis} interval={0} angle={-25} textAnchor="end" height={50} axisLine={false} tickLine={false} />
+          <XAxis dataKey="label" tick={axis} interval={0} angle={-25} textAnchor="end" height={50} axisLine={false} tickLine={false} />
           <YAxis tick={axis} tickFormatter={(v) => num(Number(v))} axisLine={false} tickLine={false} width={48} />
           <Tooltip contentStyle={tooltip} formatter={(v, n) => [num(Number(v)), n === "in_cart" ? "In-Cart" : "Traffic"]} />
           <Legend wrapperStyle={{ fontSize: 11 }} />

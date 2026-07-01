@@ -18,16 +18,24 @@ function wordRe(term: string): RegExp {
   return new RegExp("\\b" + esc + "\\b", "i");
 }
 
-export function detectBrand(name: unknown): string {
+// Longer/more-specific terms must be tried first so e.g. "Kipas Angin" wins
+// over a bare "AC"/"Fan", and multi-word brand names win over substrings.
+// This makes the ordering safe regardless of how the caller's list (e.g. the
+// Core List from the DB) happens to be sorted.
+function bySpecificity(list: string[]): string[] {
+  return [...list].sort((a, b) => b.length - a.length);
+}
+
+export function detectBrand(name: unknown, brands: string[] = BRAND_LIST): string {
   const s = String(name ?? "");
   if (/non\s*panasonic|bukan\s*panasonic/i.test(s)) return "Others";
-  for (const b of BRAND_LIST) if (wordRe(b).test(s)) return b;
+  for (const b of bySpecificity(brands)) if (wordRe(b).test(s)) return b;
   return "Others";
 }
 
-export function detectCategory(name: unknown): string {
+export function detectCategory(name: unknown, categories: string[] = CATEGORY_LIST): string {
   const s = String(name ?? "");
-  for (const c of CATEGORY_LIST) if (wordRe(c).test(s)) return c;
+  for (const c of bySpecificity(categories)) if (wordRe(c).test(s)) return c;
   return "Others";
 }
 
@@ -81,10 +89,14 @@ const NAME_COL: Record<DataSource, string | null> = {
 
 // Map a parsed raw row -> the typed sales_rows fields. Metric extraction picks
 // the best-matching Shopee column per source; raw keeps everything verbatim.
+// `dicts` lets the caller pass the workspace's live Core List brands/categories
+// (master_data) instead of the hardcoded fallback lists — so a brand/category
+// added in Core List is picked up on the very next upload with no code change.
 export function mapRow(
   source: DataSource,
   raw: Record<string, unknown>,
-  manual: ManualFields
+  manual: ManualFields,
+  dicts?: { brands?: string[]; categories?: string[] }
 ) {
   const get = (k: string) => raw[k] ?? raw[bqCol(k)];
 
@@ -98,12 +110,14 @@ export function mapRow(
   // otherwise auto-detect from the product/campaign name.
   const storedBrand = String(get("Brand") ?? "").trim();
   const storedType = String(get("Tipe Produk") ?? "").trim();
+  const brandList = dicts?.brands?.length ? dicts.brands : BRAND_LIST;
+  const categoryList = dicts?.categories?.length ? dicts.categories : CATEGORY_LIST;
   const brand = (storedBrand && storedBrand !== "-")
     ? storedBrand
-    : (nameCol ? detectBrand(name) : null);
+    : (nameCol ? detectBrand(name, brandList) : null);
   const product_type = (storedType && storedType !== "-")
     ? storedType
-    : (nameCol ? detectCategory(name) : null);
+    : (nameCol ? detectCategory(name, categoryList) : null);
 
   // SPOS parent-row rule: count only rows where traffic (visitors) is present.
   const visitorsSpos = toNum(get("Pengunjung Produk (Kunjungan)"));
