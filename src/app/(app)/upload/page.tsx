@@ -115,7 +115,7 @@ export default function UploadPage() {
     setForm((f) => ({ ...f, city, pic_panasonic: pic, dealer: "" }));
     if (!city || !clientId) { setDealers([]); return; }
     const { data } = await supabase.from("master_data")
-      .select("value").eq("kind", "dealer").eq("client_id", clientId).eq("city", city).order("value");
+      .select("value").eq("kind", "store").eq("client_id", clientId).eq("city", city).order("value");
     setDealers(((data as { value: string }[]) || []).map((d) => d.value));
   }
 
