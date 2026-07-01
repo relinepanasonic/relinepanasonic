@@ -33,7 +33,7 @@ export async function proxy(request: NextRequest) {
 
   const path = request.nextUrl.pathname;
   const isAuthPage   = path === "/login";
-  const isPublicPage = isAuthPage || path.startsWith("/join/");
+  const isPublicPage = isAuthPage || path.startsWith("/join/") || path.startsWith("/api/join");
 
   if (!user && !isPublicPage) {
     const url = request.nextUrl.clone();
