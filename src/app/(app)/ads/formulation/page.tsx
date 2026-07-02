@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
+import { createClient } from "@/lib/supabase/client";
 
 export const dynamic = "force-dynamic";
 
@@ -38,10 +39,36 @@ const EMPTY_FORM: FormData = {
 const idrFmt = (v: number) => "Rp " + new Intl.NumberFormat("id-ID").format(Math.round(v));
 
 export default function FormulationPage() {
+  const [supabase] = useState(() => createClient());
   const [year,   setYear]   = useState(String(THIS_YEAR));
   const [month,  setMonth]  = useState("");
-  const [avgRoas, setAvgRoas] = useState("");   // user fills for now (formula TBD)
+  const [baseRoas, setBaseRoas]   = useState<number | null>(null);
+  const [baseLoading, setBaseLoading] = useState(false);
+  const [baseError, setBaseError] = useState("");
   const [form,   setForm]   = useState<FormData>(EMPTY_FORM);
+
+  // Baseline ROAS — live from the same dashboard_summary RPC the main
+  // Dashboard uses, scoped to the Year/Month picked here. Not editable:
+  // it's the existing reality the 5-stage thresholds get measured against.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setBaseLoading(true); setBaseError("");
+      const { data, error } = await supabase.rpc("dashboard_summary", {
+        p_year: year ? Number(year) : null,
+        p_quarter: null,
+        p_month: month || null,
+        p_week: null,
+        p_city: null,
+        p_store: null,
+      });
+      if (cancelled) return;
+      if (error) setBaseError(error.message);
+      else setBaseRoas((data as { kpis?: { roas?: number | null } })?.kpis?.roas ?? null);
+      setBaseLoading(false);
+    })();
+    return () => { cancelled = true; };
+  }, [supabase, year, month]);
 
   function setField(cat: Category, field: keyof CatData, val: string) {
     setForm((f) => ({ ...f, [cat]: { ...f[cat], [field]: val } }));
@@ -91,17 +118,27 @@ export default function FormulationPage() {
               {MONTHS.map((m) => <option key={m} value={m}>{m}</option>)}
             </select>
           </div>
-          {/* Monthly AVG ROAS — manual for now, formula TBD */}
+          {/* Monthly AVG ROAS — live baseline from the Dashboard, same RPC & scope */}
           <div className="fld">
-            <label>Monthly AVG ROAS</label>
-            <input className="form-inp" type="text" placeholder="e.g. 4.5"
-              value={avgRoas} onChange={(e) => setAvgRoas(e.target.value)} />
+            <label>Monthly AVG ROAS (baseline)</label>
+            <div style={{
+              padding:"8px 12px", borderRadius:10, border:"1px solid rgba(201,162,39,.22)",
+              background:"rgba(10,22,40,.6)", minHeight:34, display:"flex", alignItems:"center",
+            }}>
+              {baseLoading ? (
+                <span style={{ color:"var(--muted)", fontSize:13 }}>Loading…</span>
+              ) : baseError ? (
+                <span style={{ color:"#f87171", fontSize:12 }}>⚠ {baseError}</span>
+              ) : baseRoas != null ? (
+                <span style={{ color:"var(--gold)", fontWeight:700, fontSize:16 }}>{baseRoas.toFixed(2)}×</span>
+              ) : (
+                <span style={{ color:"var(--muted)", fontSize:13 }}>No ads data for this period</span>
+              )}
+            </div>
           </div>
           <div style={{ paddingBottom:4, fontSize:12, color:"var(--muted)", lineHeight:1.5 }}>
-            {avgRoas && !isNaN(parseFloat(avgRoas))
-              ? <span style={{ color:"var(--gold)", fontWeight:700, fontSize:18 }}>{parseFloat(avgRoas).toFixed(2)}×</span>
-              : <span>Enter this month's avg ROAS</span>}
-            <div style={{ marginTop:2 }}>Formula integration coming soon</div>
+            From the Dashboard's Panasonic Sales ÷ Ads Cost, for {month || "all months"} {year}.
+            <div style={{ marginTop:2 }}>This is the baseline every stage below is measured against.</div>
           </div>
         </div>
       </div>
@@ -176,11 +213,11 @@ export default function FormulationPage() {
           </div>
           <div style={{ marginTop:14, padding:"12px 16px", borderRadius:12, background:"rgba(201,162,39,.06)", border:"1px solid rgba(201,162,39,.2)", display:"flex", gap:28, flexWrap:"wrap" }}>
             <Stat label="Total Ads Spent" value={idrFmt(totalSpent)} big />
-            {avgRoas && !isNaN(parseFloat(avgRoas)) && (
-              <Stat label="Avg ROAS Target" value={parseFloat(avgRoas).toFixed(2) + "×"} big />
+            {baseRoas != null && (
+              <Stat label="Baseline ROAS" value={baseRoas.toFixed(2) + "×"} big />
             )}
-            {avgRoas && totalSpent > 0 && !isNaN(parseFloat(avgRoas)) && (
-              <Stat label="Est. Total GMV" value={idrFmt(totalSpent * parseFloat(avgRoas))} big />
+            {baseRoas != null && totalSpent > 0 && (
+              <Stat label="Est. Total GMV (at baseline)" value={idrFmt(totalSpent * baseRoas)} big />
             )}
           </div>
           <div style={{ marginTop:10, fontSize:11, color:"var(--muted)" }}>
