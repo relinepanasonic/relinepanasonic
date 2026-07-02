@@ -20,7 +20,8 @@ type Summary = {
   traffic_trend: { year: number | null; month: string; traffic: number; in_cart: number }[];
   dealers: { store_name: string; city: string; sales: number; traffic: number; in_cart: number; ad_cost: number; roas: number | null }[];
 };
-type Filters = { years: number[]; quarters: string[]; months: string[]; weeks: string[]; cities: string[]; dealers: string[] };
+type DealerOpt = { value: string; city: string | null };
+type Filters = { years: number[]; quarters: string[]; months: string[]; weeks: string[]; cities: string[]; dealers: DealerOpt[] };
 
 const MONTH_ORDER = ["Januari","Februari","Febuari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"];
 const QUARTER_MONTHS: Record<string, string[]> = {
@@ -67,6 +68,11 @@ function panasonicVsOther(brandShare: { brand: string; sales: number }[]) {
     { name: "Panasonic", value: panasonic },
     { name: "Other",     value: other },
   ];
+}
+
+// Scope the Dealer dropdown to whatever City is selected (empty city = all dealers).
+function dealersInCity(dealers: DealerOpt[], city: string): DealerOpt[] {
+  return city ? dealers.filter((d) => d.city === city) : dealers;
 }
 
 export default function DashboardPage() {
@@ -127,8 +133,8 @@ export default function DashboardPage() {
         <Sel label="Quarter" value={sel.quarter} onChange={(v) => setSel((s) => ({ ...s, quarter: v, month: QUARTER_MONTHS[v]?.includes(s.month) ? s.month : "" }))} opts={filters.quarters} all="All Quarters" />
         <Sel label="Month"   value={sel.month}   onChange={(v) => setSel((s) => ({ ...s, month: v }))}   opts={sel.quarter ? filters.months.filter((m) => QUARTER_MONTHS[sel.quarter]?.includes(m)) : filters.months}   all="All Months" />
         <Sel label="Week"    value={sel.week}    onChange={(v) => setSel((s) => ({ ...s, week: v }))}    opts={filters.weeks}                all="All Weeks" />
-        <Sel label="City"    value={sel.city}    onChange={(v) => setSel((s) => ({ ...s, city: v }))}    opts={filters.cities}               all="All Cities" />
-        <Sel label="Dealer"  value={sel.dealer}  onChange={(v) => setSel((s) => ({ ...s, dealer: v }))}  opts={filters.dealers}              all="All Dealers" />
+        <Sel label="City"    value={sel.city}    onChange={(v) => setSel((s) => ({ ...s, city: v, dealer: dealersInCity(filters.dealers, v).some((d) => d.value === s.dealer) ? s.dealer : "" }))} opts={filters.cities} all="All Cities" />
+        <Sel label="Dealer"  value={sel.dealer}  onChange={(v) => setSel((s) => ({ ...s, dealer: v }))}  opts={dealersInCity(filters.dealers, sel.city).map((d) => d.value)} all="All Dealers" />
         <button className="btn-ghost" onClick={() => setSel({ year: "", quarter: "", month: "", week: "", city: "", dealer: "" })}>Reset</button>
         {loading && (
           <span style={{ alignSelf: "center", display: "flex", alignItems: "center", gap: 6, color: "var(--gold)", fontSize: 12 }}>
