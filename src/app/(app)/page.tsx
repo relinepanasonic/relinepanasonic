@@ -23,6 +23,12 @@ type Summary = {
 type Filters = { years: number[]; quarters: string[]; months: string[]; weeks: string[]; cities: string[]; dealers: string[] };
 
 const MONTH_ORDER = ["Januari","Februari","Febuari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"];
+const QUARTER_MONTHS: Record<string, string[]> = {
+  Q1: ["Januari", "Februari", "Febuari", "Maret"],
+  Q2: ["April", "Mei", "Juni"],
+  Q3: ["Juli", "Agustus", "September"],
+  Q4: ["Oktober", "November", "Desember"],
+};
 const MONTH_SHORT: Record<string, string> = {
   Januari: "Jan", Februari: "Feb", Febuari: "Feb", Maret: "Mar", April: "Apr", Mei: "Mei", Juni: "Jun",
   Juli: "Jul", Agustus: "Agu", September: "Sep", Oktober: "Okt", November: "Nov", Desember: "Des",
@@ -118,8 +124,8 @@ export default function DashboardPage() {
       {/* Filters — matching GAS: Year / Quarter / Month / Week / City / Dealer */}
       <div className="filterbar">
         <Sel label="Year"    value={sel.year}    onChange={(v) => setSel((s) => ({ ...s, year: v }))}    opts={filters.years.map(String)}    all="All Years" />
-        <Sel label="Quarter" value={sel.quarter} onChange={(v) => setSel((s) => ({ ...s, quarter: v }))} opts={filters.quarters}             all="All Quarters" />
-        <Sel label="Month"   value={sel.month}   onChange={(v) => setSel((s) => ({ ...s, month: v }))}   opts={filters.months}               all="All Months" />
+        <Sel label="Quarter" value={sel.quarter} onChange={(v) => setSel((s) => ({ ...s, quarter: v, month: QUARTER_MONTHS[v]?.includes(s.month) ? s.month : "" }))} opts={filters.quarters} all="All Quarters" />
+        <Sel label="Month"   value={sel.month}   onChange={(v) => setSel((s) => ({ ...s, month: v }))}   opts={sel.quarter ? filters.months.filter((m) => QUARTER_MONTHS[sel.quarter]?.includes(m)) : filters.months}   all="All Months" />
         <Sel label="Week"    value={sel.week}    onChange={(v) => setSel((s) => ({ ...s, week: v }))}    opts={filters.weeks}                all="All Weeks" />
         <Sel label="City"    value={sel.city}    onChange={(v) => setSel((s) => ({ ...s, city: v }))}    opts={filters.cities}               all="All Cities" />
         <Sel label="Dealer"  value={sel.dealer}  onChange={(v) => setSel((s) => ({ ...s, dealer: v }))}  opts={filters.dealers}              all="All Dealers" />
