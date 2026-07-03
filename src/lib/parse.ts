@@ -45,15 +45,24 @@ export function bqCol(h: unknown): string {
 }
 
 // Parse a Shopee numeric string to a whole number or null.
-// Shopee xlsx exports use Indonesian formatting where dots/commas are THOUSAND
-// separators (e.g. "24.759.000" = 24759000). Strip Rp, dots, commas, spaces, %
-// — identical to the GAS sqlIDR_/sqlNum_ SQL parsers.
+// Shopee xlsx exports usually use Indonesian formatting where dots/commas are
+// THOUSAND separators (e.g. "24.759.000" = 24759000), but some cells (notably
+// "Month Awal" baseline rows and count columns) render with a genuine 2-digit
+// decimal/cents suffix instead, e.g. "111,774,820.00" or "45,00". A trailing
+// separator followed by exactly 2 digits is always a decimal marker in
+// currency/count formatting — a thousands group is always 3 digits — so drop
+// that suffix FIRST, then strip the remaining separators as thousands groups.
+// Getting this order wrong merges the decimal into the integer and inflates
+// the value 100x (e.g. "111,774,820.00" -> 11177482000 instead of 111774820).
 export function toNum(v: unknown): number | null {
   if (v === null || v === undefined) return null;
   if (typeof v === "number") return Number.isFinite(v) ? v : null;
   let s = String(v).trim();
   if (!s || s === "-") return null;
-  s = s.replace(/rp/i, "").replace(/[.,\s%]/g, "");
+  s = s.replace(/rp/i, "").trim();
+  if (!s || s === "-") return null;
+  s = s.replace(/[.,]\d{2}$/, ""); // drop a genuine 2-digit decimal/cents suffix
+  s = s.replace(/[.,\s%]/g, "");
   if (!s || s === "-") return null;
   const n = Number(s);
   return Number.isFinite(n) ? n : null;
