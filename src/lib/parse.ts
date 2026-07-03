@@ -84,6 +84,14 @@ export function bqCol(h: unknown): string {
 // that suffix FIRST, then strip the remaining separators as thousands groups.
 // Getting this order wrong merges the decimal into the integer and inflates
 // the value 100x (e.g. "111,774,820.00" -> 11177482000 instead of 111774820).
+//
+// A trailing "%" is a separate issue: some source spreadsheet cells for
+// money columns get mistakenly formatted as Excel "Percentage" (e.g. cell
+// format "0.00%"), which multiplies the true stored value by 100 for
+// display and appends "%" — e.g. a genuine Rp 1,390,696 renders as
+// "139069600.00%". toNum() is only ever called on money/count columns
+// (never on real percentage columns), so any "%" here is always this
+// formatting bug — strip it and divide the parsed value back by 100.
 export function toNum(v: unknown): number | null {
   if (v === null || v === undefined) return null;
   if (typeof v === "number") return Number.isFinite(v) ? v : null;
@@ -91,11 +99,16 @@ export function toNum(v: unknown): number | null {
   if (!s || s === "-") return null;
   s = s.replace(/rp/i, "").trim();
   if (!s || s === "-") return null;
+  const wasPercentFormatted = s.endsWith("%");
+  if (wasPercentFormatted) s = s.slice(0, -1).trim();
+  if (!s || s === "-") return null;
   s = s.replace(/[.,]\d{2}$/, ""); // drop a genuine 2-digit decimal/cents suffix
   s = s.replace(/[.,\s%]/g, "");
   if (!s || s === "-") return null;
-  const n = Number(s);
-  return Number.isFinite(n) ? n : null;
+  let n = Number(s);
+  if (!Number.isFinite(n)) return null;
+  if (wasPercentFormatted) n = n / 100;
+  return n;
 }
 
 export type DataSource = "spos" | "ads" | "perf";
