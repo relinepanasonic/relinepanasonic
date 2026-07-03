@@ -214,7 +214,7 @@ export default function DashboardPage() {
         <div className="tbl-wrap" style={{ maxHeight: 440 }}>
           <table className="tbl">
             <thead><tr>
-              <th>Dealer</th><th>City</th><th className="num">Sales</th><th className="num">Traffic</th>
+              <th>Dealer</th><th style={{ width: 90 }}>Trend</th><th>City</th><th className="num">Sales</th><th className="num">Traffic</th>
               <th className="num">In-Cart</th><th className="num">Cart Rate</th><th className="num">Ads Cost</th><th className="num">ROAS</th>
             </tr></thead>
             <tbody>
@@ -222,12 +222,8 @@ export default function DashboardPage() {
                 const cr = r.traffic ? (r.in_cart / r.traffic) * 100 : 0;
                 return (
                   <tr key={i}>
-                    <td>
-                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                        <span>{r.store_name}</span>
-                        <Sparkline points={(r.trend || []).map((t) => t.sales)} />
-                      </div>
-                    </td>
+                    <td>{r.store_name}</td>
+                    <td><Sparkline id={`spark-${i}`} points={(r.trend || []).map((t) => t.sales)} /></td>
                     <td>{r.city || "—"}</td>
                     <td className="num">{idr(r.sales)}</td>
                     <td className="num">{num(r.traffic)}</td>
@@ -389,22 +385,35 @@ function CostRoas({ data }: { data: { label: string; cost: number; roas: number 
   );
 }
 
-// Small inline SPOS Panasonic sales trend next to each dealer's name.
+// Small SPOS Panasonic sales trend chart, own column next to City.
 // Green when the latest period is >= the first, red when it's down.
-function Sparkline({ points, width = 64, height = 22 }: { points: number[]; width?: number; height?: number }) {
-  if (points.length < 2) return <span style={{ display: "inline-block", width, height, verticalAlign: "middle" }} />;
+// Styled to match the "3D" gradient-fill + glow look used on the main charts.
+function Sparkline({ id, points, width = 84, height = 30 }: { id: string; points: number[]; width?: number; height?: number }) {
+  if (points.length < 2) return <span style={{ display: "inline-block", width, height }} />;
+  const pad = 4; // room for the end-point glow dot so it isn't clipped
   const max = Math.max(...points), min = Math.min(...points);
   const range = max - min || 1;
-  const stepX = width / (points.length - 1);
-  const coords = points.map((p, i) => [i * stepX, height - ((p - min) / range) * height] as const);
+  const stepX = (width - pad * 2) / (points.length - 1);
+  const coords = points.map((p, i) => [pad + i * stepX, pad + (height - pad * 2) * (1 - (p - min) / range)] as const);
   const linePath = coords.map(([x, y], i) => `${i === 0 ? "M" : "L"} ${x.toFixed(1)} ${y.toFixed(1)}`).join(" ");
-  const areaPath = `${linePath} L ${width} ${height} L 0 ${height} Z`;
+  const areaPath = `${linePath} L ${coords[coords.length - 1][0].toFixed(1)} ${height} L ${coords[0][0].toFixed(1)} ${height} Z`;
   const up = points[points.length - 1] >= points[0];
   const color = up ? "#4ade80" : "#f87171";
+  const [lastX, lastY] = coords[coords.length - 1];
   return (
-    <svg width={width} height={height} style={{ display: "block", verticalAlign: "middle", flexShrink: 0 }}>
-      <path d={areaPath} fill={color} opacity={0.15} />
-      <path d={linePath} fill="none" stroke={color} strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" />
+    <svg width={width} height={height} style={{ display: "block" }}>
+      <defs>
+        <linearGradient id={`${id}-fill`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%"   stopColor={color} stopOpacity={0.45} />
+          <stop offset="100%" stopColor={color} stopOpacity={0} />
+        </linearGradient>
+        <filter id={`${id}-glow`} x="-80%" y="-80%" width="260%" height="260%">
+          <feDropShadow dx="0" dy="0" stdDeviation="1.4" floodColor={color} floodOpacity="0.85" />
+        </filter>
+      </defs>
+      <path d={areaPath} fill={`url(#${id}-fill)`} />
+      <path d={linePath} fill="none" stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" style={{ filter: `url(#${id}-glow)` }} />
+      <circle cx={lastX} cy={lastY} r={2.4} fill={color} style={{ filter: `url(#${id}-glow)` }} />
     </svg>
   );
 }
