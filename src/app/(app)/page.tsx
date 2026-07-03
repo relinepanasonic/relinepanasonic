@@ -18,7 +18,7 @@ type Summary = {
   by_category: { category: string; sales: number }[];
   cost_roas: { year: number | null; month: string; cost: number; roas: number | null }[];
   traffic_trend: { year: number | null; month: string; traffic: number; in_cart: number }[];
-  dealers: { store_name: string; city: string; sales: number; traffic: number; in_cart: number; ad_cost: number; roas: number | null }[];
+  dealers: { store_name: string; city: string; sales: number; traffic: number; in_cart: number; ad_cost: number; roas: number | null; trend: { year: number | null; month: string; sales: number }[] }[];
 };
 type DealerOpt = { value: string; city: string | null };
 type Filters = { years: number[]; quarters: string[]; months: string[]; weeks: string[]; cities: string[]; dealers: DealerOpt[] };
@@ -222,7 +222,13 @@ export default function DashboardPage() {
                 const cr = r.traffic ? (r.in_cart / r.traffic) * 100 : 0;
                 return (
                   <tr key={i}>
-                    <td>{r.store_name}</td><td>{r.city || "—"}</td>
+                    <td>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <span>{r.store_name}</span>
+                        <Sparkline points={(r.trend || []).map((t) => t.sales)} />
+                      </div>
+                    </td>
+                    <td>{r.city || "—"}</td>
                     <td className="num">{idr(r.sales)}</td>
                     <td className="num">{num(r.traffic)}</td>
                     <td className="num">{num(r.in_cart)}</td>
@@ -260,17 +266,37 @@ function Empty() { return <div style={{ height: 280, display: "flex", alignItems
 const tooltip = { background: "#0f2040", border: "1px solid rgba(201,162,39,.3)", borderRadius: 8, color: "#e8edf8", fontSize: 12 };
 const axis = { fontSize: 10, fill: "#94a3b8" };
 
+// Gives bars a glossy top-to-bottom gradient + soft drop shadow — a cheap
+// "3D" look without a real perspective transform (which would break
+// ResponsiveContainer's auto-sizing and tooltip hit-testing).
+function BarDefs({ id, color }: { id: string; color: string }) {
+  return (
+    <defs>
+      <linearGradient id={id} x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%"   stopColor={color} stopOpacity={1} />
+        <stop offset="55%"  stopColor={color} stopOpacity={0.88} />
+        <stop offset="100%" stopColor={color} stopOpacity={0.55} />
+      </linearGradient>
+      <filter id={`${id}-shadow`} x="-60%" y="-60%" width="220%" height="220%">
+        <feDropShadow dx="0" dy="3" stdDeviation="3" floodColor={color} floodOpacity="0.4" />
+      </filter>
+    </defs>
+  );
+}
+
 function BarsChart({ data, x, y, color }: { data: Record<string, unknown>[]; x: string; y: string; color: string }) {
   if (!data.length) return <Empty />;
+  const gid = `barGrad-${y}`;
   return (
     <div style={{ width: "100%", height: 300 }}>
       <ResponsiveContainer>
         <BarChart data={data} margin={{ left: 0, right: 8, top: 6, bottom: 40 }}>
+          <BarDefs id={gid} color={color} />
           <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,.05)" vertical={false} />
           <XAxis dataKey={x} tick={axis} interval={0} angle={-25} textAnchor="end" height={50} axisLine={false} tickLine={false} />
           <YAxis tick={axis} tickFormatter={(v) => idr(Number(v))} axisLine={false} tickLine={false} width={52} />
           <Tooltip contentStyle={tooltip} formatter={(v) => [idr(Number(v)), "Sales"]} cursor={{ fill: "rgba(201,162,39,.05)" }} />
-          <Bar dataKey={y} fill={color} radius={[4, 4, 0, 0]} maxBarSize={46} />
+          <Bar dataKey={y} fill={`url(#${gid})`} style={{ filter: `url(#${gid}-shadow)` }} radius={[6, 6, 2, 2]} maxBarSize={46} />
         </BarChart>
       </ResponsiveContainer>
     </div>
@@ -280,15 +306,25 @@ function BarsChart({ data, x, y, color }: { data: Record<string, unknown>[]; x: 
 function HBarChart({ data }: { data: { name: string; sales: number }[] }) {
   if (!data.length) return <Empty />;
   const short = data.map((p) => ({ ...p, label: p.name.length > 26 ? p.name.slice(0, 26) + "…" : p.name }));
+  const gid = "barGrad-hbar";
   return (
     <div style={{ width: "100%", height: 320 }}>
       <ResponsiveContainer>
         <BarChart layout="vertical" data={short} margin={{ left: 8, right: 16, top: 4, bottom: 4 }}>
+          <defs>
+            <linearGradient id={gid} x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0%"   stopColor="#c9a227" stopOpacity={0.7} />
+              <stop offset="100%" stopColor="#e8c84a" stopOpacity={1} />
+            </linearGradient>
+            <filter id={`${gid}-shadow`} x="-40%" y="-60%" width="180%" height="220%">
+              <feDropShadow dx="2" dy="0" stdDeviation="2.5" floodColor="#c9a227" floodOpacity="0.35" />
+            </filter>
+          </defs>
           <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,.05)" horizontal={false} />
           <XAxis type="number" tick={axis} tickFormatter={(v) => idr(Number(v))} axisLine={false} tickLine={false} />
           <YAxis type="category" dataKey="label" tick={{ fontSize: 10, fill: "#bcd0ee" }} width={150} axisLine={false} tickLine={false} />
           <Tooltip contentStyle={tooltip} formatter={(v) => [idr(Number(v)), "Sales"]} cursor={{ fill: "rgba(201,162,39,.05)" }} />
-          <Bar dataKey="sales" fill="#c9a227" radius={[0, 4, 4, 0]} maxBarSize={20} />
+          <Bar dataKey="sales" fill={`url(#${gid})`} style={{ filter: `url(#${gid}-shadow)` }} radius={[2, 6, 6, 2]} maxBarSize={20} />
         </BarChart>
       </ResponsiveContainer>
     </div>
@@ -303,8 +339,20 @@ function Donut({ data, colors }: { data: { name: string; value: number }[]; colo
     <div style={{ width: "100%", height: 300 }}>
       <ResponsiveContainer>
         <PieChart>
-          <Pie data={filtered} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={55} outerRadius={90} paddingAngle={2}>
-            {filtered.map((_, i) => <Cell key={i} fill={palette[i % palette.length]} stroke="#0a1628" strokeWidth={2} />)}
+          <defs>
+            {palette.map((c, i) => (
+              <radialGradient key={i} id={`donutGrad-${i}`} cx="35%" cy="35%" r="75%">
+                <stop offset="0%"   stopColor={c} stopOpacity={1} />
+                <stop offset="100%" stopColor={c} stopOpacity={0.72} />
+              </radialGradient>
+            ))}
+            <filter id="donut-shadow" x="-40%" y="-40%" width="180%" height="180%">
+              <feDropShadow dx="0" dy="2" stdDeviation="3" floodColor="#000" floodOpacity="0.35" />
+            </filter>
+          </defs>
+          <Pie data={filtered} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={55} outerRadius={90}
+               paddingAngle={2} style={{ filter: "url(#donut-shadow)" }}>
+            {filtered.map((_, i) => <Cell key={i} fill={`url(#donutGrad-${i % palette.length})`} stroke="#0a1628" strokeWidth={2} />)}
           </Pie>
           <Tooltip contentStyle={tooltip} formatter={(v) => idr(Number(v))} />
           <Legend wrapperStyle={{ fontSize: 11, color: "#bcd0ee" }} />
@@ -320,16 +368,44 @@ function CostRoas({ data }: { data: { label: string; cost: number; roas: number 
     <div style={{ width: "100%", height: 300 }}>
       <ResponsiveContainer>
         <ComposedChart data={data} margin={{ left: 0, right: 8, top: 6, bottom: 40 }}>
+          <BarDefs id="costRoasBar" color="#1e4a7a" />
+          <defs>
+            <filter id="roasLine-glow" x="-60%" y="-60%" width="220%" height="220%">
+              <feDropShadow dx="0" dy="0" stdDeviation="2.5" floodColor="#c9a227" floodOpacity="0.6" />
+            </filter>
+          </defs>
           <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,.05)" vertical={false} />
           <XAxis dataKey="label" tick={axis} interval={0} angle={-25} textAnchor="end" height={50} axisLine={false} tickLine={false} />
           <YAxis yAxisId="l" tick={axis} tickFormatter={(v) => idr(Number(v))} axisLine={false} tickLine={false} width={52} />
           <YAxis yAxisId="r" orientation="right" tick={axis} axisLine={false} tickLine={false} width={32} />
           <Tooltip contentStyle={tooltip} formatter={(v, n) => n === "roas" ? [(Number(v) || 0).toFixed(2) + "×", "ROAS"] : [idr(Number(v)), "Cost"]} cursor={{ fill: "rgba(201,162,39,.05)" }} />
-          <Bar yAxisId="l" dataKey="cost" fill="#1e4a7a" radius={[4, 4, 0, 0]} maxBarSize={40} />
-          <Line yAxisId="r" type="monotone" dataKey="roas" stroke="#c9a227" strokeWidth={2.5} dot={{ r: 3, fill: "#c9a227" }} />
+          <Bar yAxisId="l" dataKey="cost" fill="url(#costRoasBar)" style={{ filter: "url(#costRoasBar-shadow)" }} radius={[6, 6, 2, 2]} maxBarSize={40} />
+          <Line yAxisId="r" type="monotone" dataKey="roas" stroke="#c9a227" strokeWidth={2.5}
+                dot={{ r: 3.5, fill: "#c9a227", stroke: "#0a1628", strokeWidth: 1 }}
+                style={{ filter: "url(#roasLine-glow)" }} />
         </ComposedChart>
       </ResponsiveContainer>
     </div>
+  );
+}
+
+// Small inline SPOS Panasonic sales trend next to each dealer's name.
+// Green when the latest period is >= the first, red when it's down.
+function Sparkline({ points, width = 64, height = 22 }: { points: number[]; width?: number; height?: number }) {
+  if (points.length < 2) return <span style={{ display: "inline-block", width, height, verticalAlign: "middle" }} />;
+  const max = Math.max(...points), min = Math.min(...points);
+  const range = max - min || 1;
+  const stepX = width / (points.length - 1);
+  const coords = points.map((p, i) => [i * stepX, height - ((p - min) / range) * height] as const);
+  const linePath = coords.map(([x, y], i) => `${i === 0 ? "M" : "L"} ${x.toFixed(1)} ${y.toFixed(1)}`).join(" ");
+  const areaPath = `${linePath} L ${width} ${height} L 0 ${height} Z`;
+  const up = points[points.length - 1] >= points[0];
+  const color = up ? "#4ade80" : "#f87171";
+  return (
+    <svg width={width} height={height} style={{ display: "block", verticalAlign: "middle", flexShrink: 0 }}>
+      <path d={areaPath} fill={color} opacity={0.15} />
+      <path d={linePath} fill="none" stroke={color} strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
   );
 }
 
