@@ -12,6 +12,36 @@ export const CATEGORY_LIST = [
   "Magic Com", "Kulkas", "Dispenser", "Blender", "Setrika", "Frezzer", "Fan", "TV", "AC",
 ];
 
+// Canonical Indonesian month names — exactly one spelling per month.
+// "Mei" has no shorter form — it's already 3 letters.
+export const MONTH_LIST = [
+  "Januari", "Februari", "Maret", "April", "Mei", "Juni",
+  "Juli", "Agustus", "September", "Oktober", "November", "Desember",
+];
+
+// Some source files (notably certain Performa exports) abbreviate the month
+// in their "Bulan" column ("Jan", "Feb", "Mar", ...), or misspell it
+// ("Febuari" instead of "Februari"), while Ads/SPOS files for the same
+// period use the canonical full name. Since every chart and filter groups by
+// exact month-string match, this silently splits one real month into two
+// separate buckets — the abbreviated/misspelled one showing sales/GMV with
+// no matching ad cost, and vice versa. Normalize to the canonical full name
+// so every source lands in the same bucket.
+const MONTH_ABBR: Record<string, string> = {
+  jan: "Januari", feb: "Februari", febuari: "Februari", mar: "Maret", apr: "April",
+  jun: "Juni", jul: "Juli", agu: "Agustus", aug: "Agustus",
+  sep: "September", okt: "Oktober", oct: "Oktober",
+  nov: "November", des: "Desember", dec: "Desember",
+};
+
+export function normalizeMonth(v: unknown): string | undefined {
+  const s = String(v ?? "").trim();
+  if (!s) return undefined;
+  if (MONTH_LIST.includes(s)) return s; // already canonical (incl. "Mei", "Month Awal" passes through below)
+  const key = s.toLowerCase().replace(/\.$/, "");
+  return MONTH_ABBR[key] ?? s; // unrecognized values (e.g. "Month Awal") pass through unchanged
+}
+
 // Case-insensitive whole-word regex; \b means "AC" won't match inside "Hitachi".
 function wordRe(term: string): RegExp {
   const esc = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -169,7 +199,7 @@ export function mapRow(
   return {
     source,
     year: manual.year ?? null,
-    month: manual.bulan ?? null,
+    month: normalizeMonth(manual.bulan) ?? null,
     week: manual.week ?? null,
     city: manual.city ?? null,
     store_name: manual.store_name ?? null,
