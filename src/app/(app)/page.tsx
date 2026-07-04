@@ -86,6 +86,11 @@ export default function DashboardPage() {
     (async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
+      // Read the cached filter options (refreshed on upload) instead of
+      // re-scanning sales_rows for distinct year/month/week on every load.
+      const { data: cached } = await supabase.rpc("get_dashboard_filters_cached");
+      if (cached) { setFilters(cached as Filters); return; }
+      // Fallback for before migration 20 is applied / cache is empty.
       const { data: f } = await supabase.rpc("dashboard_filters");
       if (f) setFilters(f as Filters);
     })();
