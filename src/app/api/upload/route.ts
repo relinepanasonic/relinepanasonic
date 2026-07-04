@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import * as XLSX from "xlsx";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -139,6 +139,13 @@ export async function POST(req: NextRequest) {
     .from("uploads")
     .update({ row_count: inserted })
     .eq("id", upload.id);
+
+  // Refresh the dashboard's cached "All Time" snapshot after the response
+  // is sent — recomputing it live on every page load doesn't scale as
+  // sales_rows keeps growing every quarter (see migration 19).
+  after(async () => {
+    await admin.rpc("refresh_dashboard_snapshot", { p_client_id: clientId });
+  });
 
   return NextResponse.json({ ok: true, upload_id: upload.id, rows: inserted });
 }

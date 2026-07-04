@@ -93,14 +93,21 @@ export default function DashboardPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const { data } = await supabase.rpc("dashboard_summary", {
-      p_year:    sel.year    ? Number(sel.year) : null,
-      p_quarter: sel.quarter || null,
-      p_month:   sel.month   || null,
-      p_week:    sel.week    || null,
-      p_city:    sel.city    || null,
-      p_store:   sel.dealer  || null,
-    });
+    const noFilters = !sel.year && !sel.quarter && !sel.month && !sel.week && !sel.city && !sel.dealer;
+    // The unfiltered "All Time" view touches every row in sales_rows and
+    // gets slower every quarter — read the cached snapshot instead of
+    // recomputing it live. Any filter picked falls back to the live RPC,
+    // which only scans the (much smaller) filtered slice.
+    const { data } = noFilters
+      ? await supabase.rpc("get_dashboard_snapshot")
+      : await supabase.rpc("dashboard_summary", {
+          p_year:    sel.year    ? Number(sel.year) : null,
+          p_quarter: sel.quarter || null,
+          p_month:   sel.month   || null,
+          p_week:    sel.week    || null,
+          p_city:    sel.city    || null,
+          p_store:   sel.dealer  || null,
+        });
     setD(data as Summary);
     setLoading(false);
   }, [supabase, sel]);
