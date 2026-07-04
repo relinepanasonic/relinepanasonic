@@ -209,6 +209,13 @@ export function mapRow(
     visitors = toNum(get("Total Pengunjung (Kunjungan)"));
   }
 
+  // The one raw field still needed downstream (ads_detail's product code).
+  // Kept as a real column so we can STOP storing the full `raw` blob —
+  // that blob averaged ~2.5 KB/row (~1.2 GB across the table) and was the
+  // dominant cost of every unindexed dashboard scan.
+  const kodeRaw = get("Kode Produk");
+  const kode_produk = kodeRaw != null && String(kodeRaw).trim() !== "" ? String(kodeRaw) : null;
+
   return {
     source,
     year: manual.year ?? null,
@@ -220,6 +227,7 @@ export function mapRow(
     brand,
     product_type,
     item_name: name != null ? String(name) : null,
+    kode_produk,
     grup_iklan: source === "ads" ? (manual.grup_iklan ?? null) : null,
     ads_level:  source === "ads" ? (manual.ads_level  ?? null) : null,
     tanggal: manual.tanggal || manual.tanggal_mulai || null,
@@ -231,6 +239,8 @@ export function mapRow(
     in_cart,
     penjualan_langsung,
     is_parent: isParent,
-    raw,
+    // `raw` intentionally NOT stored anymore — the DB column defaults to
+    // '{}' so rows stay narrow. Source files remain the system of record
+    // if the full original row is ever needed again.
   };
 }
