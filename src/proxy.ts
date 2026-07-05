@@ -50,5 +50,9 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)"],
+  // Exclude Next internals + any public static asset (images, manifest,
+  // robots/sitemap, etc.) so they're served directly instead of being
+  // redirected to /login for unauthenticated requests — the same bug
+  // class that once broke /join/* invite links.
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|json|webmanifest|txt|xml)$).*)"],
 };

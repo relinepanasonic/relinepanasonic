@@ -15,11 +15,19 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Reline Dashboard",
   description: "Reline Panasonic sales analytics dashboard",
+  manifest: "/manifest.json",
   icons: {
     icon: "/icon.jpg",
     apple: "/icon.jpg",
     shortcut: "/icon.jpg",
   },
+};
+
+// Grey sampled from the logo's shield background (--silver in globals.css) —
+// used by mobile browsers for the "Add to Home Screen" splash/loading
+// screen instead of the default white.
+export const viewport = {
+  themeColor: "#94a3b8",
 };
 
 export default function RootLayout({
