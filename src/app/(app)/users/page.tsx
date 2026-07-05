@@ -85,6 +85,8 @@ export default function UsersPage() {
   const [rows,    setRows]    = useState<Profile[]>([]);
   const [invites, setInvites] = useState<Invite[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
+  const [cities,  setCities]  = useState<string[]>([]);
+  const [dealers, setDealers] = useState<string[]>([]);
   const [token,   setToken]   = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({
@@ -115,9 +117,16 @@ export default function UsersPage() {
       const clientList = (cl as Client[]) || [];
       setClients(clientList);
       reload();
-      // auto-select first client in form
-      if (clientList.length > 0) {
-        setForm((f) => ({ ...f, client_id: clientList[0].id }));
+      const cid = clientList[0]?.id;
+      // auto-select the (only) client in form
+      if (cid) {
+        setForm((f) => ({ ...f, client_id: cid }));
+        const [{ data: cityRows }, { data: dealerRows }] = await Promise.all([
+          supabase.from("master_data").select("value").eq("kind", "city").eq("client_id", cid).order("value"),
+          supabase.from("master_data").select("value").eq("kind", "store").eq("client_id", cid).order("value"),
+        ]);
+        setCities(((cityRows as { value: string }[]) || []).map((c) => c.value));
+        setDealers(((dealerRows as { value: string }[]) || []).map((d) => d.value));
       }
     })();
   }, [supabase, reload]);
@@ -320,30 +329,24 @@ export default function UsersPage() {
                   </select>
                 </Fld>
 
-                {/* Client assignment — hidden for superadmin */}
-                {form.role !== "superadmin" && clients.length > 0 && (
-                  <Fld label="Client">
-                    <select style={inp} value={form.client_id}
-                      onChange={(e) => setForm({ ...form, client_id: e.target.value })}>
-                      <option value="">— select client —</option>
-                      {clients.map((c) => (
-                        <option key={c.id} value={c.id}>{c.name}</option>
-                      ))}
-                    </select>
-                  </Fld>
-                )}
-
-                {/* Scope field — only shown when role needs it */}
+                {/* Scope field — only shown when role needs it; sourced from Core List
+                    to avoid typos that would silently break dashboard filtering */}
                 {scopeType === "city" && (
                   <Fld label="City (scope)">
-                    <input style={inp} placeholder="e.g. DKI Jakarta" value={form.scope}
-                      onChange={(e) => setForm({ ...form, scope: e.target.value })} />
+                    <select style={inp} value={form.scope}
+                      onChange={(e) => setForm({ ...form, scope: e.target.value })}>
+                      <option value="">— select city —</option>
+                      {cities.map((c) => <option key={c} value={c}>{c}</option>)}
+                    </select>
                   </Fld>
                 )}
                 {scopeType === "store" && (
                   <Fld label="Store / Dealer (scope)">
-                    <input style={inp} placeholder="e.g. Hero Panasonic Jakarta" value={form.scope}
-                      onChange={(e) => setForm({ ...form, scope: e.target.value })} />
+                    <select style={inp} value={form.scope}
+                      onChange={(e) => setForm({ ...form, scope: e.target.value })}>
+                      <option value="">— select dealer —</option>
+                      {dealers.map((d) => <option key={d} value={d}>{d}</option>)}
+                    </select>
                   </Fld>
                 )}
 
