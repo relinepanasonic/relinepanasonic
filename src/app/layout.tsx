@@ -17,15 +17,16 @@ export const metadata: Metadata = {
   description: "Reline Panasonic sales analytics dashboard",
   manifest: "/manifest.json",
   icons: {
-    icon: "/icon.jpg",
-    apple: "/icon.jpg",
-    shortcut: "/icon.jpg",
+    icon: "/logo-transparent.png",
+    apple: "/logo-transparent.png",
+    shortcut: "/logo-transparent.png",
   },
 };
 
-// Grey pixel-sampled directly from icon.jpg's actual background (~#b7b8be
-// at the corners) — used by mobile browsers for the "Add to Home Screen"
-// splash/loading screen instead of the default white.
+// Grey pixel-sampled from the original icon.jpg background (~#b7b8be) —
+// now that the icon itself (logo-transparent.png) has no background of its
+// own, this color is what actually shows behind it on the "Add to Home
+// Screen" splash/loading screen instead of the default white.
 export const viewport = {
   themeColor: "#b8b9c0",
 };
