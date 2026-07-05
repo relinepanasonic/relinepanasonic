@@ -35,6 +35,13 @@ type UploadRow = {
   id: string; source: DataSource; filename: string | null; row_count: number; created_at: string;
   meta: { admin?: string; city?: string; pic_client?: string; store_name?: string; bulan?: string; week?: string; year?: number } | null;
 };
+// One row per (city, dealer, year, month, week) — the three source files
+// that make up a single upload batch collapsed into one line.
+type Batch = {
+  key: string; city: string; dealer: string; year: number | null; month: string; week: string;
+  admin: string; latest: string;
+  bySource: Partial<Record<DataSource, UploadRow>>;
+};
 
 export default function UploadPage() {
   const [supabase] = useState(() => createClient());
@@ -160,12 +167,37 @@ export default function UploadPage() {
     loadUploads(clientId);
   }
 
-  async function delUpload(id: string) {
-    if (!confirm("Delete this upload and all its rows? This cannot be undone.")) return;
-    const { error } = await supabase.from("uploads").delete().eq("id", id);
+  // Deletes every source (Performa/Ads/SPOS) that makes up one batch row.
+  async function delBatch(batch: Batch) {
+    const ids = Object.values(batch.bySource).map((u) => u!.id);
+    if (!ids.length) return;
+    const label = [batch.dealer, batch.month, batch.week].filter(Boolean).join(" · ");
+    if (!confirm(`Delete all data for "${label}"? This removes ${ids.length} file(s) and cannot be undone.`)) return;
+    const { error } = await supabase.from("uploads").delete().in("id", ids);
     if (error) { alert(error.message); return; }
     loadUploads(clientId);
   }
+
+  // ---------- group uploads into one row per (city, dealer, year, month, week) ----------
+  const batches: Batch[] = (() => {
+    const map = new Map<string, Batch>();
+    for (const u of uploads) {
+      const city = u.meta?.city || "—";
+      const dealer = u.meta?.store_name || "—";
+      const year = u.meta?.year ?? null;
+      const month = u.meta?.bulan || "—";
+      const week = u.meta?.week || "—";
+      const key = `${city}|${dealer}|${year}|${month}|${week}`;
+      if (!map.has(key)) {
+        map.set(key, { key, city, dealer, year, month, week, admin: u.meta?.admin || "—", latest: u.created_at, bySource: {} });
+      }
+      const b = map.get(key)!;
+      b.bySource[u.source] = u;
+      if (u.created_at > b.latest) b.latest = u.created_at;
+      if (!b.admin || b.admin === "—") b.admin = u.meta?.admin || b.admin;
+    }
+    return [...map.values()].sort((a, b) => b.latest.localeCompare(a.latest));
+  })();
 
   // ---------- upload log filter options ----------
   const uniq = (f: (u: UploadRow) => string | number | undefined | null) =>
@@ -175,28 +207,12 @@ export default function UploadPage() {
   const fWeeks   = uniq((u) => u.meta?.week);
   const fDealers = uniq((u) => u.meta?.store_name);
 
-  const shown = uploads.filter((u) =>
-    (!flt.year   || String(u.meta?.year) === flt.year) &&
-    (!flt.month  || u.meta?.bulan        === flt.month) &&
-    (!flt.week   || u.meta?.week         === flt.week) &&
-    (!flt.dealer || u.meta?.store_name   === flt.dealer)
+  const shownBatches = batches.filter((b) =>
+    (!flt.year   || String(b.year)  === flt.year) &&
+    (!flt.month  || b.month         === flt.month) &&
+    (!flt.week   || b.week          === flt.week) &&
+    (!flt.dealer || b.dealer        === flt.dealer)
   );
-
-  function makeTableId(meta: UploadRow["meta"], source: string): string {
-    if (!meta) return "—";
-    if ((meta as Record<string, unknown>).bq_table) return String((meta as Record<string, unknown>).bq_table);
-    const q = (b: string) => ["Januari","Februari","Maret"].includes(b) ? "Q1" : ["April","Mei","Juni"].includes(b) ? "Q2" : ["Juli","Agustus","September"].includes(b) ? "Q3" : "Q4";
-    const clean = (s: string) => s.replace(/\s+/g, "");
-    return [
-      meta.year || "",
-      meta.bulan ? q(meta.bulan) : "",
-      clean(meta.city || ""),
-      clean(meta.store_name || ""),
-      clean(meta.bulan || ""),
-      meta.week ? meta.week.replace("Week ", "Week") : "",
-      source === "perf" ? "Performa" : source === "spos" ? "SPOS" : "Ads",
-    ].filter(Boolean).join("");
-  }
 
   function fmtWhen(iso: string): string {
     const d = new Date(iso);
@@ -369,32 +385,60 @@ export default function UploadPage() {
           <Field label="Week"><select value={flt.week}   onChange={(e) => setFlt((f) => ({ ...f, week: e.target.value }))}><option value="">All Weeks</option>{fWeeks.map((w) => <option key={w} value={w}>{w}</option>)}</select></Field>
           <Field label="Dealer"><select value={flt.dealer} onChange={(e) => setFlt((f) => ({ ...f, dealer: e.target.value }))}><option value="">All Dealers</option>{fDealers.map((d) => <option key={d} value={d}>{d}</option>)}</select></Field>
           <button className="btn-ghost" onClick={() => setFlt({ year: "", month: "", week: "", city: "", dealer: "", source: "" })} style={{ height: 38, alignSelf: "end" }}>Reset</button>
-          <span style={{ alignSelf: "end", fontSize: 12, color: "var(--muted)", whiteSpace: "nowrap", paddingBottom: 8 }}>{shown.length} rows</span>
+          <span style={{ alignSelf: "end", fontSize: 12, color: "var(--muted)", whiteSpace: "nowrap", paddingBottom: 8 }}>{shownBatches.length} rows</span>
         </div>
 
         <div className="tbl-wrap">
           <table className="tbl">
             <thead>
-              <tr><th>WHEN</th><th>BY</th><th>TYPE</th><th>FILE</th><th className="num">ROWS</th><th>TABLE</th><th></th></tr>
+              <tr>
+                <th>Time Upload</th><th>Month</th><th>Week</th><th>Admin</th><th>File</th>
+                <th>Tipe</th><th>City</th><th>Dealer</th><th></th>
+              </tr>
             </thead>
             <tbody>
-              {shown.map((u) => (
-                <tr key={u.id}>
-                  <td style={{ whiteSpace: "nowrap", fontSize: 12 }}>{fmtWhen(u.created_at)}</td>
-                  <td>{u.meta?.admin || "—"}</td>
-                  <td>
-                    <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 999, background: SRC_COLOR[u.source] + "22", color: SRC_COLOR[u.source], border: `1px solid ${SRC_COLOR[u.source]}44` }}>
-                      {SRC_LABEL[u.source] || u.source}
-                    </span>
+              {shownBatches.map((b) => (
+                <tr key={b.key}>
+                  <td style={{ whiteSpace: "nowrap", fontSize: 12 }}>{fmtWhen(b.latest)}</td>
+                  <td>{b.month}</td>
+                  <td>{b.week}</td>
+                  <td>{b.admin}</td>
+                  <td style={{ fontSize: 11, color: "var(--muted)", maxWidth: 200 }}>
+                    {SLOTS.map((s) => {
+                      const u = b.bySource[s.source];
+                      if (!u) return null;
+                      return (
+                        <div key={s.source} style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={u.filename || ""}>
+                          {u.filename || "—"}
+                        </div>
+                      );
+                    })}
                   </td>
-                  <td style={{ maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={u.filename || ""}>{u.filename || "—"}</td>
-                  <td className="num">{u.row_count?.toLocaleString("id-ID") || 0}</td>
-                  <td style={{ fontSize: 11, color: "var(--muted)", maxWidth: 280, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={makeTableId(u.meta, u.source)}>{makeTableId(u.meta, u.source)}</td>
-                  <td><button onClick={() => delUpload(u.id)} style={delBtnStyle}>Delete</button></td>
+                  <td>
+                    <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
+                      {SLOTS.map((s) => {
+                        const present = !!b.bySource[s.source];
+                        const color = SRC_COLOR[s.source];
+                        return (
+                          <span key={s.source} style={{
+                            fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 999,
+                            background: present ? color + "22" : "rgba(255,255,255,.05)",
+                            color: present ? color : "var(--muted)",
+                            border: `1px solid ${present ? color + "44" : "rgba(255,255,255,.1)"}`,
+                          }}>
+                            {s.label}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  </td>
+                  <td>{b.city}</td>
+                  <td style={{ fontWeight: 600 }}>{b.dealer}</td>
+                  <td><button onClick={() => delBatch(b)} style={delBtnStyle}>Delete</button></td>
                 </tr>
               ))}
-              {shown.length === 0 && (
-                <tr><td colSpan={7} style={{ color: "var(--muted)", textAlign: "center", padding: 20 }}>
+              {shownBatches.length === 0 && (
+                <tr><td colSpan={9} style={{ color: "var(--muted)", textAlign: "center", padding: 20 }}>
                   {uploads.length ? "No uploads match these filters" : "No uploads yet"}
                 </td></tr>
               )}
