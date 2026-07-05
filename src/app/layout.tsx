@@ -23,11 +23,11 @@ export const metadata: Metadata = {
   },
 };
 
-// Grey sampled from the logo's shield background (--silver in globals.css) —
-// used by mobile browsers for the "Add to Home Screen" splash/loading
-// screen instead of the default white.
+// Grey pixel-sampled directly from icon.jpg's actual background (~#b7b8be
+// at the corners) — used by mobile browsers for the "Add to Home Screen"
+// splash/loading screen instead of the default white.
 export const viewport = {
-  themeColor: "#94a3b8",
+  themeColor: "#b8b9c0",
 };
 
 export default function RootLayout({

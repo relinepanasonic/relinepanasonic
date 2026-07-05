@@ -4,8 +4,8 @@
   "description": "Reline Panasonic sales analytics dashboard",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#94a3b8",
-  "theme_color": "#94a3b8",
+  "background_color": "#b8b9c0",
+  "theme_color": "#b8b9c0",
   "icons": [
     { "src": "/icon.jpg", "sizes": "512x512", "type": "image/jpeg" },
     { "src": "/icon.jpg", "sizes": "192x192", "type": "image/jpeg" }
