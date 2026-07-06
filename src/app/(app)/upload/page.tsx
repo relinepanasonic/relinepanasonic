@@ -20,6 +20,9 @@ const YEARS  = Array.from({ length: 6 }, (_, i) => THIS_YEAR - 2 + i); // 4 past
 const SRC_LABEL: Record<string, string> = { perf: "Performa", spos: "SPOS", ads: "Ads" };
 const SRC_COLOR: Record<string, string> = { perf: "#22c55e", spos: "#3b82f6", ads: "#f59e0b" };
 
+const idr = (n: number) => "Rp " + new Intl.NumberFormat("id-ID", { notation: "compact", maximumFractionDigits: 2 }).format(n || 0);
+const num = (n: number) => new Intl.NumberFormat("id-ID").format(Math.round(n || 0));
+
 function toISO(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
 }
@@ -34,6 +37,10 @@ type CityRow = { value: string; pic: string | null };
 type UploadRow = {
   id: string; source: DataSource; filename: string | null; row_count: number; created_at: string;
   meta: { admin?: string; city?: string; pic_client?: string; store_name?: string; bulan?: string; week?: string; year?: number } | null;
+};
+type DealerRow = {
+  store_name: string; city: string; sales: number; traffic: number; in_cart: number; ad_cost: number;
+  roas: number | null; trend: { year: number | null; month: string; sales: number }[];
 };
 // One row per (city, dealer, year, month, week) — the three source files
 // that make up a single upload batch collapsed into one line.
@@ -63,6 +70,7 @@ export default function UploadPage() {
   const [busy,    setBusy]    = useState(false);
   const [log,     setLog]     = useState<string[]>([]);
   const [uploads, setUploads] = useState<UploadRow[]>([]);
+  const [dealerRows, setDealerRows] = useState<DealerRow[]>([]);
   const [flt,     setFlt]     = useState({ year: "", month: "", week: "", city: "", dealer: "", source: "" }); // city/source kept for reset compat
 
   // load uploads
@@ -113,6 +121,11 @@ export default function UploadPage() {
       setCities((cityRows as CityRow[]) || []);
 
       loadUploads(cid);
+
+      // real per-dealer analytics — same source as the Dashboard's
+      // "Detail Data per Dealer" panel, not raw upload-metadata counts.
+      const { data: snap } = await supabase.rpc("get_dashboard_snapshot");
+      setDealerRows(((snap as { dealers?: DealerRow[] } | null)?.dealers) || []);
     })();
   }, [supabase, loadUploads]);
 
@@ -220,20 +233,6 @@ export default function UploadPage() {
       + " " + d.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" });
   }
 
-  // ---------- data per dealer summary ----------
-  const dealerStats = (() => {
-    const map = new Map<string, { city: string; admin: string; rows: number; sources: Set<string>; periods: Set<string> }>();
-    for (const u of uploads) {
-      const key = u.meta?.store_name || "—";
-      if (!map.has(key)) map.set(key, { city: u.meta?.city || "—", admin: u.meta?.admin || "—", rows: 0, sources: new Set(), periods: new Set() });
-      const s = map.get(key)!;
-      s.rows += u.row_count || 0;
-      s.sources.add(u.source);
-      if (u.meta?.bulan) s.periods.add(`${u.meta.bulan}${u.meta.year ? " " + u.meta.year : ""}`);
-    }
-    return [...map.entries()].map(([dealer, s]) => ({ dealer, ...s })).sort((a,b) => b.rows - a.rows);
-  })();
-
   return (
     <>
       {/* ───── Upload form ───── */}
@@ -337,34 +336,35 @@ export default function UploadPage() {
       </div>
 
       {/* ───── Data per Dealer ───── */}
-      {dealerStats.length > 0 && (
+      {dealerRows.length > 0 && (
         <div className="panel" style={{ marginTop: 18 }}>
           <h3 style={{ margin: "0 0 4px" }}>Data per Dealer</h3>
-          <div className="hint">Total rows uploaded per dealer across all sources and periods.</div>
-          <div className="tbl-wrap" style={{ marginTop: 14 }}>
+          <div className="hint">Sorted by sales — mirrors the Dashboard&apos;s Detail Data per Dealer.</div>
+          <div className="tbl-wrap" style={{ marginTop: 14, maxHeight: 440 }}>
             <table className="tbl">
               <thead>
-                <tr><th>Dealer</th><th>City</th><th>Admin</th><th className="num">Total Rows</th><th>Sources</th><th>Periods</th></tr>
+                <tr>
+                  <th>Dealer</th><th style={{ width: 90 }}>Trend</th><th>City</th><th className="num">Sales</th><th className="num">Traffic</th>
+                  <th className="num">In-Cart</th><th className="num">Cart Rate</th><th className="num">Ads Cost</th><th className="num">ROAS</th>
+                </tr>
               </thead>
               <tbody>
-                {dealerStats.map((s) => (
-                  <tr key={s.dealer}>
-                    <td style={{ fontWeight: 600 }}>{s.dealer}</td>
-                    <td>{s.city}</td>
-                    <td>{s.admin}</td>
-                    <td className="num">{s.rows.toLocaleString("id-ID")}</td>
-                    <td>
-                      <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
-                        {[...s.sources].map((src) => (
-                          <span key={src} style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 999, background: SRC_COLOR[src] + "22", color: SRC_COLOR[src], border: `1px solid ${SRC_COLOR[src]}44` }}>
-                            {SRC_LABEL[src] || src}
-                          </span>
-                        ))}
-                      </div>
-                    </td>
-                    <td style={{ fontSize: 12, color: "var(--muted)" }}>{[...s.periods].slice(0,4).join(", ")}{s.periods.size > 4 ? ` +${s.periods.size-4}` : ""}</td>
-                  </tr>
-                ))}
+                {dealerRows.map((r, i) => {
+                  const cr = r.traffic ? (r.in_cart / r.traffic) * 100 : 0;
+                  return (
+                    <tr key={i}>
+                      <td style={{ fontWeight: 600 }}>{r.store_name}</td>
+                      <td><Sparkline id={`up-spark-${i}`} points={(r.trend || []).map((t) => t.sales)} /></td>
+                      <td>{r.city || "—"}</td>
+                      <td className="num">{idr(r.sales)}</td>
+                      <td className="num">{num(r.traffic)}</td>
+                      <td className="num">{num(r.in_cart)}</td>
+                      <td className="num">{cr.toFixed(1)}%</td>
+                      <td className="num">{idr(r.ad_cost)}</td>
+                      <td className="num"><span className={`pill ${!r.roas ? "" : r.roas >= 3 ? "good" : r.roas >= 1 ? "warn" : "bad"}`}>{r.roas ? r.roas.toFixed(2) + "×" : "—"}</span></td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -458,5 +458,35 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
       <label>{label}</label>
       {children}
     </div>
+  );
+}
+
+function Sparkline({ id, points, width = 84, height = 30 }: { id: string; points: number[]; width?: number; height?: number }) {
+  if (points.length < 2) return <span style={{ display: "inline-block", width, height }} />;
+  const pad = 4;
+  const max = Math.max(...points), min = Math.min(...points);
+  const range = max - min || 1;
+  const stepX = (width - pad * 2) / (points.length - 1);
+  const coords = points.map((p, i) => [pad + i * stepX, pad + (height - pad * 2) * (1 - (p - min) / range)] as const);
+  const linePath = coords.map(([x, y], i) => `${i === 0 ? "M" : "L"} ${x.toFixed(1)} ${y.toFixed(1)}`).join(" ");
+  const areaPath = `${linePath} L ${coords[coords.length - 1][0].toFixed(1)} ${height} L ${coords[0][0].toFixed(1)} ${height} Z`;
+  const up = points[points.length - 1] >= points[0];
+  const color = up ? "#4ade80" : "#f87171";
+  const [lastX, lastY] = coords[coords.length - 1];
+  return (
+    <svg width={width} height={height} style={{ display: "block" }}>
+      <defs>
+        <linearGradient id={`${id}-fill`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%"   stopColor={color} stopOpacity={0.45} />
+          <stop offset="100%" stopColor={color} stopOpacity={0} />
+        </linearGradient>
+        <filter id={`${id}-glow`} x="-80%" y="-80%" width="260%" height="260%">
+          <feDropShadow dx="0" dy="0" stdDeviation="1.4" floodColor={color} floodOpacity="0.85" />
+        </filter>
+      </defs>
+      <path d={areaPath} fill={`url(#${id}-fill)`} stroke="none" />
+      <path d={linePath} fill="none" stroke={color} strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx={lastX} cy={lastY} r={2.4} fill={color} filter={`url(#${id}-glow)`} />
+    </svg>
   );
 }
