@@ -9,15 +9,12 @@ type Role = "superadmin" | "client_admin" | "branch_manager" | "store_user" | "a
 
 const NAV: { href: string; icon: string; label: string; roles?: Role[] }[] = [
   { href: "/",          icon: "📊", label: "Dashboard",           roles: ["superadmin", "branch_manager", "advertiser", "pic_panasonic"] },
-  { href: "/upload",    icon: "⬆️", label: "Upload Data",         roles: ["superadmin", "client_admin"] },
   { href: "/ads",       icon: "🎯", label: "Ads Performance",     roles: ["superadmin", "advertiser"] },
-  { href: "/product",   icon: "📦", label: "Product Performance", roles: ["superadmin", "branch_manager"] },
-  { href: "/store",     icon: "🏬", label: "Store Performance",   roles: ["superadmin", "branch_manager"] },
-  { href: "/core",      icon: "🗂️", label: "Core List",          roles: ["superadmin", "client_admin", "advertiser"] },
   { href: "/calc",      icon: "🧮", label: "Price Calculator",    roles: ["superadmin", "branch_manager", "pic_panasonic"] },
   { href: "/marketfee", icon: "💰", label: "Market Place Fee",    roles: ["superadmin", "branch_manager", "pic_panasonic"] },
+  { href: "/upload",    icon: "⬆️", label: "Upload Data",         roles: ["superadmin", "client_admin"] },
+  { href: "/core",      icon: "🗂️", label: "Core List",          roles: ["superadmin", "client_admin", "advertiser"] },
   { href: "/users",     icon: "👥", label: "Users",               roles: ["superadmin"] },
-  { href: "/invoice",   icon: "🧾", label: "Invoice",             roles: ["superadmin"] },
 ];
 
 const ROLE_LABEL: Record<Role, string> = {
@@ -30,7 +27,7 @@ const ROLE_LABEL: Record<Role, string> = {
 };
 
 // Mobile bottom-nav: 5 most-used destinations
-const BOTTOM = ["/", "/ads", "/product", "/store", "/calc"];
+const BOTTOM = ["/", "/ads", "/calc", "/marketfee", "/upload"];
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
