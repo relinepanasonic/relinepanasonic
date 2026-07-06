@@ -54,7 +54,26 @@ function deltaLabel(cur: number, prev: number | undefined | null): string {
   const pct = pctDelta(cur, prev);
   if (pct === null) return cur > 0 ? "new this month" : "flat";
   if (Math.abs(pct) < 0.5) return "flat vs last month";
-  return `${pct > 0 ? "▲" : "▼"} ${Math.abs(pct).toFixed(1)}% vs last month`;
+  // Plain ASCII +/- instead of unicode arrows — react-pdf's base Helvetica
+  // font has no glyph for ▲/▼, which renders as tofu and corrupts the
+  // spacing of the text that follows it.
+  return `${pct > 0 ? "+" : "-"}${Math.abs(pct).toFixed(1)}% vs last month`;
+}
+
+function monthKey(year: number | null, month: string): number {
+  const idx = MONTH_LIST.indexOf(month);
+  return (year ?? 0) * 12 + (idx < 0 ? 0 : idx);
+}
+
+// Trend history isn't available from a month-filtered summary (that filter
+// restricts every field, including monthly_sales, to just that one month) —
+// callers must fetch an unfiltered-by-month summary for this.
+export function lastNMonthsUpTo(points: MonthPoint[], year: number, month: string, n = 6): MonthPoint[] {
+  const targetKey = monthKey(year, month);
+  return [...points]
+    .filter((p) => p.month && monthKey(p.year, p.month) <= targetKey)
+    .sort((a, b) => monthKey(a.year, a.month) - monthKey(b.year, b.month))
+    .slice(-n);
 }
 
 export function buildNarrative(cur: Kpis, prev: Kpis | null): string[] {
@@ -149,7 +168,7 @@ function RankTable({ title, rows }: { title: string; rows: { name: string; sub: 
 }
 
 export function MonthlyReportDocument({
-  reportType, scopeLabel, monthLabel, generatedAt, current, previous,
+  reportType, scopeLabel, monthLabel, generatedAt, current, previous, trend,
 }: {
   reportType: ReportType;
   scopeLabel: string; // e.g. "Company-wide" | "Great Jakarta 1" | "One Stop - Sunter"
@@ -157,6 +176,10 @@ export function MonthlyReportDocument({
   generatedAt: string;
   current: Summary;
   previous: Summary | null;
+  // Last ~6 months of history up to and including the report's month,
+  // scoped the same as `current` (city/store) but NOT month-filtered —
+  // a month-filtered summary only ever contains that one month's bucket.
+  trend: MonthPoint[];
 }) {
   const titleByType: Record<ReportType, string> = {
     ceo: "Panasonic CEO — Monthly Performance Report",
@@ -165,11 +188,7 @@ export function MonthlyReportDocument({
   };
   const bullets = buildNarrative(current.kpis, previous?.kpis ?? null);
 
-  // last 6 months of the trend (whatever source is most relevant to the scope)
-  const trendSource = reportType === "dealer_owner" && current.dealers[0]?.trend?.length
-    ? current.dealers[0].trend
-    : current.monthly_sales;
-  const trendData = trendSource.slice(-6).map((m) => ({ label: (m.month || "").slice(0, 3), value: m.sales }));
+  const trendData = trend.map((m) => ({ label: (m.month || "").slice(0, 3), value: m.sales }));
 
   const dealersSorted = [...current.dealers].sort((a, b) => b.sales - a.sales);
   const showSplit = dealersSorted.length > 10;

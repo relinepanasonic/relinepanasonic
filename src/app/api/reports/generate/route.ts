@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { renderToBuffer } from "@react-pdf/renderer";
 import { createClient } from "@/lib/supabase/server";
-import { MonthlyReportDocument, prevMonth, type ReportType, type Summary } from "@/lib/reportPdf";
+import { MonthlyReportDocument, prevMonth, lastNMonthsUpTo, type ReportType, type Summary } from "@/lib/reportPdf";
 
 export const runtime = "nodejs";
 
@@ -43,15 +43,19 @@ export async function POST(req: NextRequest) {
 
   const { year: prevYear, month: prevMonthName } = prevMonth(year, month);
 
-  const [{ data: current, error: curErr }, { data: previous }] = await Promise.all([
+  const [{ data: current, error: curErr }, { data: previous }, { data: trendSummary }] = await Promise.all([
     supabase.rpc("dashboard_summary", { p_year: year, p_quarter: null, p_month: month, p_week: null, p_city, p_store }),
     supabase.rpc("dashboard_summary", { p_year: prevYear, p_quarter: null, p_month: prevMonthName, p_week: null, p_city, p_store }),
+    // Unscoped by month/year — a month-filtered summary only ever contains
+    // that one month's bucket, so the trend chart needs its own query.
+    supabase.rpc("dashboard_summary", { p_year: null, p_quarter: null, p_month: null, p_week: null, p_city, p_store }),
   ]);
   if (curErr || !current) {
     return NextResponse.json({ error: curErr?.message || "No data for this period" }, { status: 400 });
   }
 
   const scopeLabel = reportType === "ceo" ? "Company-wide" : reportType === "brand_manager" ? (city as string) : (store as string);
+  const trend = lastNMonthsUpTo(((trendSummary as Summary)?.monthly_sales) || [], year, month, 6);
 
   const buffer = await renderToBuffer(
     MonthlyReportDocument({
@@ -61,6 +65,7 @@ export async function POST(req: NextRequest) {
       generatedAt: new Date().toLocaleDateString("id-ID", { day: "2-digit", month: "long", year: "numeric" }),
       current: current as Summary,
       previous: (previous as Summary) || null,
+      trend,
     })
   );
 
