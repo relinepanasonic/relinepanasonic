@@ -13,7 +13,7 @@ type Fee = {
   kategori_kirim: string | null;
   min_gratis_ongkir_biasa_pct: number; max_gratis_ongkir_biasa_rp: number;
   min_gratis_ongkir_khusus_pct: number; max_gratis_ongkir_khusus_rp: number;
-  min_promo_xtra_pct: number; max_promo_xtra_pct: number;
+  min_promo_xtra_pct: number; max_promo_xtra_rp: number;
   spaylater_xtra_3mo_pct: number; spaylater_xtra_6mo_pct: number;
   updated_by: string | null; updated_month: string | null;
 };
@@ -33,7 +33,7 @@ const NUMERIC_FIELDS: { key: NumericField; label: string; unit: "%" | "Rp" }[] =
   { key: "min_gratis_ongkir_khusus_pct", label: "Min Gratis Ongkir Uk Khusus", unit: "%" },
   { key: "max_gratis_ongkir_khusus_rp", label: "Max Gratis Ongkir Uk Khusus", unit: "Rp" },
   { key: "min_promo_xtra_pct", label: "Min Promo Xtra | XBP", unit: "%" },
-  { key: "max_promo_xtra_pct", label: "Max Promo Xtra | XBP", unit: "%" },
+  { key: "max_promo_xtra_rp", label: "Max Promo Xtra | XBP", unit: "Rp" },
   { key: "spaylater_xtra_3mo_pct", label: "Spay Later Xtra 3 mo", unit: "%" },
   { key: "spaylater_xtra_6mo_pct", label: "Spay Later Xtra 6 mo", unit: "%" },
 ];
@@ -69,6 +69,8 @@ export default function MarketFeePage() {
   const [platformFilter, setPlatformFilter] = useState("");
   const [historyFor, setHistoryFor] = useState<Fee | null>(null);
   const [showAdd, setShowAdd] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [uploadMsg, setUploadMsg] = useState("");
 
   const reload = useCallback(async (cid: string) => {
     if (!cid) { setRows([]); setLoading(false); return; }
@@ -126,6 +128,27 @@ export default function MarketFeePage() {
     reload(clientId);
   }
 
+  async function uploadCsv(file: File) {
+    setUploading(true);
+    setUploadMsg("");
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch("/api/marketfee/import", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${session?.access_token ?? ""}` },
+        body: fd,
+      });
+      const j = await res.json();
+      if (!res.ok) { setUploadMsg(`✗ ${j.error}`); return; }
+      setUploadMsg(`✓ Imported ${j.imported.toLocaleString("id-ID")} rows`);
+      reload(clientId);
+    } finally {
+      setUploading(false);
+    }
+  }
+
   const platforms = useMemo(() => Array.from(new Set(rows.map((r) => r.platform).filter(Boolean))).sort(), [rows]);
 
   const filtered = useMemo(() => {
@@ -147,8 +170,21 @@ export default function MarketFeePage() {
             {rows.length.toLocaleString("id-ID")} entries · every fee number below is editable{canEdit ? "" : " (admin only)"}.
           </div>
         </div>
-        {canEdit && <button className="btn-gold" onClick={() => setShowAdd(true)}>+ Add Fee</button>}
+        {canEdit && (
+          <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+            <label className="btn-ghost" style={{ cursor: uploading ? "not-allowed" : "pointer", opacity: uploading ? .6 : 1 }}>
+              {uploading ? "Importing…" : "Upload CSV"}
+              <input type="file" accept=".csv,.xlsx,.xls" style={{ display: "none" }} disabled={uploading}
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadCsv(f); e.target.value = ""; }} />
+            </label>
+            <button className="btn-gold" onClick={() => setShowAdd(true)}>+ Add Fee</button>
+          </div>
+        )}
       </div>
+
+      {uploadMsg && (
+        <div style={{ marginTop: 10, fontSize: 13, color: uploadMsg.startsWith("✓") ? "var(--gold)" : "#f87171" }}>{uploadMsg}</div>
+      )}
 
       <div className="filterbar" style={{ marginTop: 14, marginBottom: 4 }}>
         <div className="fld" style={{ minWidth: 260 }}>
@@ -167,7 +203,7 @@ export default function MarketFeePage() {
       </div>
 
       <div className="tbl-wrap" style={{ marginTop: 14, maxHeight: 640, overflowX: "auto" }}>
-        <table className="tbl" style={{ whiteSpace: "nowrap" }}>
+        <table className="tbl" style={{ whiteSpace: "nowrap", width: "max-content", minWidth: "100%" }}>
           <thead>
             <tr>
               <th>Category</th><th>Sub Category</th><th>Jenis Product</th><th>Platform</th><th>Jenis Toko</th>
@@ -271,7 +307,7 @@ function AddFeeModal({ onAdd, onClose }: {
     platform_fee_pct: 0, biaya_proses_pesanan_rp: 0, biaya_layanan_mall_pct: 0,
     min_gratis_ongkir_biasa_pct: 0, max_gratis_ongkir_biasa_rp: 0,
     min_gratis_ongkir_khusus_pct: 0, max_gratis_ongkir_khusus_rp: 0,
-    min_promo_xtra_pct: 0, max_promo_xtra_pct: 0,
+    min_promo_xtra_pct: 0, max_promo_xtra_rp: 0,
     spaylater_xtra_3mo_pct: 0, spaylater_xtra_6mo_pct: 0,
   });
   return (
@@ -327,7 +363,7 @@ function HistoryModal({ fee, supabase, onClose }: { fee: Fee; supabase: ReturnTy
         </div>
         {rows === null ? <div style={{ color: "var(--muted)" }}>Loading…</div> : (
           <div className="tbl-wrap" style={{ maxHeight: 400, overflowX: "auto" }}>
-            <table className="tbl" style={{ whiteSpace: "nowrap" }}>
+            <table className="tbl" style={{ whiteSpace: "nowrap", width: "max-content", minWidth: "100%" }}>
               <thead>
                 <tr>
                   <th>Month</th><th>Edited By</th>
