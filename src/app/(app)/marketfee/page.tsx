@@ -21,21 +21,22 @@ type NumericField = Exclude<keyof Fee,
   "id" | "category" | "sub_category" | "jenis_product" | "platform" | "jenis_toko" | "kategori_kirim" | "updated_by" | "updated_month">;
 type EditLog = { id: string; edited_by: string; edited_month: string } & Record<NumericField, number | null>;
 
+// Column order here matches the source sheet's B–U span exactly (Category
+// through Spay Later Xtra 6 mo) — every fee field visible inline, not
+// hidden behind a modal.
 const NUMERIC_FIELDS: { key: NumericField; label: string; unit: "%" | "Rp" }[] = [
   { key: "platform_fee_pct", label: "Platform Fee", unit: "%" },
   { key: "biaya_proses_pesanan_rp", label: "Biaya Proses Pesanan", unit: "Rp" },
   { key: "biaya_layanan_mall_pct", label: "Biaya Layanan Mall", unit: "%" },
-  { key: "min_gratis_ongkir_biasa_pct", label: "Min Gratis Ongkir (Uk Biasa)", unit: "%" },
-  { key: "max_gratis_ongkir_biasa_rp", label: "Max Gratis Ongkir (Uk Biasa)", unit: "Rp" },
-  { key: "min_gratis_ongkir_khusus_pct", label: "Min Gratis Ongkir (Uk Khusus)", unit: "%" },
-  { key: "max_gratis_ongkir_khusus_rp", label: "Max Gratis Ongkir (Uk Khusus)", unit: "Rp" },
+  { key: "min_gratis_ongkir_biasa_pct", label: "Min Gratis Ongkir Uk Biasa", unit: "%" },
+  { key: "max_gratis_ongkir_biasa_rp", label: "Max Gratis Ongkir Uk Biasa", unit: "Rp" },
+  { key: "min_gratis_ongkir_khusus_pct", label: "Min Gratis Ongkir Uk Khusus", unit: "%" },
+  { key: "max_gratis_ongkir_khusus_rp", label: "Max Gratis Ongkir Uk Khusus", unit: "Rp" },
   { key: "min_promo_xtra_pct", label: "Min Promo Xtra | XBP", unit: "%" },
   { key: "max_promo_xtra_pct", label: "Max Promo Xtra | XBP", unit: "%" },
-  { key: "spaylater_xtra_3mo_pct", label: "Shopee Paylater Xtra 3 bln", unit: "%" },
-  { key: "spaylater_xtra_6mo_pct", label: "Shopee Paylater Xtra 6 bln", unit: "%" },
+  { key: "spaylater_xtra_3mo_pct", label: "Spay Later Xtra 3 mo", unit: "%" },
+  { key: "spaylater_xtra_6mo_pct", label: "Spay Later Xtra 6 mo", unit: "%" },
 ];
-
-const rpFull = (n: number) => "Rp " + Math.round(n || 0).toLocaleString("id-ID");
 
 function currentMonthLabel(): string {
   const d = new Date();
@@ -66,7 +67,7 @@ export default function MarketFeePage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [platformFilter, setPlatformFilter] = useState("");
-  const [detailFor, setDetailFor] = useState<Fee | null>(null);
+  const [historyFor, setHistoryFor] = useState<Fee | null>(null);
   const [showAdd, setShowAdd] = useState(false);
 
   const reload = useCallback(async (cid: string) => {
@@ -92,20 +93,17 @@ export default function MarketFeePage() {
     })();
   }, [supabase, reload]);
 
-  async function saveFee(fee: Fee, patch: Partial<Record<NumericField, number>>) {
+  async function saveFee(fee: Fee, patch: Record<NumericField, number>) {
     const month = currentMonthLabel();
     const { error } = await supabase.from("market_fees").update({
       ...patch, updated_by: myName, updated_month: month,
     }).eq("id", fee.id);
     if (error) { alert(error.message); return; }
 
-    const merged = { ...fee, ...patch };
-    const logEntry: Record<string, unknown> = { fee_id: fee.id, edited_by: myName, edited_month: month };
-    for (const f of NUMERIC_FIELDS) logEntry[f.key] = merged[f.key];
+    const logEntry: Record<string, unknown> = { fee_id: fee.id, edited_by: myName, edited_month: month, ...patch };
     await supabase.from("market_fee_edits").insert(logEntry);
 
     reload(clientId);
-    setDetailFor(null);
   }
 
   async function addFee(row: Omit<Fee, "id" | "updated_by" | "updated_month">) {
@@ -125,7 +123,6 @@ export default function MarketFeePage() {
   async function delFee(id: string) {
     if (!confirm("Delete this fee entry?")) return;
     await supabase.from("market_fees").delete().eq("id", id);
-    setDetailFor(null);
     reload(clientId);
   }
 
@@ -147,7 +144,7 @@ export default function MarketFeePage() {
         <div>
           <h3 style={{ margin: 0 }}>Market Place Fee</h3>
           <div className="hint">
-            {rows.length.toLocaleString("id-ID")} entries · every fee number is editable{canEdit ? "" : " (admin only)"} — click a row to view/edit.
+            {rows.length.toLocaleString("id-ID")} entries · every fee number below is editable{canEdit ? "" : " (admin only)"}.
           </div>
         </div>
         {canEdit && <button className="btn-gold" onClick={() => setShowAdd(true)}>+ Add Fee</button>}
@@ -169,154 +166,99 @@ export default function MarketFeePage() {
         </div>
       </div>
 
-      <div className="tbl-wrap" style={{ marginTop: 14, maxHeight: 560 }}>
-        <table className="tbl">
+      <div className="tbl-wrap" style={{ marginTop: 14, maxHeight: 640, overflowX: "auto" }}>
+        <table className="tbl" style={{ whiteSpace: "nowrap" }}>
           <thead>
             <tr>
               <th>Category</th><th>Sub Category</th><th>Jenis Product</th><th>Platform</th><th>Jenis Toko</th>
-              <th className="num">Platform Fee</th><th>Kategori Kirim</th><th>Last Edited</th><th></th>
+              {NUMERIC_FIELDS.map((f) => <th className="num" key={f.key}>{f.label}</th>)}
+              <th>Kategori Kirim</th><th>Last Edited</th>{canEdit && <th></th>}
             </tr>
           </thead>
           <tbody>
             {filtered.map((r) => (
-              <tr key={r.id} style={{ cursor: "pointer" }} onClick={() => setDetailFor(r)}>
-                <td style={{ fontWeight: 600 }}>{r.category}</td>
-                <td>{r.sub_category || "—"}</td>
-                <td style={{ maxWidth: 260, fontSize: 12 }}>{r.jenis_product || "—"}</td>
-                <td>{r.platform}</td>
-                <td>{r.jenis_toko || "—"}</td>
-                <td className="num">{r.platform_fee_pct}%</td>
-                <td>{r.kategori_kirim || "—"}</td>
-                <td style={{ fontSize: 11.5, color: "var(--muted)" }}>{r.updated_by ? `${r.updated_by} · ${r.updated_month}` : "—"}</td>
-                <td><span style={{ color: "var(--gold)", fontSize: 12 }}>{canEdit ? "Edit ›" : "View ›"}</span></td>
-              </tr>
+              <FeeRow key={r.id} fee={r} canEdit={canEdit} onSave={saveFee} onDelete={delFee} onHistory={setHistoryFor} />
             ))}
             {!loading && filtered.length === 0 && (
-              <tr><td colSpan={9} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>
+              <tr><td colSpan={NUMERIC_FIELDS.length + 8} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>
                 {rows.length ? "No fees match these filters" : "No fee entries yet"}
               </td></tr>
             )}
             {loading && (
-              <tr><td colSpan={9} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>Loading…</td></tr>
+              <tr><td colSpan={NUMERIC_FIELDS.length + 8} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>Loading…</td></tr>
             )}
           </tbody>
         </table>
       </div>
 
       {showAdd && <AddFeeModal onAdd={addFee} onClose={() => setShowAdd(false)} />}
-      {detailFor && (
-        <DetailModal fee={detailFor} canEdit={canEdit} supabase={supabase}
-          onSave={saveFee} onDelete={delFee} onClose={() => setDetailFor(null)} />
-      )}
+      {historyFor && <HistoryModal fee={historyFor} supabase={supabase} onClose={() => setHistoryFor(null)} />}
     </div>
   );
 }
 
-function DetailModal({ fee, canEdit, supabase, onSave, onDelete, onClose }: {
-  fee: Fee; canEdit: boolean; supabase: ReturnType<typeof createClient>;
-  onSave: (fee: Fee, patch: Partial<Record<NumericField, number>>) => void;
+function FeeRow({ fee, canEdit, onSave, onDelete, onHistory }: {
+  fee: Fee; canEdit: boolean;
+  onSave: (fee: Fee, patch: Record<NumericField, number>) => void;
   onDelete: (id: string) => void;
-  onClose: () => void;
+  onHistory: (fee: Fee) => void;
 }) {
-  const [tab, setTab] = useState<"edit" | "history">("edit");
   const [values, setValues] = useState<Record<NumericField, string>>(() => {
     const v = {} as Record<NumericField, string>;
     for (const f of NUMERIC_FIELDS) v[f.key] = String(fee[f.key]);
     return v;
   });
-  const [history, setHistory] = useState<EditLog[] | null>(null);
+  const dirty = NUMERIC_FIELDS.some((f) => Number(values[f.key]) !== fee[f.key]);
 
-  useEffect(() => {
-    if (tab !== "history") return;
-    (async () => {
-      const { data } = await supabase.from("market_fee_edits").select("*").eq("fee_id", fee.id).order("created_at", { ascending: false });
-      setHistory((data as EditLog[]) || []);
-    })();
-  }, [tab, fee.id, supabase]);
-
-  function commit() {
-    const patch: Partial<Record<NumericField, number>> = {};
+  function save() {
+    const patch = {} as Record<NumericField, number>;
     for (const f of NUMERIC_FIELDS) patch[f.key] = Number(values[f.key]) || 0;
     onSave(fee, patch);
   }
+  function reset() {
+    const v = {} as Record<NumericField, string>;
+    for (const f of NUMERIC_FIELDS) v[f.key] = String(fee[f.key]);
+    setValues(v);
+  }
 
   return (
-    <div style={overlay} onClick={onClose}>
-      <div style={dialog} onClick={(e) => e.stopPropagation()}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 4 }}>
-          <div>
-            <h3 style={{ margin: 0 }}>{fee.category}{fee.sub_category ? ` · ${fee.sub_category}` : ""}</h3>
-            <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 4 }}>{fee.platform} · {fee.jenis_toko || "—"}</div>
+    <tr style={dirty ? { background: "rgba(201,162,39,.06)" } : undefined}>
+      <td style={{ fontWeight: 600 }}>{fee.category}</td>
+      <td>{fee.sub_category || "—"}</td>
+      <td style={{ maxWidth: 260, whiteSpace: "normal", fontSize: 12 }}>{fee.jenis_product || "—"}</td>
+      <td>{fee.platform}</td>
+      <td>{fee.jenis_toko || "—"}</td>
+      {NUMERIC_FIELDS.map((f) => (
+        <td className="num" key={f.key}>
+          {canEdit ? (
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+              {f.unit === "Rp" && <span style={{ color: "var(--muted)" }}>Rp</span>}
+              <input type="number" step="0.01" value={values[f.key]}
+                onChange={(e) => setValues((v) => ({ ...v, [f.key]: e.target.value }))}
+                style={{ width: f.unit === "Rp" ? 76 : 60, textAlign: "right", background: "rgba(10,22,40,.5)", border: "1px solid rgba(201,162,39,.25)", borderRadius: 6, padding: "4px 6px", color: "var(--text)", fontSize: 12.5 }} />
+              {f.unit === "%" && <span style={{ color: "var(--muted)" }}>%</span>}
+            </span>
+          ) : (
+            f.unit === "Rp" ? "Rp " + Math.round(fee[f.key] || 0).toLocaleString("id-ID") : `${fee[f.key]}%`
+          )}
+        </td>
+      ))}
+      <td>{fee.kategori_kirim || "—"}</td>
+      <td style={{ fontSize: 11.5, color: "var(--muted)" }}>
+        {fee.updated_by ? <button onClick={() => onHistory(fee)} style={linkBtnStyle}>{fee.updated_by} · {fee.updated_month}</button> : "—"}
+      </td>
+      {canEdit && (
+        <td>
+          <div style={{ display: "flex", gap: 6 }}>
+            {dirty && <>
+              <button onClick={save} style={saveBtnStyle}>Save</button>
+              <button onClick={reset} className="btn-ghost" style={{ padding: "4px 10px", fontSize: 12 }}>Cancel</button>
+            </>}
+            {!dirty && <button onClick={() => onDelete(fee.id)} style={delBtnStyle}>Delete</button>}
           </div>
-          <button className="btn-ghost" onClick={onClose}>✕ Close</button>
-        </div>
-        {fee.jenis_product && <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 6 }}>{fee.jenis_product}</div>}
-
-        <div style={{ display: "flex", gap: 8, marginTop: 16, marginBottom: 14, borderBottom: "1px solid var(--line)" }}>
-          <TabBtn active={tab === "edit"} onClick={() => setTab("edit")}>{canEdit ? "Edit Numbers" : "Numbers"}</TabBtn>
-          <TabBtn active={tab === "history"} onClick={() => setTab("history")}>Edit History</TabBtn>
-        </div>
-
-        {tab === "edit" ? (
-          <>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-              {NUMERIC_FIELDS.map((f) => (
-                <div className="fld" key={f.key}>
-                  <label>{f.label}</label>
-                  {canEdit ? (
-                    <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                      {f.unit === "Rp" && <span style={{ color: "var(--muted)" }}>Rp</span>}
-                      <input type="number" step="0.01" value={values[f.key]}
-                        onChange={(e) => setValues((v) => ({ ...v, [f.key]: e.target.value }))}
-                        style={{ ...inputStyle, textAlign: "right" }} />
-                      {f.unit === "%" && <span style={{ color: "var(--muted)" }}>%</span>}
-                    </span>
-                  ) : (
-                    <div style={{ padding: "8px 10px" }}>{f.unit === "Rp" ? rpFull(fee[f.key]) : `${fee[f.key]}%`}</div>
-                  )}
-                </div>
-              ))}
-            </div>
-            {canEdit && (
-              <div style={{ display: "flex", gap: 10, justifyContent: "space-between", marginTop: 20 }}>
-                <button onClick={() => onDelete(fee.id)} style={delBtnStyle}>Delete Entry</button>
-                <button className="btn-gold" onClick={commit}>Save</button>
-              </div>
-            )}
-          </>
-        ) : (
-          history === null ? <div style={{ color: "var(--muted)" }}>Loading…</div> : (
-            <div className="tbl-wrap" style={{ maxHeight: 360 }}>
-              <table className="tbl">
-                <thead><tr><th>Month</th><th>Edited By</th><th className="num">Platform Fee</th><th className="num">Biaya Proses</th></tr></thead>
-                <tbody>
-                  {history.map((r) => (
-                    <tr key={r.id}>
-                      <td>{r.edited_month}</td>
-                      <td>{r.edited_by}</td>
-                      <td className="num">{r.platform_fee_pct}%</td>
-                      <td className="num">{rpFull(r.biaya_proses_pesanan_rp || 0)}</td>
-                    </tr>
-                  ))}
-                  {history.length === 0 && <tr><td colSpan={4} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>No edits yet</td></tr>}
-                </tbody>
-              </table>
-            </div>
-          )
-        )}
-      </div>
-    </div>
-  );
-}
-
-function TabBtn({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
-  return (
-    <button onClick={onClick} style={{
-      background: "none", border: "none", borderBottom: `2px solid ${active ? "var(--gold)" : "transparent"}`,
-      color: active ? "var(--gold)" : "var(--muted)", fontWeight: 700, fontSize: 13, padding: "8px 4px", cursor: "pointer",
-    }}>
-      {children}
-    </button>
+        </td>
+      )}
+    </tr>
   );
 }
 
@@ -367,7 +309,54 @@ function ModalField({ label, full, children }: { label: string; full?: boolean; 
   );
 }
 
+function HistoryModal({ fee, supabase, onClose }: { fee: Fee; supabase: ReturnType<typeof createClient>; onClose: () => void }) {
+  const [rows, setRows] = useState<EditLog[] | null>(null);
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase.from("market_fee_edits").select("*").eq("fee_id", fee.id).order("created_at", { ascending: false });
+      setRows((data as EditLog[]) || []);
+    })();
+  }, [fee.id, supabase]);
+
+  return (
+    <div style={overlay} onClick={onClose}>
+      <div style={dialog} onClick={(e) => e.stopPropagation()}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+          <h3 style={{ margin: 0 }}>Edit History — {fee.category}{fee.sub_category ? ` · ${fee.sub_category}` : ""}</h3>
+          <button className="btn-ghost" onClick={onClose}>✕ Close</button>
+        </div>
+        {rows === null ? <div style={{ color: "var(--muted)" }}>Loading…</div> : (
+          <div className="tbl-wrap" style={{ maxHeight: 400, overflowX: "auto" }}>
+            <table className="tbl" style={{ whiteSpace: "nowrap" }}>
+              <thead>
+                <tr>
+                  <th>Month</th><th>Edited By</th>
+                  {NUMERIC_FIELDS.map((f) => <th className="num" key={f.key}>{f.label}</th>)}
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((r) => (
+                  <tr key={r.id}>
+                    <td>{r.edited_month}</td>
+                    <td>{r.edited_by}</td>
+                    {NUMERIC_FIELDS.map((f) => (
+                      <td className="num" key={f.key}>{f.unit === "Rp" ? "Rp " + Math.round(r[f.key] || 0).toLocaleString("id-ID") : `${r[f.key] ?? 0}%`}</td>
+                    ))}
+                  </tr>
+                ))}
+                {rows.length === 0 && <tr><td colSpan={NUMERIC_FIELDS.length + 2} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>No edits yet</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 const inputStyle: React.CSSProperties = { background: "rgba(10,22,40,.5)", border: "1px solid rgba(201,162,39,.2)", borderRadius: 8, padding: "8px 10px", color: "#e8edf8", fontSize: 13, width: "100%", boxSizing: "border-box" };
-const delBtnStyle: React.CSSProperties = { background: "rgba(255,80,80,.12)", border: "1px solid rgba(255,90,90,.3)", color: "#ff9a9a", borderRadius: 7, padding: "8px 16px", cursor: "pointer", fontSize: 12 };
+const linkBtnStyle: React.CSSProperties = { background: "none", border: "none", color: "var(--muted)", cursor: "pointer", fontSize: 11.5, padding: 0, textDecoration: "underline dotted" };
+const saveBtnStyle: React.CSSProperties = { background: "linear-gradient(135deg,var(--gold),var(--gold-soft))", border: "none", color: "var(--navy-deep)", borderRadius: 7, padding: "4px 12px", cursor: "pointer", fontSize: 12, fontWeight: 700 };
+const delBtnStyle: React.CSSProperties = { background: "rgba(255,80,80,.12)", border: "1px solid rgba(255,90,90,.3)", color: "#ff9a9a", borderRadius: 7, padding: "4px 10px", cursor: "pointer", fontSize: 12 };
 const overlay: React.CSSProperties = { position: "fixed", inset: 0, background: "rgba(2,6,16,.82)", backdropFilter: "blur(4px)", zIndex: 9000, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "30px 20px", overflowY: "auto" };
 const dialog: React.CSSProperties = { width: "min(96vw,720px)", background: "var(--card,#0d1a36)", border: "1px solid var(--card-border,rgba(201,162,39,.2))", borderRadius: 18, padding: 24, boxShadow: "0 30px 80px rgba(0,0,0,.7)" };
