@@ -40,17 +40,29 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     (async () => {
-      const { data: { user } } = await supabase.auth.getUser();
+      // getSession() reads the session from the local cookie (no network),
+      // whereas getUser() round-trips to the Supabase Auth server. The proxy
+      // (proxy.ts) already validates the session on every request before this
+      // page renders, so the client can trust the cookie here — this drops one
+      // blocking network hop from the shell's critical path.
+      const { data: { session } } = await supabase.auth.getSession();
+      const user = session?.user;
       if (!user) return;
+      // Single query: embed the client's name via the profiles→clients FK
+      // instead of a second round-trip to the clients table.
       const { data: p } = await supabase
-        .from("profiles").select("role, display_name, client_id").eq("id", user.id).single();
+        .from("profiles")
+        .select("role, display_name, client_id, clients(name)")
+        .eq("id", user.id)
+        .single();
       if (p) {
         setRole(p.role as Role);
         setName(p.display_name || user.email?.split("@")[0] || "User");
-        if (p.client_id) {
-          const { data: c } = await supabase.from("clients").select("name").eq("id", p.client_id).single();
-          if (c?.name) setClientName(c.name);
-        }
+        // PostgREST returns a single object for this to-one embed at runtime,
+        // but the client types it as an array — handle both to satisfy TS.
+        const embedded = p.clients as unknown as { name: string } | { name: string }[] | null;
+        const client = Array.isArray(embedded) ? embedded[0] : embedded;
+        if (client?.name) setClientName(client.name);
       }
     })();
   }, [supabase]);
