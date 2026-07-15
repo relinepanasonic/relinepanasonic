@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
+import CampaignPerformanceTable from "./CampaignPerformanceTable";
 
 export const dynamic = "force-dynamic";
 
@@ -775,6 +776,13 @@ export default function AdsPage() {
           <span>· Modal/hari editable in Week view · 🗑 deletes visible scope</span>
         </div>
       </div>
+
+      {/* ── Campaign Performance (flat, per Nama Iklan) ── */}
+      <CampaignPerformanceTable
+        store={fltStore}
+        year={fltYear}
+        month={mode === "week" ? fltMonth : undefined}
+      />
     </>
   );
 }

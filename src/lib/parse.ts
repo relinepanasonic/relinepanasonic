@@ -111,6 +111,14 @@ export function toNum(v: unknown): number | null {
   return n;
 }
 
+// Same parsing as toNum(), but a bare "-" (Shopee's empty-cell marker)
+// becomes 0 instead of null. Only for count columns where "no data" and
+// "genuinely zero" are the same thing (e.g. Ads "Add to Cart") — money
+// columns should stay toNum()'s null (missing != Rp 0).
+export function toNumOrZero(v: unknown): number {
+  return toNum(v) ?? 0;
+}
+
 export type DataSource = "spos" | "ads" | "perf";
 
 // The shared manual fields entered once per upload (same for the whole file).
@@ -184,6 +192,8 @@ export function mapRow(
   let ad_cost: number | null = null;
   let in_cart: number | null = null;
   let penjualan_langsung: number | null = null;
+  let clicks: number | null = null;
+  let roas_reported: number | null = null;
 
   if (source === "spos") {
     // GAS uses "Pesanan Siap Dikirim" (ready-to-ship), NOT "Pesanan Dibuat"
@@ -198,6 +208,17 @@ export function mapRow(
     units = toNum(get("Produk Terjual"));
     visitors = toNum(get("Dilihat"));
     ad_cost = toNum(get("Biaya"));
+    clicks = toNum(get("Jumlah Klik"));
+    // "Add to Cart" — Shopee uses "-" for zero interactions, not a real
+    // missing-data case, so this is the one ads metric that defaults to 0
+    // instead of null (see toNumOrZero above).
+    in_cart = toNumOrZero(get("Add to Cart"));
+    // "Efektifitas Iklan" — Shopee's OWN reported ROAS for this row. Stored
+    // verbatim for audit/reconciliation only; every ROAS the dashboard
+    // actually displays is computed as sum(sales)/sum(cost) like everywhere
+    // else in this app, since a stored ratio can't be validly summed/averaged
+    // across multiple weeks.
+    roas_reported = toNum(get("Efektifitas Iklan"));
     // "Penjualan Langsung (GMV Langsung)" — the direct sales used for group ROAS.
     penjualan_langsung = toNum(get("Penjualan Langsung (GMV Langsung)"))
       ?? toNum(get("Penjualan Langsung"));
@@ -237,6 +258,8 @@ export function mapRow(
     visitors,
     ad_cost,
     in_cart,
+    clicks,
+    roas_reported,
     penjualan_langsung,
     is_parent: isParent,
     // `raw` intentionally NOT stored anymore — the DB column defaults to
