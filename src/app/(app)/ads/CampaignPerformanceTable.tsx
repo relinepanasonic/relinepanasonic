@@ -19,6 +19,14 @@ type SortDir = "asc" | "desc";
 const idr = (n: number) => "Rp " + new Intl.NumberFormat("id-ID", { notation: "compact", maximumFractionDigits: 2 }).format(n || 0);
 const num = (n: number) => new Intl.NumberFormat("id-ID").format(Math.round(n || 0));
 
+// Campaign names run long (Shopee product/ad titles) — cap the column at
+// roughly half its old auto-width and truncate with an ellipsis, so the
+// metric columns to the right are visible without scrolling. Full name
+// still available via the native title tooltip on hover.
+const campaignCellStyle: React.CSSProperties = {
+  maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+};
+
 // green >5x, yellow 2-5x, red <2x — matches the color bands used for ROAS
 // pills elsewhere in the app (dashboard's per-dealer table uses the same
 // >=3/>=1 split; this table uses the thresholds explicitly requested here).
@@ -92,7 +100,7 @@ export default function CampaignPerformanceTable({ store, year, month, week }: {
         <table className="tbl">
           <thead>
             <tr>
-              <Th label="Campaign" sortKey="campaign" sort={sort} onSort={toggleSort} align="left" />
+              <Th label="Campaign" sortKey="campaign" sort={sort} onSort={toggleSort} align="left" maxWidth={220} />
               <Th label="Dealer" sortKey="store_name" sort={sort} onSort={toggleSort} align="left" />
               <Th label="Views" sortKey="views" sort={sort} onSort={toggleSort} />
               <Th label="Clicks" sortKey="clicks" sort={sort} onSort={toggleSort} />
@@ -105,7 +113,7 @@ export default function CampaignPerformanceTable({ store, year, month, week }: {
           <tbody>
             {sortedRows.map((r, i) => (
               <tr key={`${r.campaign}|${r.store_name}|${i}`}>
-                <td>{r.campaign}</td>
+                <td style={campaignCellStyle} title={r.campaign}>{r.campaign}</td>
                 <td>{r.store_name || "—"}</td>
                 <td className="num">{num(r.views)}</td>
                 <td className="num">{num(r.clicks)}</td>
@@ -132,14 +140,14 @@ export default function CampaignPerformanceTable({ store, year, month, week }: {
   );
 }
 
-function Th({ label, sortKey, sort, onSort, align = "right" }: {
+function Th({ label, sortKey, sort, onSort, align = "right", maxWidth }: {
   label: string; sortKey: SortKey; sort: { key: SortKey; dir: SortDir } | null;
-  onSort: (k: SortKey) => void; align?: "left" | "right";
+  onSort: (k: SortKey) => void; align?: "left" | "right"; maxWidth?: number;
 }) {
   const active = sort?.key === sortKey;
   const Icon = active ? (sort!.dir === "asc" ? ArrowUp : ArrowDown) : ArrowUpDown;
   return (
-    <th className={align === "right" ? "num" : undefined} style={{ cursor: "pointer", userSelect: "none" }} onClick={() => onSort(sortKey)}>
+    <th className={align === "right" ? "num" : undefined} style={{ cursor: "pointer", userSelect: "none", ...(maxWidth ? { maxWidth } : {}) }} onClick={() => onSort(sortKey)}>
       <span style={{ display: "inline-flex", alignItems: "center", gap: 4, justifyContent: align === "right" ? "flex-end" : "flex-start", width: "100%" }}>
         {align === "left" && <Icon size={12} style={{ opacity: active ? 1 : 0.4, flexShrink: 0 }} />}
         {label}
