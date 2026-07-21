@@ -118,7 +118,7 @@ export default function AdsPage() {
   // upload form
   const [cities,  setCities]  = useState<{ value: string; pic: string | null }[]>([]);
   const [dealers, setDealers] = useState<string[]>([]);
-  const [up, setUp] = useState({ city: "", dealer: "", year: THIS_YEAR, month: "", week: "", grup: "", level: "" });
+  const [up, setUp] = useState({ city: "", dealer: "", year: THIS_YEAR, month: "", week: "", grup: "", level: "", format: "performa" as "performa" | "gmvmax" });
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [log,  setLog]  = useState<string[]>([]);
@@ -187,29 +187,35 @@ export default function AdsPage() {
   }
 
   async function submitUpload() {
+    const gmvmax = up.format === "gmvmax";
     if (!file)           { setLog(["Pick an Ads file first."]); return; }
     if (!up.dealer)      { setLog(["Select a Dealer."]); return; }
-    if (!up.grup.trim()) { setLog(["Enter the Grup Iklan name."]); return; }
-    if (!up.level)       { setLog(["Select an Ads Level."]); return; }
+    // For the flat "Ads Performa" export the Grup Iklan name + Level are
+    // required; for the GMV Max matrix export they're auto-parsed from the
+    // file (Grup Iklan / Level fields are optional overrides).
+    if (!gmvmax && !up.grup.trim()) { setLog(["Enter the Grup Iklan name."]); return; }
+    if (!gmvmax && !up.level)       { setLog(["Select an Ads Level."]); return; }
     if (!up.month)       { setLog(["Select a Bulan."]); return; }
     if (!up.week)        { setLog(["Select a Week."]); return; }
     setBusy(true); setLog([]);
     const pic = cities.find((c) => c.value === up.city)?.pic || "";
     const fd  = new FormData();
     fd.append("file", file);
-    fd.append("source", "ads");
+    if (!gmvmax) fd.append("source", "ads");
     fd.append("manual", JSON.stringify({
       admin: "", city: up.city, pic_client: pic, store_name: up.dealer,
       year: up.year, bulan: up.month, week: up.week,
-      grup_iklan: up.grup.trim(), ads_level: up.level,
+      grup_iklan: up.grup.trim() || undefined, ads_level: up.level || undefined,
     }));
     fd.append("client_id", clientId);
     try {
-      const res = await fetch("/api/upload", { method: "POST", body: fd });
+      const endpoint = gmvmax ? "/api/ads-group/upload" : "/api/upload";
+      const res = await fetch(endpoint, { method: "POST", body: fd });
       const j   = await res.json();
-      setLog([res.ok
-        ? `✓ [${up.level}] ${up.grup.trim()} · ${up.dealer} · ${up.month} ${up.week}: ${j.rows} rows`
-        : `✗ ${j.error}`]);
+      const label = gmvmax
+        ? `✓ [GMV Max] ${j.grup_iklan ?? up.grup.trim() ?? "group"} · ${up.dealer} · ${up.month} ${up.week}: ${j.rows} rows`
+        : `✓ [${up.level}] ${up.grup.trim()} · ${up.dealer} · ${up.month} ${up.week}: ${j.rows} rows`;
+      setLog([res.ok ? label : `✗ ${j.error}`]);
       if (res.ok) { setFile(null); setFltMonth(""); setFltYear(""); }
     } catch (e) {
       setLog([`✗ ${String(e)}`]);
@@ -536,10 +542,17 @@ export default function AdsPage() {
       <div className="panel">
         <h3 style={{ margin:"0 0 4px" }}>Upload Iklan</h3>
         <div className="hint" style={{ marginBottom:16 }}>
-          Export <strong>one ad group per file</strong> from Shopee. Select dealer, level &amp; period, then upload.
+          Export <strong>one ad group per file</strong> from Shopee. Select the file format, dealer &amp; period, then upload.
+          {up.format === "gmvmax" && <> Grup Iklan &amp; Level are auto-read from the file (override optional).</>}
         </div>
 
         <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:14, marginBottom:14 }}>
+          <Field label="File Format">
+            <select value={up.format} onChange={(e) => setUp((u) => ({ ...u, format: e.target.value as "performa" | "gmvmax" }))}>
+              <option value="performa">Ads Performa (flat)</option>
+              <option value="gmvmax">GMV Max / Grup Iklan (matrix)</option>
+            </select>
+          </Field>
           <Field label="City">
             <select value={up.city} onChange={(e) => pickCity(e.target.value)}>
               <option value="">Select city</option>
@@ -552,10 +565,13 @@ export default function AdsPage() {
               {dealers.map((d) => <option key={d} value={d}>{d}</option>)}
             </select>
           </Field>
-          <Field label="Grup Iklan">
-            <input type="text" placeholder="e.g. Grup Hero" value={up.grup}
+          <Field label={up.format === "gmvmax" ? "Grup Iklan (override, optional)" : "Grup Iklan"}>
+            <input type="text" placeholder={up.format === "gmvmax" ? "auto from file" : "e.g. Grup Hero"} value={up.grup}
               onChange={(e) => setUp((u) => ({ ...u, grup: e.target.value }))} />
           </Field>
+        </div>
+
+        <div style={{ display: up.format === "gmvmax" ? "none" : "grid", gridTemplateColumns:"repeat(4,1fr)", gap:14, marginBottom:14 }}>
           <Field label="Ads Level">
             <select value={up.level} onChange={(e) => setUp((u) => ({ ...u, level: e.target.value }))}>
               <option value="">Select level</option>
