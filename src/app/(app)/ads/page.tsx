@@ -3,10 +3,17 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
+import nextDynamic from "next/dynamic";
 import { createClient } from "@/lib/supabase/client";
-import CampaignPerformanceTable from "./CampaignPerformanceTable";
 
 export const dynamic = "force-dynamic";
+
+// Lazy-load the recharts-backed Ads Overview so recharts stays out of this
+// page's initial bundle (same pattern as the main dashboard's charts).
+const AdsOverview = nextDynamic(() => import("./AdsOverview"), {
+  ssr: false,
+  loading: () => <div className="ske" style={{ width: "100%", height: 320, borderRadius: 8, marginTop: 18 }} />,
+});
 
 /* ── Constants ──────────────────────────────────────────────────────────── */
 const MONTHS    = ["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"];
@@ -777,12 +784,8 @@ export default function AdsPage() {
         </div>
       </div>
 
-      {/* ── Campaign Performance (flat, per Nama Iklan) ── */}
-      <CampaignPerformanceTable
-        store={fltStore}
-        year={fltYear}
-        month={mode === "week" ? fltMonth : undefined}
-      />
+      {/* ── Ads Overview (7-KPI grid, category cards, funnel, group + product tables) ── */}
+      <AdsOverview />
     </>
   );
 }

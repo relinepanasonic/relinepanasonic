@@ -4,7 +4,6 @@ import { useEffect, useState, useCallback, useMemo } from "react";
 import nextDynamic from "next/dynamic";
 import { ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
-import BestAdsPerformance from "./BestAdsPerformance";
 
 export const dynamic = "force-dynamic";
 
@@ -38,11 +37,6 @@ type Filters = { years: number[]; quarters: string[]; months: string[]; weeks: s
 type BaselineVsActive = {
   baseline: { stores: number; sales: number; ad_cost: number };
   active: { store_months: number; sales: number; ad_cost: number };
-};
-type CampaignRow = {
-  campaign: string; store_name: string | null; city: string | null;
-  views: number; clicks: number; add_to_cart: number;
-  cost: number; sales: number; roas: number | null;
 };
 
 // Sortable columns on the "Detail Data per Dealer" table. cartRate isn't a
@@ -109,7 +103,6 @@ export default function DashboardPage() {
   const [d, setD] = useState<Summary | null>(null);
   const [loading, setLoading] = useState(true);
   const [baseline, setBaseline] = useState<BaselineVsActive | null>(null);
-  const [campaigns, setCampaigns] = useState<CampaignRow[] | null>(null);
   const [dealerSort, setDealerSort] = useState<{ key: DealerSortKey; dir: SortDir } | null>(null);
 
   useEffect(() => {
@@ -139,9 +132,7 @@ export default function DashboardPage() {
     // Baseline-vs-active only respects City/Dealer (it compares Month Awal
     // vs every real month, so a Year/Month/Week filter wouldn't mean
     // anything for it) — fetched in parallel, not chained after the summary.
-    // Campaign Performance respects the same filters as the live dashboard_summary
-    // call (Year/Quarter/Month/Week/City/Dealer) — fetched in parallel, not chained.
-    const [{ data }, { data: bva }, { data: camp }] = await Promise.all([
+    const [{ data }, { data: bva }] = await Promise.all([
       noFilters
         ? supabase.rpc("get_dashboard_snapshot")
         : supabase.rpc("dashboard_summary", {
@@ -156,18 +147,9 @@ export default function DashboardPage() {
         p_city:  sel.city   || null,
         p_store: sel.dealer || null,
       }),
-      supabase.rpc("campaign_performance", {
-        p_city:    sel.city    || null,
-        p_store:   sel.dealer  || null,
-        p_year:    sel.year    ? Number(sel.year) : null,
-        p_quarter: sel.quarter || null,
-        p_month:   sel.month   || null,
-        p_week:    sel.week    || null,
-      }),
     ]);
     setD(data as Summary);
     setBaseline((bva as BaselineVsActive) || null);
-    setCampaigns((camp as CampaignRow[]) || []);
     setLoading(false);
   }, [supabase, sel]);
   useEffect(() => { load(); }, [load]);
@@ -268,11 +250,6 @@ export default function DashboardPage() {
         <Panel title="Brand Share of Sales" hint="Panasonic vs Other · SPOS">
           <Donut data={panasonicVsOther(d?.brand_share || [])} colors={["#c9a227", "#3b6ea5"]} />
         </Panel>
-      </div>
-
-      {/* Best Ads Performance */}
-      <div className="row">
-        <BestAdsPerformance data={campaigns} />
       </div>
 
       {/* Cost vs ROAS + traffic trend */}
