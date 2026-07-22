@@ -6,10 +6,20 @@ import type { DataSource } from "@/lib/parse";
 
 export const dynamic = "force-dynamic";
 
+// Store Performance — posted to /api/upload.
 const SLOTS: { source: DataSource; label: string; hint: string; accept: string }[] = [
   { source: "perf", label: "Performa", hint: "sales_overview",       accept: ".xlsx,.xls,.csv" },
   { source: "spos", label: "SPOS",     hint: "parentskudetail",      accept: ".xlsx,.xls,.csv" },
-  { source: "ads",  label: "Ads",      hint: "Data Keseluruhan Iklan", accept: ".xlsx,.xls,.csv" },
+];
+
+// Ads Performance — 3 slots, 1 shared Upload button. "ads" still posts to
+// /api/upload (flat, whole-account totals); the other two post to
+// /api/ads-group/upload (the "Data Grup Iklan / Shop GMV Max" matrix export).
+type AdSlotKey = "ads" | "gmvmax" | "group";
+const AD_SLOTS: { key: AdSlotKey; label: string; hint: string; accept: string; adsLevel?: string }[] = [
+  { key: "ads",    label: "Ads Performa",       hint: "Data Keseluruhan Iklan", accept: ".xlsx,.xls,.csv" },
+  { key: "gmvmax", label: "GMV Auto Performa",  hint: "Inkubasi / Shop GMV Max", accept: ".xlsx,.xls,.csv", adsLevel: "incubation" },
+  { key: "group",  label: "Group Ads Performa", hint: "Data Grup Iklan",         accept: ".xlsx,.xls,.csv" },
 ];
 
 const MONTHS = ["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"];
@@ -17,8 +27,20 @@ const WEEKS  = ["Week 1","Week 2","Week 3","Week 4","Week 5"];
 const THIS_YEAR = new Date().getFullYear();
 const YEARS  = Array.from({ length: 6 }, (_, i) => THIS_YEAR - 2 + i); // 4 past + current + 1 future
 
-const SRC_LABEL: Record<string, string> = { perf: "Performa", spos: "SPOS", ads: "Ads" };
-const SRC_COLOR: Record<string, string> = { perf: "#22c55e", spos: "#3b82f6", ads: "#f59e0b" };
+// One badge per (source, ad-sub-kind) — the "ads" DataSource fans out into 3
+// sub-kinds distinguished by meta.kind/meta.ads_level (see subKey below).
+const BADGES: { key: string; label: string; color: string }[] = [
+  { key: "perf",   label: "Performa",   color: "#22c55e" },
+  { key: "spos",   label: "SPOS",       color: "#3b82f6" },
+  { key: "ads",    label: "Ads",        color: "#f59e0b" },
+  { key: "gmvmax", label: "GMV Auto",   color: "#a855f7" },
+  { key: "group",  label: "Group Ads",  color: "#ec4899" },
+];
+function subKey(u: UploadRow): string {
+  if (u.source !== "ads") return u.source;
+  if (u.meta?.kind === "ads_group") return u.meta?.ads_level === "incubation" ? "gmvmax" : "group";
+  return "ads";
+}
 
 const idr = (n: number) => "Rp " + new Intl.NumberFormat("id-ID", { notation: "compact", maximumFractionDigits: 2 }).format(n || 0);
 const num = (n: number) => new Intl.NumberFormat("id-ID").format(Math.round(n || 0));
@@ -36,7 +58,7 @@ function todayISO(): string { return toISO(new Date()); }
 type CityRow = { value: string; pic: string | null };
 type UploadRow = {
   id: string; source: DataSource; filename: string | null; row_count: number; created_at: string;
-  meta: { admin?: string; city?: string; pic_client?: string; store_name?: string; bulan?: string; week?: string; year?: number } | null;
+  meta: { admin?: string; city?: string; pic_client?: string; store_name?: string; bulan?: string; week?: string; year?: number; kind?: string; ads_level?: string } | null;
 };
 type DealerRow = {
   store_name: string; city: string; sales: number; traffic: number; in_cart: number; ad_cost: number;
@@ -47,7 +69,7 @@ type DealerRow = {
 type Batch = {
   key: string; city: string; dealer: string; year: number | null; month: string; week: string;
   admin: string; latest: string;
-  bySource: Partial<Record<DataSource, UploadRow>>;
+  bySource: Partial<Record<string, UploadRow>>;
 };
 
 export default function UploadPage() {
@@ -148,9 +170,10 @@ export default function UploadPage() {
   async function submit() {
     setBusy(true); setLog([]);
     if (!clientId) { setLog(["Workspace not ready."]); setBusy(false); return; }
-    const chosen = SLOTS.filter((s) => files[s.source]);
-    if (!chosen.length) { setLog(["Pick at least one file."]); setBusy(false); return; }
-    const manual = {
+    const chosenSlots   = SLOTS.filter((s) => files[s.source]);
+    const chosenAdSlots = AD_SLOTS.filter((s) => files[s.key]);
+    if (!chosenSlots.length && !chosenAdSlots.length) { setLog(["Pick at least one file."]); setBusy(false); return; }
+    const manualBase = {
       admin:        form.admin,
       city:         form.city,
       pic_client:   form.pic_panasonic,
@@ -162,11 +185,11 @@ export default function UploadPage() {
       tanggal_berakhir: form.tanggal_berakhir,
       tanggal_input,
     };
-    for (const slot of chosen) {
+    for (const slot of chosenSlots) {
       const fd = new FormData();
       fd.append("file", files[slot.source]!);
       fd.append("source", slot.source);
-      fd.append("manual", JSON.stringify(manual));
+      fd.append("manual", JSON.stringify(manualBase));
       fd.append("client_id", clientId);
       try {
         const res = await fetch("/api/upload", { method: "POST", body: fd });
@@ -174,6 +197,34 @@ export default function UploadPage() {
         setLog((l) => [...l, res.ok ? `✓ ${slot.label}: ${j.rows} rows` : `✗ ${slot.label}: ${j.error}`]);
       } catch (e) {
         setLog((l) => [...l, `✗ ${slot.label}: ${String(e)}`]);
+      }
+    }
+    for (const slot of chosenAdSlots) {
+      const fd = new FormData();
+      fd.append("file", files[slot.key]!);
+      if (slot.key === "ads") {
+        // flat "Data Keseluruhan Iklan" export — same endpoint as SLOTS.
+        fd.append("source", "ads");
+        fd.append("manual", JSON.stringify(manualBase));
+        fd.append("client_id", clientId);
+        try {
+          const res = await fetch("/api/upload", { method: "POST", body: fd });
+          const j = await res.json();
+          setLog((l) => [...l, res.ok ? `✓ ${slot.label}: ${j.rows} rows` : `✗ ${slot.label}: ${j.error}`]);
+        } catch (e) {
+          setLog((l) => [...l, `✗ ${slot.label}: ${String(e)}`]);
+        }
+      } else {
+        // GMV Auto / Group Ads — the "Data Grup Iklan" matrix export.
+        fd.append("manual", JSON.stringify({ ...manualBase, ads_level: slot.adsLevel }));
+        fd.append("client_id", clientId);
+        try {
+          const res = await fetch("/api/ads-group/upload", { method: "POST", body: fd });
+          const j = await res.json();
+          setLog((l) => [...l, res.ok ? `✓ ${slot.label}: ${j.rows} rows` : `✗ ${slot.label}: ${j.error}`]);
+        } catch (e) {
+          setLog((l) => [...l, `✗ ${slot.label}: ${String(e)}`]);
+        }
       }
     }
     setBusy(false);
@@ -205,7 +256,7 @@ export default function UploadPage() {
         map.set(key, { key, city, dealer, year, month, week, admin: u.meta?.admin || "—", latest: u.created_at, bySource: {} });
       }
       const b = map.get(key)!;
-      b.bySource[u.source] = u;
+      b.bySource[subKey(u)] = u;
       if (u.created_at > b.latest) b.latest = u.created_at;
       if (!b.admin || b.admin === "—") b.admin = u.meta?.admin || b.admin;
     }
@@ -239,7 +290,7 @@ export default function UploadPage() {
       <div className="panel">
         <h3 style={{ margin: "0 0 4px" }}>Upload Shopee Data</h3>
         <div className="hint" style={{ marginBottom: 18 }}>
-          Pick the week's details once, attach one or more exports (Performa / SPOS / Ads), then Upload. Brand &amp; Tipe Produk are auto-detected from the product/campaign name.
+          Pick the week's details once, attach one or more exports (Performa / SPOS / Ads Performa / GMV Auto Performa / Group Ads Performa), then Upload. Brand &amp; Tipe Produk are auto-detected from the product/campaign name.
         </div>
 
         {/* Row 1: Admin | City | PIC Panasonic */}
@@ -308,8 +359,9 @@ export default function UploadPage() {
           </Field>
         </div>
 
-        {/* File pickers */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 14, padding: 16, border: "1px dashed rgba(201,162,39,.35)", borderRadius: 14, background: "rgba(15,32,64,.4)", marginBottom: 20 }}>
+        {/* Store Performance */}
+        <div style={{ marginBottom: 10, fontSize: 13, fontWeight: 700, color: "#cdd9f0" }}>Store Performance</div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 14, padding: 16, border: "1px dashed rgba(201,162,39,.35)", borderRadius: 14, background: "rgba(15,32,64,.4)", marginBottom: 20 }}>
           {SLOTS.map((s) => (
             <div key={s.source}>
               <label style={{ fontSize: 12, color: "#cdd9f0", fontWeight: 600 }}>
@@ -318,6 +370,21 @@ export default function UploadPage() {
               <input type="file" accept={s.accept} style={{ fontSize: 12, color: "#bcd", display: "block", marginTop: 6, width: "100%" }}
                 onChange={(e) => setFiles((f) => ({ ...f, [s.source]: e.target.files?.[0] ?? null }))} />
               {files[s.source] && <p style={{ marginTop: 6, fontSize: 11, color: "var(--gold)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>✓ {files[s.source]!.name}</p>}
+            </div>
+          ))}
+        </div>
+
+        {/* Ads Performance — 3 parts */}
+        <div style={{ marginBottom: 10, fontSize: 13, fontWeight: 700, color: "#cdd9f0" }}>Ads Performance</div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 14, padding: 16, border: "1px dashed rgba(201,162,39,.35)", borderRadius: 14, background: "rgba(15,32,64,.4)", marginBottom: 20 }}>
+          {AD_SLOTS.map((s) => (
+            <div key={s.key}>
+              <label style={{ fontSize: 12, color: "#cdd9f0", fontWeight: 600 }}>
+                {s.label} <span style={{ color: "var(--muted)", fontWeight: 400, fontSize: 11 }}>({s.hint})</span>
+              </label>
+              <input type="file" accept={s.accept} style={{ fontSize: 12, color: "#bcd", display: "block", marginTop: 6, width: "100%" }}
+                onChange={(e) => setFiles((f) => ({ ...f, [s.key]: e.target.files?.[0] ?? null }))} />
+              {files[s.key] && <p style={{ marginTop: 6, fontSize: 11, color: "var(--gold)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>✓ {files[s.key]!.name}</p>}
             </div>
           ))}
         </div>
@@ -404,11 +471,11 @@ export default function UploadPage() {
                   <td>{b.week}</td>
                   <td>{b.admin}</td>
                   <td style={{ fontSize: 11, color: "var(--muted)", maxWidth: 200 }}>
-                    {SLOTS.map((s) => {
-                      const u = b.bySource[s.source];
+                    {BADGES.map((s) => {
+                      const u = b.bySource[s.key];
                       if (!u) return null;
                       return (
-                        <div key={s.source} style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={u.filename || ""}>
+                        <div key={s.key} style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={u.filename || ""}>
                           {u.filename || "—"}
                         </div>
                       );
@@ -416,11 +483,11 @@ export default function UploadPage() {
                   </td>
                   <td>
                     <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
-                      {SLOTS.map((s) => {
-                        const present = !!b.bySource[s.source];
-                        const color = SRC_COLOR[s.source];
+                      {BADGES.map((s) => {
+                        const present = !!b.bySource[s.key];
+                        const color = s.color;
                         return (
-                          <span key={s.source} style={{
+                          <span key={s.key} style={{
                             fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 999,
                             background: present ? color + "22" : "rgba(255,255,255,.05)",
                             color: present ? color : "var(--muted)",

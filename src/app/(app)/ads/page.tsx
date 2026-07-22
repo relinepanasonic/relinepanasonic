@@ -18,8 +18,6 @@ const AdsOverview = nextDynamic(() => import("./AdsOverview"), {
 /* ── Constants ──────────────────────────────────────────────────────────── */
 const MONTHS    = ["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"];
 const WEEKS     = ["Week 1","Week 2","Week 3","Week 4","Week 5"];
-const THIS_YEAR = new Date().getFullYear();
-const YEARS     = Array.from({ length: 6 }, (_, i) => THIS_YEAR - 2 + i);
 const ADS_LEVELS = ["Incubation", "Hero", "Regular", "Low Conversion"] as const;
 type AdsLevel = typeof ADS_LEVELS[number];
 
@@ -115,14 +113,6 @@ export default function AdsPage() {
   const [deleteMsg, setDeleteMsg] = useState("");
   const [deleting,  setDeleting]  = useState("");
 
-  // upload form
-  const [cities,  setCities]  = useState<{ value: string; pic: string | null }[]>([]);
-  const [dealers, setDealers] = useState<string[]>([]);
-  const [up, setUp] = useState({ city: "", dealer: "", year: THIS_YEAR, month: "", week: "", grup: "", level: "", format: "performa" as "performa" | "gmvmax" });
-  const [file, setFile] = useState<File | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [log,  setLog]  = useState<string[]>([]);
-
   // detail modal
   const [showDetail,    setShowDetail]    = useState(false);
   const [detailStore,   setDetailStore]   = useState("");
@@ -169,59 +159,10 @@ export default function AdsPage() {
       const { data: cs } = await supabase.from("clients").select("id").order("created_at").limit(1);
       const cid = (cs as { id: string }[])?.[0]?.id || "";
       setClientId(cid);
-      const { data: cityRows } = await supabase.from("master_data")
-        .select("value,pic").eq("kind", "city").eq("client_id", cid).order("value");
-      setCities((cityRows as { value: string; pic: string | null }[]) || []);
     })();
   }, [supabase]);
 
   useEffect(() => { void loadData(); }, [loadData]);
-
-  /* ── upload: city → dealers ── */
-  async function pickCity(city: string) {
-    setUp((u) => ({ ...u, city, dealer: "" }));
-    if (!city || !clientId) { setDealers([]); return; }
-    const { data } = await supabase.from("master_data")
-      .select("value").eq("kind", "store").eq("client_id", clientId).eq("city", city).order("value");
-    setDealers(((data as { value: string }[]) || []).map((d) => d.value));
-  }
-
-  async function submitUpload() {
-    const gmvmax = up.format === "gmvmax";
-    if (!file)           { setLog(["Pick an Ads file first."]); return; }
-    if (!up.dealer)      { setLog(["Select a Dealer."]); return; }
-    // For the flat "Ads Performa" export the Grup Iklan name + Level are
-    // required; for the GMV Max matrix export they're auto-parsed from the
-    // file (Grup Iklan / Level fields are optional overrides).
-    if (!gmvmax && !up.grup.trim()) { setLog(["Enter the Grup Iklan name."]); return; }
-    if (!gmvmax && !up.level)       { setLog(["Select an Ads Level."]); return; }
-    if (!up.month)       { setLog(["Select a Bulan."]); return; }
-    if (!up.week)        { setLog(["Select a Week."]); return; }
-    setBusy(true); setLog([]);
-    const pic = cities.find((c) => c.value === up.city)?.pic || "";
-    const fd  = new FormData();
-    fd.append("file", file);
-    if (!gmvmax) fd.append("source", "ads");
-    fd.append("manual", JSON.stringify({
-      admin: "", city: up.city, pic_client: pic, store_name: up.dealer,
-      year: up.year, bulan: up.month, week: up.week,
-      grup_iklan: up.grup.trim() || undefined, ads_level: up.level || undefined,
-    }));
-    fd.append("client_id", clientId);
-    try {
-      const endpoint = gmvmax ? "/api/ads-group/upload" : "/api/upload";
-      const res = await fetch(endpoint, { method: "POST", body: fd });
-      const j   = await res.json();
-      const label = gmvmax
-        ? `✓ [GMV Max] ${j.grup_iklan ?? up.grup.trim() ?? "group"} · ${up.dealer} · ${up.month} ${up.week}: ${j.rows} rows`
-        : `✓ [${up.level}] ${up.grup.trim()} · ${up.dealer} · ${up.month} ${up.week}: ${j.rows} rows`;
-      setLog([res.ok ? label : `✗ ${j.error}`]);
-      if (res.ok) { setFile(null); setFltMonth(""); setFltYear(""); }
-    } catch (e) {
-      setLog([`✗ ${String(e)}`]);
-    }
-    setBusy(false);
-  }
 
   /* ── open detail modal ── */
   async function openDetail(store: string, grup: string) {
@@ -538,93 +479,12 @@ export default function AdsPage() {
         <Link href="/ads/formulation" className="mode-tab">Formulation</Link>
       </div>
 
-      {/* ── Upload Iklan ── */}
-      <div className="panel">
-        <h3 style={{ margin:"0 0 4px" }}>Upload Iklan</h3>
-        <div className="hint" style={{ marginBottom:16 }}>
-          Export <strong>one ad group per file</strong> from Shopee. Select the file format, dealer &amp; period, then upload.
-          {up.format === "gmvmax" && <> Grup Iklan &amp; Level are auto-read from the file (override optional).</>}
-        </div>
-
-        <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:14, marginBottom:14 }}>
-          <Field label="File Format">
-            <select value={up.format} onChange={(e) => setUp((u) => ({ ...u, format: e.target.value as "performa" | "gmvmax" }))}>
-              <option value="performa">Ads Performa (flat)</option>
-              <option value="gmvmax">GMV Max / Grup Iklan (matrix)</option>
-            </select>
-          </Field>
-          <Field label="City">
-            <select value={up.city} onChange={(e) => pickCity(e.target.value)}>
-              <option value="">Select city</option>
-              {cities.map((c) => <option key={c.value} value={c.value}>{c.value}</option>)}
-            </select>
-          </Field>
-          <Field label="Dealer (Nama Toko)">
-            <select value={up.dealer} onChange={(e) => setUp((u) => ({ ...u, dealer: e.target.value }))} disabled={!up.city}>
-              <option value="">{up.city ? "Select dealer" : "Select city first"}</option>
-              {dealers.map((d) => <option key={d} value={d}>{d}</option>)}
-            </select>
-          </Field>
-          <Field label={up.format === "gmvmax" ? "Grup Iklan (override, optional)" : "Grup Iklan"}>
-            <input type="text" placeholder={up.format === "gmvmax" ? "auto from file" : "e.g. Grup Hero"} value={up.grup}
-              onChange={(e) => setUp((u) => ({ ...u, grup: e.target.value }))} />
-          </Field>
-        </div>
-
-        <div style={{ display: up.format === "gmvmax" ? "none" : "grid", gridTemplateColumns:"repeat(4,1fr)", gap:14, marginBottom:14 }}>
-          <Field label="Ads Level">
-            <select value={up.level} onChange={(e) => setUp((u) => ({ ...u, level: e.target.value }))}>
-              <option value="">Select level</option>
-              {ADS_LEVELS.map((l) => (
-                <option key={l} value={l}>{l}</option>
-              ))}
-            </select>
-          </Field>
-        </div>
-
-        <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:14, marginBottom:16 }}>
-          <Field label="Year">
-            <select value={up.year} onChange={(e) => setUp((u) => ({ ...u, year: Number(e.target.value) }))}>
-              {YEARS.map((y) => <option key={y} value={y}>{y}</option>)}
-            </select>
-          </Field>
-          <Field label="Bulan">
-            <select value={up.month} onChange={(e) => setUp((u) => ({ ...u, month: e.target.value }))}>
-              <option value="">Month</option>
-              {MONTHS.map((m) => <option key={m} value={m}>{m}</option>)}
-            </select>
-          </Field>
-          <Field label="Week">
-            <select value={up.week} onChange={(e) => setUp((u) => ({ ...u, week: e.target.value }))}>
-              <option value="">Week</option>
-              {WEEKS.map((w) => <option key={w} value={w}>{w}</option>)}
-            </select>
-          </Field>
-        </div>
-
-        <div style={{ display:"flex", gap:14, alignItems:"center", flexWrap:"wrap" }}>
-          <input type="file" accept=".xlsx,.xls,.csv"
-            onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-            style={{ fontSize:12, color:"#bcd" }} />
-          <button className="btn-gold" disabled={busy} onClick={submitUpload} style={{ padding:"10px 40px" }}>
-            {busy ? "Uploading…" : "Upload Iklan"}
-          </button>
-          {file && <span style={{ fontSize:12, color:"var(--gold)" }}>✓ {file.name}</span>}
-        </div>
-
-        {log.length > 0 && (
-          <div style={{ background:"rgba(7,13,26,.8)", border:"1px solid var(--line)", borderRadius:12, padding:14, fontFamily:"monospace", fontSize:12, marginTop:14 }}>
-            {log.map((l, i) => <div key={i} style={{ color:l.startsWith("✓")?"var(--gold)":"#f87171" }}>{l}</div>)}
-          </div>
-        )}
-      </div>
-
       {/* ── Grup Iklan Performance ── */}
-      <div className="panel" style={{ marginTop:18 }}>
+      <div className="panel">
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:12, marginBottom:8 }}>
           <div>
             <h3 style={{ margin:0 }}>Grup Iklan Performance</h3>
-            <div className="hint">Click a row to drill down ↗ · Trash 🗑 to delete data for that group</div>
+            <div className="hint">Click a row to drill down ↗ · Trash 🗑 to delete data for that group · Upload new data on the <Link href="/upload" style={{ color: "var(--gold)" }}>Upload page</Link></div>
           </div>
           <div style={{ display:"flex", gap:8 }}>
             <button className={`mode-tab ${mode==="week"?"on":""}`}
