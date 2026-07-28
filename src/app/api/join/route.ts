@@ -25,7 +25,7 @@ export async function GET(req: NextRequest) {
   if (new Date(inv.expires_at) < new Date()) return NextResponse.json({ error: "This invite has expired" }, { status: 410 });
 
   // Also fetch pre-set username if stored in invite
-  const { data: fullInv } = await db.from("invites").select("owner_name,store_name,role,expires_at,username").eq("token", token).single();
+  const { data: fullInv } = await db.from("invites").select("owner_name,store_name,role,expires_at,username,scope_stores").eq("token", token).single();
   return NextResponse.json({ invite: fullInv ?? inv });
 }
 
@@ -41,7 +41,7 @@ export async function POST(req: NextRequest) {
   // Validate invite
   const { data: inv, error: ie } = await db
     .from("invites")
-    .select("id,owner_name,store_name,role,client_id,used_at,expires_at")
+    .select("id,owner_name,store_name,role,client_id,used_at,expires_at,scope_stores")
     .eq("token", token)
     .single();
 
@@ -63,8 +63,10 @@ export async function POST(req: NextRequest) {
 
   const uid = authData.user.id;
 
-  // pic_panasonic is city-scoped; all other roles use scope_store.
-  const isPicPanasonic = inv.role === "pic_panasonic";
+  // pic_panasonic / sales are city-scoped; branch_manager / store_user use
+  // scope_store; sales additionally carries a chosen dealer subset.
+  const isCityScoped  = inv.role === "pic_panasonic" || inv.role === "sales";
+  const isStoreScoped = inv.role === "branch_manager" || inv.role === "store_user";
   const { error: pe } = await db.from("profiles").upsert({
     id:           uid,
     email:        email,
@@ -73,8 +75,9 @@ export async function POST(req: NextRequest) {
     phone:        phone ?? null,
     role:         inv.role,
     client_id:    inv.client_id,
-    scope_city:   isPicPanasonic ? (inv.store_name ?? null) : null,
-    scope_store:  isPicPanasonic ? null : (inv.store_name ?? null),
+    scope_city:   isCityScoped  ? (inv.store_name ?? null) : null,
+    scope_store:  isStoreScoped ? (inv.store_name ?? null) : null,
+    scope_stores: inv.role === "sales" ? (inv.scope_stores ?? null) : null,
   });
 
   if (pe) {

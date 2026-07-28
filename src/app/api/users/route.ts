@@ -18,10 +18,11 @@ async function getManager(): Promise<Caller | null> {
   return { id: user.id, role: p.role, client_id: p.client_id };
 }
 
-// Only branch_manager / store_user are client-scoped. superadmin & client_admin
-// are global (see/edit all clients) so they carry no client_id.
+// Only branch_manager / store_user / pic_panasonic / sales are client-scoped.
+// superadmin & client_admin are global (see/edit all clients) so they carry
+// no client_id.
 function isScopedRole(role?: string) {
-  return role === "branch_manager" || role === "store_user";
+  return role === "branch_manager" || role === "store_user" || role === "pic_panasonic" || role === "sales";
 }
 
 // Resolve which client the new/edited user belongs to + guard role escalation.
@@ -38,7 +39,7 @@ export async function POST(req: NextRequest) {
   if (!mgr) return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
 
   const b = await req.json();
-  const { email, password, display_name, role, scope_city, scope_store } = b;
+  const { email, password, display_name, role, scope_city, scope_store, scope_stores } = b;
   if (!email || !password || !role)
     return NextResponse.json({ error: "Missing email, password or role" }, { status: 400 });
 
@@ -60,8 +61,9 @@ export async function POST(req: NextRequest) {
     display_name: display_name || null,
     role,
     client_id: isScopedRole(role) ? clientId : null,
-    scope_city: role === "branch_manager" ? scope_city || null : null,
-    scope_store: role === "store_user" ? scope_store || null : null,
+    scope_city: (role === "pic_panasonic" || role === "sales") ? scope_city || null : null,
+    scope_store: (role === "branch_manager" || role === "store_user") ? scope_store || null : null,
+    scope_stores: role === "sales" ? (scope_stores?.length ? scope_stores : null) : null,
   });
   if (pErr) {
     await admin.auth.admin.deleteUser(created.user.id); // rollback
@@ -75,7 +77,7 @@ export async function PATCH(req: NextRequest) {
   if (!mgr) return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
 
   const b = await req.json();
-  const { id, display_name, role, scope_city, scope_store, password } = b;
+  const { id, display_name, role, scope_city, scope_store, scope_stores, password } = b;
   if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
 
   const admin = createAdminClient();
@@ -91,8 +93,9 @@ export async function PATCH(req: NextRequest) {
   if (display_name !== undefined) patch.display_name = display_name;
   if (role !== undefined) {
     patch.role = role;
-    patch.scope_city = role === "branch_manager" ? scope_city || null : null;
-    patch.scope_store = role === "store_user" ? scope_store || null : null;
+    patch.scope_city = (role === "pic_panasonic" || role === "sales") ? scope_city || null : null;
+    patch.scope_store = (role === "branch_manager" || role === "store_user") ? scope_store || null : null;
+    patch.scope_stores = role === "sales" ? (scope_stores?.length ? scope_stores : null) : null;
   }
   if (Object.keys(patch).length) {
     const { error } = await admin.from("profiles").update(patch).eq("id", id);

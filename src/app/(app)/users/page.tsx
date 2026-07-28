@@ -9,6 +9,7 @@ export const dynamic = "force-dynamic";
 type Profile = {
   id: string; email: string | null; display_name: string | null;
   username: string | null; role: string; scope_store: string | null; scope_city: string | null;
+  scope_stores: string[] | null;
 };
 type Invite = {
   id: string; token: string; owner_name: string;
@@ -20,6 +21,7 @@ type Client = { id: string; name: string };
 const INVITE_ROLES = [
   { v: "superadmin",    l: "Superadmin",    scope: null },
   { v: "pic_panasonic", l: "PIC Panasonic", scope: "city" },
+  { v: "sales",         l: "Sales",         scope: "city_stores" },
   { v: "branch_manager",l: "Dealer Owner",  scope: "store" },
   { v: "client_admin",  l: "Admin",         scope: null },
   { v: "advertiser",    l: "Advertiser",    scope: null },
@@ -28,6 +30,7 @@ const INVITE_ROLES = [
 const ROLE_LABEL: Record<string, string> = {
   superadmin:     "Superadmin",
   pic_panasonic:  "PIC Panasonic",
+  sales:          "Sales",
   branch_manager: "Dealer Owner",
   client_admin:   "Admin",
   store_user:     "Store",
@@ -36,6 +39,7 @@ const ROLE_LABEL: Record<string, string> = {
 const roleColor: Record<string, string> = {
   superadmin:     "#22c55e",
   pic_panasonic:  "#60a5fa",
+  sales:          "#34d399",
   branch_manager: "#3b82f6",
   client_admin:   "#f59e0b",
   store_user:     "#a78bfa",
@@ -86,11 +90,12 @@ export default function UsersPage() {
   const [invites, setInvites] = useState<Invite[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [cities,  setCities]  = useState<string[]>([]);
-  const [dealers, setDealers] = useState<string[]>([]);
+  const [dealers, setDealers] = useState<{ value: string; city: string | null }[]>([]);
   const [token,   setToken]   = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({
     owner_name: "", client_id: "", role: "branch_manager", scope: "", username: "",
+    scope_stores: [] as string[],
   });
   const [busy, setBusy] = useState(false);
   const [msg,  setMsg]  = useState("");
@@ -103,7 +108,7 @@ export default function UsersPage() {
 
   const reload = useCallback(async () => {
     const [{ data: p }, h] = await Promise.all([
-      supabase.from("profiles").select("id,email,display_name,username,role,scope_store,scope_city").order("display_name"),
+      supabase.from("profiles").select("id,email,display_name,username,role,scope_store,scope_city,scope_stores").order("display_name"),
       getAuthHeader(),
     ]);
     setRows((p as Profile[]) || []);
@@ -123,29 +128,34 @@ export default function UsersPage() {
         setForm((f) => ({ ...f, client_id: cid }));
         const [{ data: cityRows }, { data: dealerRows }] = await Promise.all([
           supabase.from("master_data").select("value").eq("kind", "city").eq("client_id", cid).order("value"),
-          supabase.from("master_data").select("value").eq("kind", "store").eq("client_id", cid).order("value"),
+          supabase.from("master_data").select("value,city").eq("kind", "store").eq("client_id", cid).order("value"),
         ]);
         setCities(((cityRows as { value: string }[]) || []).map((c) => c.value));
-        setDealers(((dealerRows as { value: string }[]) || []).map((d) => d.value));
+        setDealers((dealerRows as { value: string; city: string | null }[]) || []);
       }
     })();
   }, [supabase, reload]);
 
   const selectedRoleDef = INVITE_ROLES.find((r) => r.v === form.role);
-  const scopeType = selectedRoleDef?.scope ?? null; // "city" | "store" | null
+  const scopeType = selectedRoleDef?.scope ?? null; // "city" | "store" | "city_stores" | null
+  const dealersInScopeCity = dealers.filter((d) => d.city === form.scope);
 
   function openForm() {
     setShowForm(true); setToken(null); setMsg("");
     setForm({
       owner_name: "", client_id: clients[0]?.id ?? "", role: "branch_manager",
-      scope: "", username: "",
+      scope: "", username: "", scope_stores: [],
     });
   }
 
   async function createInvite() {
     if (!form.owner_name.trim()) { setMsg("Name is required"); return; }
     if (scopeType && !form.scope.trim()) {
-      setMsg(`${scopeType === "city" ? "City" : "Store"} is required for this role`);
+      setMsg(`${scopeType === "store" ? "Store" : "City"} is required for this role`);
+      return;
+    }
+    if (scopeType === "city_stores" && form.scope_stores.length === 0) {
+      setMsg("Select at least one dealer");
       return;
     }
     setBusy(true); setMsg(""); setToken(null);
@@ -154,11 +164,12 @@ export default function UsersPage() {
       const res = await fetch("/api/invites", {
         method: "POST", headers: { ...h, "Content-Type": "application/json" },
         body: JSON.stringify({
-          owner_name: form.owner_name.trim(),
-          role:       form.role,
-          client_id:  form.client_id || null,
-          store_name: form.scope.trim() || null,  // re-used for city or store
-          username:   form.username.trim() || null,
+          owner_name:   form.owner_name.trim(),
+          role:         form.role,
+          client_id:    form.client_id || null,
+          store_name:   form.scope.trim() || null,  // re-used for city or store
+          username:     form.username.trim() || null,
+          scope_stores: form.role === "sales" ? form.scope_stores : undefined,
         }),
       });
       const j = await res.json();
@@ -189,6 +200,7 @@ export default function UsersPage() {
   const pending = invites.filter((i) => !i.used_at && new Date(i.expires_at) > new Date());
 
   const scopeOf = (r: Profile) => {
+    if (r.scope_city && r.scope_stores?.length) return `📍 ${r.scope_city} · ${r.scope_stores.length} dealer${r.scope_stores.length === 1 ? "" : "s"}`;
     if (r.scope_city)  return `📍 ${r.scope_city}`;
     if (r.scope_store) return `🏬 ${r.scope_store}`;
     return "—";
@@ -273,6 +285,7 @@ export default function UsersPage() {
           {[
             { role: "superadmin",    desc: "Full access — all pages, all data, all clients" },
             { role: "pic_panasonic", desc: "Dashboard (city) · Price Calculator · Market Place Fee" },
+            { role: "sales",         desc: "Dashboard (selected dealers) · Price Calculator · Market Place Fee" },
             { role: "branch_manager",desc: "Dashboard (store) · Product · Store · Price Calculator · Market Fee" },
             { role: "client_admin",  desc: "Upload Data · Core List" },
             { role: "advertiser",    desc: "Dashboard (all) · Ads Performance · Core List" },
@@ -324,7 +337,7 @@ export default function UsersPage() {
 
                 <Fld label="Role">
                   <select style={inp} value={form.role}
-                    onChange={(e) => setForm({ ...form, role: e.target.value, scope: "" })}>
+                    onChange={(e) => setForm({ ...form, role: e.target.value, scope: "", scope_stores: [] })}>
                     {INVITE_ROLES.map((r) => <option key={r.v} value={r.v}>{r.l}</option>)}
                   </select>
                 </Fld>
@@ -345,9 +358,50 @@ export default function UsersPage() {
                     <select style={inp} value={form.scope}
                       onChange={(e) => setForm({ ...form, scope: e.target.value })}>
                       <option value="">— select dealer —</option>
-                      {dealers.map((d) => <option key={d} value={d}>{d}</option>)}
+                      {dealers.map((d) => <option key={d.value} value={d.value}>{d.value}</option>)}
                     </select>
                   </Fld>
+                )}
+                {scopeType === "city_stores" && (
+                  <>
+                    <Fld label="City (scope)">
+                      <select style={inp} value={form.scope}
+                        onChange={(e) => setForm({ ...form, scope: e.target.value, scope_stores: [] })}>
+                        <option value="">— select city —</option>
+                        {cities.map((c) => <option key={c} value={c}>{c}</option>)}
+                      </select>
+                    </Fld>
+                    {form.scope && (
+                      <Fld label={`Dealers (scope) — ${form.scope_stores.length} selected`}>
+                        <div style={{ ...inp, maxHeight: 180, overflowY: "auto", display: "grid", gap: 6, padding: "8px 11px" }}>
+                          {dealersInScopeCity.length > 0 && (
+                            <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, fontWeight: 600, color: "#c9a227", borderBottom: "1px solid rgba(201,162,39,.15)", paddingBottom: 6, marginBottom: 2 }}>
+                              <input type="checkbox"
+                                checked={form.scope_stores.length === dealersInScopeCity.length}
+                                onChange={(e) => setForm({ ...form, scope_stores: e.target.checked ? dealersInScopeCity.map((d) => d.value) : [] })} />
+                              Select all
+                            </label>
+                          )}
+                          {dealersInScopeCity.map((d) => (
+                            <label key={d.value} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
+                              <input type="checkbox"
+                                checked={form.scope_stores.includes(d.value)}
+                                onChange={(e) => setForm({
+                                  ...form,
+                                  scope_stores: e.target.checked
+                                    ? [...form.scope_stores, d.value]
+                                    : form.scope_stores.filter((s) => s !== d.value),
+                                })} />
+                              {d.value}
+                            </label>
+                          ))}
+                          {dealersInScopeCity.length === 0 && (
+                            <span style={{ fontSize: 12, color: "var(--muted)" }}>No dealers found for this city</span>
+                          )}
+                        </div>
+                      </Fld>
+                    )}
+                  </>
                 )}
 
                 <Fld label="Username (optional — user can set their own)">

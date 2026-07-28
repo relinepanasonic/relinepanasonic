@@ -9,6 +9,7 @@ type Invite = { owner_name: string; store_name: string | null; role: string; use
 const ROLE_LABEL: Record<string, string> = {
   superadmin:     "Superadmin",
   pic_panasonic:  "PIC Panasonic",
+  sales:          "Sales",
   branch_manager: "Dealer Owner",
   client_admin:   "Admin",
   store_user:     "Store",
