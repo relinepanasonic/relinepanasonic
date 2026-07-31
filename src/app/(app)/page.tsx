@@ -104,6 +104,36 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [baseline, setBaseline] = useState<BaselineVsActive | null>(null);
   const [dealerSort, setDealerSort] = useState<{ key: DealerSortKey; dir: SortDir } | null>(null);
+  const [reporting, setReporting] = useState(false);
+
+  // Renders the BOD deck for whatever is currently selected in the filter
+  // bar — same scope the charts below are showing.
+  async function downloadReport() {
+    setReporting(true);
+    try {
+      const res = await fetch("/api/reports/bod", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(sel),
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        alert(j.error || "Gagal membuat laporan.");
+        return;
+      }
+      const blob = await res.blob();
+      const name = /filename="([^"]+)"/.exec(res.headers.get("Content-Disposition") || "")?.[1] || "Laporan-BOD-Panasonic.pdf";
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = name;
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      alert(String(e));
+    } finally {
+      setReporting(false);
+    }
+  }
 
   useEffect(() => {
     (async () => {
@@ -208,6 +238,9 @@ export default function DashboardPage() {
         <Sel label="City"    value={sel.city}    onChange={(v) => setSel((s) => ({ ...s, city: v, dealer: dealersInCity(filters.dealers, v).some((d) => d.value === s.dealer) ? s.dealer : "" }))} opts={filters.cities} all="All Cities" />
         <Sel label="Dealer"  value={sel.dealer}  onChange={(v) => setSel((s) => ({ ...s, dealer: v }))}  opts={dealersInCity(filters.dealers, sel.city).map((d) => d.value)} all="All Dealers" />
         <button className="btn-ghost" onClick={() => setSel({ year: "", quarter: "", month: "", week: "", city: "", dealer: "" })}>Reset</button>
+        <button className="btn-gold" onClick={downloadReport} disabled={reporting} title="Unduh laporan PDF (16:9) sesuai filter yang dipilih">
+          {reporting ? "Menyiapkan…" : "📄 Laporan BOD"}
+        </button>
         {loading && (
           <span style={{ alignSelf: "center", display: "flex", alignItems: "center", gap: 6, color: "var(--gold)", fontSize: 12 }}>
             <span style={{ display: "inline-block", width: 14, height: 14, borderRadius: "50%", border: "2px solid rgba(201,162,39,.3)", borderTopColor: "#c9a227", animation: "spin .7s linear infinite" }} />
