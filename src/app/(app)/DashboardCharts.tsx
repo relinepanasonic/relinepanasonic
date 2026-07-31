@@ -5,6 +5,7 @@
 // AFTER the dashboard's filters + KPI cards paint, instead of blocking the
 // initial render of the app's most-visited page.
 
+import { useEffect, useRef, useState } from "react";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
   ComposedChart, Line, LineChart, PieChart, Pie, Cell, Legend,
@@ -60,30 +61,78 @@ export function BarsChart({ data, x, y, color }: { data: Record<string, unknown>
   );
 }
 
+// Product names are long ("AC Panasonic 1/2 PK Standart CS/CU-ZN5YKP..."), so
+// the label gutter takes half the width and each label wraps onto up to two
+// lines — recharts truncates a single-line tick, it never wraps on its own.
+function WrappedTick({ x, y, payload, width }: {
+  x?: number; y?: number; payload?: { value?: string }; width?: number;
+}) {
+  const gutter = width ?? 150;
+  const full = String(payload?.value ?? "");
+  // ~5.35px per char at 10px in this font — enough to pick a wrap point
+  // without measuring text for every tick on every re-render.
+  const perLine = Math.max(8, Math.floor((gutter - 12) / 5.35));
+  const lines: string[] = [];
+  let rest = full;
+  while (rest.length > perLine && lines.length < 2) {
+    const cut = rest.lastIndexOf(" ", perLine);
+    const at = cut > perLine * 0.55 ? cut : perLine; // avoid a stubby first line
+    lines.push(rest.slice(0, at).trim());
+    rest = rest.slice(at).trim();
+  }
+  if (lines.length < 2) lines.push(rest);
+  else if (rest) lines[1] = lines[1].slice(0, Math.max(0, perLine - 1)).trim() + "…";
+
+  return (
+    <g transform={`translate(${x},${y})`}>
+      {lines.filter(Boolean).map((ln, i) => (
+        <text key={i} x={-6} y={lines.length > 1 ? i * 11 - 4 : 0} dy={4}
+          textAnchor="end" fill="#bcd0ee" fontSize={10}>{ln}</text>
+      ))}
+    </g>
+  );
+}
+
 export function HBarChart({ data }: { data: { name: string; sales: number }[] }) {
-  if (!data.length) return <Empty />;
-  const short = data.map((p) => ({ ...p, label: p.name.length > 26 ? p.name.slice(0, 26) + "…" : p.name }));
+  const [gutter, setGutter] = useState(150);
+  const boxRef = useRef<HTMLDivElement | null>(null);
+
+  // Give the labels half the chart's width, tracked live so it stays half
+  // when the panel is resized.
+  useEffect(() => {
+    const el = boxRef.current;
+    if (!el) return;
+    const apply = () => setGutter(Math.round(Math.min(Math.max(el.clientWidth * 0.5, 140), 460)));
+    apply();
+    const ro = new ResizeObserver(apply);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
   const gid = "barGrad-hbar";
   return (
-    <div style={{ width: "100%", height: 320 }}>
-      <ResponsiveContainer>
-        <BarChart layout="vertical" data={short} margin={{ left: 8, right: 16, top: 4, bottom: 4 }}>
-          <defs>
-            <linearGradient id={gid} x1="0" y1="0" x2="1" y2="0">
-              <stop offset="0%"   stopColor="#c9a227" stopOpacity={0.7} />
-              <stop offset="100%" stopColor="#e8c84a" stopOpacity={1} />
-            </linearGradient>
-            <filter id={`${gid}-shadow`} x="-40%" y="-60%" width="180%" height="220%">
-              <feDropShadow dx="2" dy="0" stdDeviation="2.5" floodColor="#c9a227" floodOpacity="0.35" />
-            </filter>
-          </defs>
-          <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,.05)" horizontal={false} />
-          <XAxis type="number" tick={axis} tickFormatter={(v) => idr(Number(v))} axisLine={false} tickLine={false} />
-          <YAxis type="category" dataKey="label" tick={{ fontSize: 10, fill: "#bcd0ee" }} width={150} axisLine={false} tickLine={false} />
-          <Tooltip contentStyle={tooltip} formatter={(v) => [idr(Number(v)), "Sales"]} cursor={{ fill: "rgba(201,162,39,.05)" }} />
-          <Bar dataKey="sales" fill={`url(#${gid})`} style={{ filter: `url(#${gid}-shadow)` }} radius={[2, 6, 6, 2]} maxBarSize={20} />
-        </BarChart>
-      </ResponsiveContainer>
+    <div ref={boxRef} style={{ width: "100%", height: 320 }}>
+      {!data.length ? <Empty /> : (
+        <ResponsiveContainer>
+          <BarChart layout="vertical" data={data} margin={{ left: 8, right: 16, top: 4, bottom: 4 }}>
+            <defs>
+              <linearGradient id={gid} x1="0" y1="0" x2="1" y2="0">
+                <stop offset="0%"   stopColor="#c9a227" stopOpacity={0.7} />
+                <stop offset="100%" stopColor="#e8c84a" stopOpacity={1} />
+              </linearGradient>
+              <filter id={`${gid}-shadow`} x="-40%" y="-60%" width="180%" height="220%">
+                <feDropShadow dx="2" dy="0" stdDeviation="2.5" floodColor="#c9a227" floodOpacity="0.35" />
+              </filter>
+            </defs>
+            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,.05)" horizontal={false} />
+            <XAxis type="number" tick={axis} tickFormatter={(v) => idr(Number(v))} axisLine={false} tickLine={false} />
+            <YAxis type="category" dataKey="name" width={gutter} axisLine={false} tickLine={false}
+              interval={0} tick={<WrappedTick width={gutter} />} />
+            <Tooltip contentStyle={tooltip} formatter={(v) => [idr(Number(v)), "Sales"]} cursor={{ fill: "rgba(201,162,39,.05)" }} />
+            <Bar dataKey="sales" fill={`url(#${gid})`} style={{ filter: `url(#${gid}-shadow)` }} radius={[2, 6, 6, 2]} maxBarSize={20} />
+          </BarChart>
+        </ResponsiveContainer>
+      )}
     </div>
   );
 }
