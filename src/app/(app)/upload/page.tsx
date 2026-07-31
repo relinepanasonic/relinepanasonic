@@ -326,7 +326,22 @@ export default function UploadPage() {
   const fYears   = opts((u) => u.meta?.year, (c) => c.years).sort((a, b) => b.localeCompare(a));
   const fMonths  = opts((u) => u.meta?.bulan, (c) => c.months);
   const fWeeks   = opts((u) => u.meta?.week, (c) => c.weeks);
+  const fCities  = opts((u) => u.meta?.city, (c) => c.cities);
   const fDealers = opts((u) => u.meta?.store_name, (c) => c.stores);
+
+  // Picking a City narrows the Dealer list. Dealer->city comes from the
+  // dashboard snapshot first (authoritative), then upload meta, then a
+  // bulk import's coverage — but only when that import covers exactly one
+  // city, otherwise its store list says nothing about which city each
+  // store is in.
+  const cityOfDealer = (() => {
+    const m = new Map<string, string>();
+    for (const d of dealerRows) if (d.store_name && d.city) m.set(d.store_name, d.city);
+    for (const u of uploads) if (u.meta?.store_name && u.meta?.city) m.set(u.meta.store_name, u.meta.city);
+    for (const c of covs) if (c.cities.length === 1) for (const st of c.stores) if (!m.has(st)) m.set(st, c.cities[0]);
+    return m;
+  })();
+  const dealerOpts = flt.city ? fDealers.filter((d) => cityOfDealer.get(d) === flt.city) : fDealers;
 
   // A bulk-import row matches a filter if its coverage CONTAINS the value;
   // an app-form row matches on exact equality as before.
@@ -337,6 +352,7 @@ export default function UploadPage() {
     hit(b, flt.year,   b.year == null ? null : String(b.year), "years") &&
     hit(b, flt.month,  b.month,  "months") &&
     hit(b, flt.week,   b.week,   "weeks") &&
+    hit(b, flt.city,   b.city,   "cities") &&
     hit(b, flt.dealer, b.dealer, "stores")
   );
 
@@ -519,12 +535,13 @@ export default function UploadPage() {
           <div className="hint">Every upload is recorded. Delete an entry to remove its table &amp; data (use this if a file uploaded wrong).</div>
         </div>
 
-        {/* Filter bar — Year / Month / Week / Dealer */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr) auto auto", gap: 10, marginBottom: 14, alignItems: "end" }}>
+        {/* Filter bar — Year / Month / Week / City / Dealer, kept on one row */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr) auto auto", gap: 10, marginBottom: 14, alignItems: "end" }}>
           <Field label="Year"><select value={flt.year}   onChange={(e) => setFlt((f) => ({ ...f, year: e.target.value }))}><option value="">All Years</option>{fYears.map((y) => <option key={y} value={y}>{y}</option>)}</select></Field>
           <Field label="Month"><select value={flt.month}  onChange={(e) => setFlt((f) => ({ ...f, month: e.target.value }))}><option value="">All Months</option>{fMonths.map((m) => <option key={m} value={m}>{m}</option>)}</select></Field>
           <Field label="Week"><select value={flt.week}   onChange={(e) => setFlt((f) => ({ ...f, week: e.target.value }))}><option value="">All Weeks</option>{fWeeks.map((w) => <option key={w} value={w}>{w}</option>)}</select></Field>
-          <Field label="Dealer"><select value={flt.dealer} onChange={(e) => setFlt((f) => ({ ...f, dealer: e.target.value }))}><option value="">All Dealers</option>{fDealers.map((d) => <option key={d} value={d}>{d}</option>)}</select></Field>
+          <Field label="City"><select value={flt.city}   onChange={(e) => setFlt((f) => ({ ...f, city: e.target.value, dealer: "" }))}><option value="">All Cities</option>{fCities.map((c) => <option key={c} value={c}>{c}</option>)}</select></Field>
+          <Field label="Dealer"><select value={flt.dealer} onChange={(e) => setFlt((f) => ({ ...f, dealer: e.target.value }))}><option value="">All Dealers</option>{dealerOpts.map((d) => <option key={d} value={d}>{d}</option>)}</select></Field>
           <button className="btn-ghost" onClick={() => setFlt({ year: "", month: "", week: "", city: "", dealer: "", source: "" })} style={{ height: 38, alignSelf: "end" }}>Reset</button>
           <span style={{ alignSelf: "end", fontSize: 12, color: "var(--muted)", whiteSpace: "nowrap", paddingBottom: 8 }}>{shownBatches.length} rows</span>
         </div>
