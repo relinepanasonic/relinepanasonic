@@ -455,6 +455,28 @@ export default function UploadPage() {
           <span style={{ alignSelf: "end", fontSize: 12, color: "var(--muted)", whiteSpace: "nowrap", paddingBottom: 8 }}>{shownBatches.length} rows</span>
         </div>
 
+        {/* Baseline (Month Awal) quick filter — which dealers already have
+            baseline data uploaded, at a glance. */}
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
+          <button
+            onClick={() => setFlt((f) => ({ ...f, month: f.month === "Month Awal" ? "" : "Month Awal" }))}
+            style={{
+              padding: "6px 14px", borderRadius: 999, fontSize: 12, fontWeight: 700, cursor: "pointer",
+              border: flt.month === "Month Awal" ? "1px solid rgba(201,162,39,.6)" : "1px solid rgba(255,255,255,.12)",
+              background: flt.month === "Month Awal" ? "rgba(201,162,39,.18)" : "rgba(255,255,255,.04)",
+              color: flt.month === "Month Awal" ? "var(--gold)" : "var(--muted)",
+            }}
+          >
+            🏁 Baseline Only (Month Awal)
+          </button>
+          {flt.month === "Month Awal" && (
+            <span style={{ fontSize: 12, color: "var(--muted)" }}>
+              {shownBatches.length} dealer{shownBatches.length === 1 ? "" : "s"} with baseline uploaded
+              {fDealers.length > shownBatches.length && ` — ${fDealers.length - shownBatches.length} still missing`}
+            </span>
+          )}
+        </div>
+
         <div className="tbl-wrap">
           <table className="tbl">
             <thead>
@@ -467,7 +489,11 @@ export default function UploadPage() {
               {shownBatches.map((b) => (
                 <tr key={b.key}>
                   <td style={{ whiteSpace: "nowrap", fontSize: 12 }}>{fmtWhen(b.latest)}</td>
-                  <td>{b.month}</td>
+                  <td>
+                    {b.month === "Month Awal"
+                      ? <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 999, background: "rgba(201,162,39,.18)", color: "var(--gold)", border: "1px solid rgba(201,162,39,.4)" }}>🏁 {b.month}</span>
+                      : b.month}
+                  </td>
                   <td>{b.week}</td>
                   <td>{b.admin}</td>
                   <td style={{ fontSize: 11, color: "var(--muted)", maxWidth: 200 }}>
