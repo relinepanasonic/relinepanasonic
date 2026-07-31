@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useMemo } from "react";
+import { createPortal } from "react-dom";
 import nextDynamic from "next/dynamic";
 import { ArrowUp, ArrowDown, ArrowUpDown, Download } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
@@ -227,7 +228,50 @@ export default function DashboardPage() {
           animation: shimmer 1.4s ease-in-out infinite;
           border-radius: 6px;
         }
+        /* Report-building overlay: PDF generation runs 4 RPCs then renders
+           7 pages, so it needs a few seconds of visible feedback. */
+        @keyframes sweep { 0% { left: -40%; } 100% { left: 100%; } }
+        @keyframes fadeIn { from { opacity: 0 } to { opacity: 1 } }
+        .rep-ring {
+          width: 46px; height: 46px; border-radius: 50%;
+          border: 3px solid rgba(201,162,39,.22); border-top-color: #c9a227;
+          animation: spin .8s linear infinite;
+        }
+        .rep-bar {
+          position: relative; width: 230px; height: 3px; border-radius: 3px;
+          background: rgba(255,255,255,.08); overflow: hidden;
+        }
+        .rep-bar span {
+          position: absolute; top: 0; width: 40%; height: 100%; border-radius: 3px;
+          background: linear-gradient(90deg,transparent,#c9a227,transparent);
+          animation: sweep 1.15s ease-in-out infinite;
+        }
       `}</style>
+
+      {/* Portalled to body on purpose: .filterbar sets backdrop-filter, which
+          makes it a containing block for position:fixed — an in-place overlay
+          would anchor to the card instead of the viewport. */}
+      {reporting && typeof document !== "undefined" && createPortal(
+        <div style={{
+          position: "fixed", inset: 0, zIndex: 9999, background: "rgba(2,6,16,.72)",
+          backdropFilter: "blur(6px)", display: "flex", alignItems: "center", justifyContent: "center",
+          animation: "fadeIn .18s ease-out",
+        }}>
+          <div style={{
+            background: "rgba(13,26,54,.98)", border: "1px solid rgba(201,162,39,.28)", borderRadius: 18,
+            padding: "34px 46px", display: "flex", flexDirection: "column", alignItems: "center", gap: 15,
+            boxShadow: "0 30px 80px rgba(0,0,0,.6)",
+          }}>
+            <div className="rep-ring" />
+            <div style={{ color: "#fff", fontWeight: 800, fontSize: 16, letterSpacing: .2 }}>Building Report</div>
+            <div className="rep-bar"><span /></div>
+            <div style={{ color: "var(--muted)", fontSize: 11.5, textAlign: "center", maxWidth: 260, lineHeight: 1.5 }}>
+              Menyusun 7 halaman PDF (16:9) dari filter yang dipilih — mohon tunggu sebentar.
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
 
       {/* Filters — matching GAS: Year / Quarter / Month / Week / City / Dealer */}
       <div className="filterbar">
@@ -256,8 +300,10 @@ export default function DashboardPage() {
             boxShadow: "0 3px 10px rgba(201,162,39,.25)",
           }}
         >
-          <Download size={14} strokeWidth={2.5} />
-          {reporting ? "Menyiapkan…" : "Report"}
+          {reporting
+            ? <span style={{ width: 14, height: 14, borderRadius: "50%", border: "2px solid rgba(18,35,68,.35)", borderTopColor: "var(--navy-deep)", animation: "spin .7s linear infinite" }} />
+            : <Download size={14} strokeWidth={2.5} />}
+          {reporting ? "Building Report" : "Report"}
         </button>
       </div>
 
