@@ -22,7 +22,10 @@ const AD_SLOTS: { key: AdSlotKey; label: string; hint: string; accept: string; a
   { key: "group",  label: "Group Ads Performa", hint: "Data Grup Iklan",         accept: ".xlsx,.xls,.csv" },
 ];
 
-const MONTHS = ["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember","Month Awal"];
+// The pre-project baseline snapshot — a month value, but not a real month:
+// no week number, no date range (see pickBulan).
+const BASELINE = "Month Awal";
+const MONTHS = ["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember", BASELINE];
 const WEEKS  = ["Week 1","Week 2","Week 3","Week 4","Week 5"];
 const THIS_YEAR = new Date().getFullYear();
 const YEARS  = Array.from({ length: 6 }, (_, i) => THIS_YEAR - 2 + i); // 4 past + current + 1 future
@@ -178,6 +181,16 @@ export default function UploadPage() {
     setForm((f) => ({ ...f, tanggal_mulai: v, tanggal_berakhir: addDays(v, 6) }));
   }
 
+  // "Month Awal" is the pre-project baseline snapshot, not a real week: it
+  // has no week number and no date range. Selecting it locks Week to
+  // "Month Awal" and clears both dates (sales_rows.tanggal is a DATE column,
+  // so the label is display-only — the stored value stays null).
+  function pickBulan(v: string) {
+    setForm((f) => v === BASELINE
+      ? { ...f, bulan: v, week: BASELINE, tanggal_mulai: "", tanggal_berakhir: "" }
+      : { ...f, bulan: v, week: f.week === BASELINE ? "" : f.week });
+  }
+
   async function submit() {
     setBusy(true); setLog([]);
     if (!clientId) { setLog(["Workspace not ready."]); setBusy(false); return; }
@@ -327,6 +340,8 @@ export default function UploadPage() {
     hit(b, flt.dealer, b.dealer, "stores")
   );
 
+  const isBaseline = form.bulan === BASELINE;
+
   function fmtWhen(iso: string): string {
     const d = new Date(iso);
     return d.toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" })
@@ -378,26 +393,36 @@ export default function UploadPage() {
             </select>
           </Field>
           <Field label="Bulan">
-            <select value={form.bulan} onChange={(e) => setForm((f) => ({ ...f, bulan: e.target.value }))}>
+            <select value={form.bulan} onChange={(e) => pickBulan(e.target.value)}>
               <option value="">Month</option>
               {MONTHS.map((m) => <option key={m} value={m}>{m}</option>)}
             </select>
           </Field>
         </div>
 
-        {/* Row 3: Week | Tanggal Mulai | Tanggal Berakhir AUTO +6D */}
+        {/* Row 3: Week | Tanggal Mulai | Tanggal Berakhir AUTO +6D
+            — all three are auto-filled and locked for the "Month Awal"
+            baseline, which has no week and no date range. */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 14, marginBottom: 14 }}>
           <Field label="Week">
-            <select value={form.week} onChange={(e) => setForm((f) => ({ ...f, week: e.target.value }))}>
-              <option value="">Week</option>
-              {WEEKS.map((w) => <option key={w} value={w}>{w}</option>)}
-            </select>
+            {isBaseline
+              ? <input type="text" value={BASELINE} readOnly disabled style={lockedInp} />
+              : (
+                <select value={form.week} onChange={(e) => setForm((f) => ({ ...f, week: e.target.value }))}>
+                  <option value="">Week</option>
+                  {WEEKS.map((w) => <option key={w} value={w}>{w}</option>)}
+                </select>
+              )}
           </Field>
           <Field label="Tanggal Mulai">
-            <input type="date" value={form.tanggal_mulai} onChange={(e) => pickStart(e.target.value)} />
+            {isBaseline
+              ? <input type="text" value={BASELINE} readOnly disabled style={lockedInp} />
+              : <input type="date" value={form.tanggal_mulai} onChange={(e) => pickStart(e.target.value)} />}
           </Field>
-          <Field label="Tanggal Berakhir (AUTO +6D)">
-            <input type="date" value={form.tanggal_berakhir} readOnly disabled style={{ opacity: .7, cursor: "not-allowed" }} />
+          <Field label={isBaseline ? "Tanggal Berakhir" : "Tanggal Berakhir (AUTO +6D)"}>
+            {isBaseline
+              ? <input type="text" value={BASELINE} readOnly disabled style={lockedInp} />
+              : <input type="date" value={form.tanggal_berakhir} readOnly disabled style={lockedInp} />}
           </Field>
         </div>
 
@@ -573,6 +598,7 @@ export default function UploadPage() {
 }
 
 const delBtnStyle: React.CSSProperties = { background: "rgba(255,80,80,.12)", border: "1px solid rgba(255,90,90,.3)", color: "#ff9a9a", borderRadius: 7, padding: "4px 10px", cursor: "pointer", fontSize: 12 };
+const lockedInp: React.CSSProperties = { opacity: .7, cursor: "not-allowed" };
 
 const awalPill: React.CSSProperties = {
   fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 999,
