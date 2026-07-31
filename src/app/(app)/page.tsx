@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, useMemo } from "react";
 import nextDynamic from "next/dynamic";
-import { ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
+import { ArrowUp, ArrowDown, ArrowUpDown, Download } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
 export const dynamic = "force-dynamic";
@@ -238,15 +238,27 @@ export default function DashboardPage() {
         <Sel label="City"    value={sel.city}    onChange={(v) => setSel((s) => ({ ...s, city: v, dealer: dealersInCity(filters.dealers, v).some((d) => d.value === s.dealer) ? s.dealer : "" }))} opts={filters.cities} all="All Cities" />
         <Sel label="Dealer"  value={sel.dealer}  onChange={(v) => setSel((s) => ({ ...s, dealer: v }))}  opts={dealersInCity(filters.dealers, sel.city).map((d) => d.value)} all="All Dealers" />
         <button className="btn-ghost" onClick={() => setSel({ year: "", quarter: "", month: "", week: "", city: "", dealer: "" })}>Reset</button>
-        <button className="btn-gold" onClick={downloadReport} disabled={reporting} title="Unduh laporan PDF (16:9) sesuai filter yang dipilih">
-          {reporting ? "Menyiapkan…" : "📄 Laporan BOD"}
-        </button>
         {loading && (
           <span style={{ alignSelf: "center", display: "flex", alignItems: "center", gap: 6, color: "var(--gold)", fontSize: 12 }}>
             <span style={{ display: "inline-block", width: 14, height: 14, borderRadius: "50%", border: "2px solid rgba(201,162,39,.3)", borderTopColor: "#c9a227", animation: "spin .7s linear infinite" }} />
             Memuat data…
           </span>
         )}
+        {/* marginLeft:auto parks this at the right edge of the filter row */}
+        <button
+          className="btn-gold"
+          onClick={downloadReport}
+          disabled={reporting}
+          title="Unduh laporan PDF 16:9 sesuai filter yang dipilih"
+          style={{
+            marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 6,
+            padding: "7px 14px", fontSize: 12.5, fontWeight: 700, borderRadius: 9,
+            boxShadow: "0 3px 10px rgba(201,162,39,.25)",
+          }}
+        >
+          <Download size={14} strokeWidth={2.5} />
+          {reporting ? "Menyiapkan…" : "Report"}
+        </button>
       </div>
 
       {/* KPIs */}
