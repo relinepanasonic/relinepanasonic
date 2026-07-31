@@ -22,7 +22,7 @@ const AD_SLOTS: { key: AdSlotKey; label: string; hint: string; accept: string; a
   { key: "group",  label: "Group Ads Performa", hint: "Data Grup Iklan",         accept: ".xlsx,.xls,.csv" },
 ];
 
-const MONTHS = ["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"];
+const MONTHS = ["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember","Month Awal"];
 const WEEKS  = ["Week 1","Week 2","Week 3","Week 4","Week 5"];
 const THIS_YEAR = new Date().getFullYear();
 const YEARS  = Array.from({ length: 6 }, (_, i) => THIS_YEAR - 2 + i); // 4 past + current + 1 future
@@ -93,6 +93,7 @@ export default function UploadPage() {
   const [log,     setLog]     = useState<string[]>([]);
   const [uploads, setUploads] = useState<UploadRow[]>([]);
   const [dealerRows, setDealerRows] = useState<DealerRow[]>([]);
+  const [baseline, setBaseline] = useState<{ store_name: string; city: string; has_baseline: boolean }[]>([]);
   const [flt,     setFlt]     = useState({ year: "", month: "", week: "", city: "", dealer: "", source: "" }); // city/source kept for reset compat
 
   // load uploads
@@ -148,6 +149,12 @@ export default function UploadPage() {
       // "Detail Data per Dealer" panel, not raw upload-metadata counts.
       const { data: snap } = await supabase.rpc("get_dashboard_snapshot");
       setDealerRows(((snap as { dealers?: DealerRow[] } | null)?.dealers) || []);
+
+      // Baseline coverage reads sales_rows directly (ground truth) — most
+      // baseline data was bulk-migrated and never went through /api/upload,
+      // so the uploads audit log alone can't answer "who has it".
+      const { data: cov } = await supabase.rpc("baseline_coverage", { p_client_id: cid });
+      setBaseline((cov as { store_name: string; city: string; has_baseline: boolean }[]) || []);
     })();
   }, [supabase, loadUploads]);
 
@@ -455,27 +462,33 @@ export default function UploadPage() {
           <span style={{ alignSelf: "end", fontSize: 12, color: "var(--muted)", whiteSpace: "nowrap", paddingBottom: 8 }}>{shownBatches.length} rows</span>
         </div>
 
-        {/* Baseline (Month Awal) quick filter — which dealers already have
-            baseline data uploaded, at a glance. */}
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
-          <button
-            onClick={() => setFlt((f) => ({ ...f, month: f.month === "Month Awal" ? "" : "Month Awal" }))}
-            style={{
-              padding: "6px 14px", borderRadius: 999, fontSize: 12, fontWeight: 700, cursor: "pointer",
-              border: flt.month === "Month Awal" ? "1px solid rgba(201,162,39,.6)" : "1px solid rgba(255,255,255,.12)",
-              background: flt.month === "Month Awal" ? "rgba(201,162,39,.18)" : "rgba(255,255,255,.04)",
-              color: flt.month === "Month Awal" ? "var(--gold)" : "var(--muted)",
-            }}
-          >
-            🏁 Baseline Only (Month Awal)
-          </button>
-          {flt.month === "Month Awal" && (
-            <span style={{ fontSize: 12, color: "var(--muted)" }}>
-              {shownBatches.length} dealer{shownBatches.length === 1 ? "" : "s"} with baseline uploaded
-              {fDealers.length > shownBatches.length && ` — ${fDealers.length - shownBatches.length} still missing`}
-            </span>
-          )}
-        </div>
+        {/* Baseline (Month Awal) coverage — ground truth from sales_rows,
+            since most baseline data was bulk-migrated and never went
+            through /api/upload (the audit log alone can't answer this). */}
+        {baseline.length > 0 && (
+          <div style={{ padding: 14, border: "1px solid rgba(201,162,39,.2)", borderRadius: 12, background: "rgba(201,162,39,.04)", marginBottom: 14 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "#cdd9f0" }}>
+                🏁 Baseline Coverage (Month Awal)
+              </div>
+              <span style={{ fontSize: 12, color: "var(--muted)" }}>
+                {baseline.filter((b) => b.has_baseline).length} of {baseline.length} dealers have baseline data
+              </span>
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              {baseline.map((b) => (
+                <span key={b.store_name} title={b.city} style={{
+                  fontSize: 11, fontWeight: 600, padding: "3px 9px", borderRadius: 999,
+                  background: b.has_baseline ? "rgba(74,222,128,.12)" : "rgba(255,255,255,.05)",
+                  color: b.has_baseline ? "#4ade80" : "var(--muted)",
+                  border: `1px solid ${b.has_baseline ? "rgba(74,222,128,.3)" : "rgba(255,255,255,.1)"}`,
+                }}>
+                  {b.has_baseline ? "✓" : "✗"} {b.store_name}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
 
         <div className="tbl-wrap">
           <table className="tbl">
