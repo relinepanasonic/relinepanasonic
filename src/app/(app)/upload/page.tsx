@@ -64,12 +64,18 @@ type DealerRow = {
   store_name: string; city: string; sales: number; traffic: number; in_cart: number; ad_cost: number;
   roas: number | null; trend: { year: number | null; month: string; sales: number }[];
 };
-// One row per (city, dealer, year, month, week) — the three source files
-// that make up a single upload batch collapsed into one line.
+// What an upload ACTUALLY contains, derived from its data rows by the
+// upload_coverage() RPC — the only reliable source for bulk re-imports,
+// whose meta carries no month/city/dealer at all.
+type Coverage = { months: string[]; cities: string[]; stores: string[]; weeks: string[]; years: string[]; rows: number };
+// One row per (city, dealer, year, month, week) — the source files
+// that make up a single upload batch collapsed into one line. Bulk
+// re-imports instead get one row per file, described by `cov`.
 type Batch = {
   key: string; city: string; dealer: string; year: number | null; month: string; week: string;
   admin: string; latest: string;
   bySource: Partial<Record<string, UploadRow>>;
+  cov?: Coverage;
 };
 
 export default function UploadPage() {
@@ -92,17 +98,22 @@ export default function UploadPage() {
   const [busy,    setBusy]    = useState(false);
   const [log,     setLog]     = useState<string[]>([]);
   const [uploads, setUploads] = useState<UploadRow[]>([]);
+  const [coverage, setCoverage] = useState<Record<string, Coverage>>({});
   const [dealerRows, setDealerRows] = useState<DealerRow[]>([]);
   const [flt,     setFlt]     = useState({ year: "", month: "", week: "", city: "", dealer: "", source: "" }); // city/source kept for reset compat
 
-  // load uploads
+  // load uploads + what each one actually contains
   const loadUploads = useCallback(async (cid: string) => {
     if (!cid) return;
-    const { data } = await supabase.from("uploads")
-      .select("id,source,filename,row_count,created_at,meta")
-      .eq("client_id", cid)
-      .order("created_at", { ascending: false });
+    const [{ data }, { data: cov }] = await Promise.all([
+      supabase.from("uploads")
+        .select("id,source,filename,row_count,created_at,meta")
+        .eq("client_id", cid)
+        .order("created_at", { ascending: false }),
+      supabase.rpc("upload_coverage"),
+    ]);
     setUploads((data as UploadRow[]) || []);
+    setCoverage((cov as Record<string, Coverage>) || {});
   }, [supabase]);
 
   // initial load
@@ -235,17 +246,44 @@ export default function UploadPage() {
   async function delBatch(batch: Batch) {
     const ids = Object.values(batch.bySource).map((u) => u!.id);
     if (!ids.length) return;
-    const label = [batch.dealer, batch.month, batch.week].filter(Boolean).join(" · ");
+    // A bulk re-import row is one file covering a whole quarter x region —
+    // deleting it wipes many dealers/months at once, so spell that out
+    // instead of showing the batch's placeholder "—" fields.
+    const label = batch.cov
+      ? `${Object.values(batch.bySource)[0]?.filename ?? "bulk import"}\n\n` +
+        `Covers ${batch.cov.stores.length} dealer(s), months: ${batch.cov.months.join(", ") || "—"}\n` +
+        `${batch.cov.rows.toLocaleString("id-ID")} data row(s) will be removed.`
+      : [batch.dealer, batch.month, batch.week].filter(Boolean).join(" · ");
     if (!confirm(`Delete all data for "${label}"? This removes ${ids.length} file(s) and cannot be undone.`)) return;
     const { error } = await supabase.from("uploads").delete().in("id", ids);
     if (error) { alert(error.message); return; }
     loadUploads(clientId);
   }
 
-  // ---------- group uploads into one row per (city, dealer, year, month, week) ----------
+  // ---------- group uploads into log rows ----------
+  // Two kinds of upload live in this table and they need different
+  // treatment (this is why the Month filter used to match nothing for
+  // baseline data — see Supabase Migration/33-upload-coverage.sql):
+  //   * App-form uploads carry meta.bulan/city/store_name, so one upload
+  //     == one (city, dealer, year, month, week) batch — grouped as before.
+  //   * Bulk re-imports carry only {year, region, quarter}; a single file
+  //     spans a whole quarter x region (many dealers, many months,
+  //     including "Month Awal"). Those get one row each, described by
+  //     their REAL coverage from upload_coverage().
   const batches: Batch[] = (() => {
     const map = new Map<string, Batch>();
     for (const u of uploads) {
+      const cov = coverage[u.id];
+      if (!u.meta?.bulan && cov) {
+        map.set(u.id, {
+          key: u.id, city: cov.cities.join(", ") || "—", dealer: "—",
+          year: cov.years.length === 1 ? Number(cov.years[0]) : (u.meta?.year ?? null),
+          month: "—", week: "—",
+          admin: u.meta?.admin || "Bulk import", latest: u.created_at,
+          bySource: { [subKey(u)]: u }, cov,
+        });
+        continue;
+      }
       const city = u.meta?.city || "—";
       const dealer = u.meta?.store_name || "—";
       const year = u.meta?.year ?? null;
@@ -264,19 +302,29 @@ export default function UploadPage() {
   })();
 
   // ---------- upload log filter options ----------
-  const uniq = (f: (u: UploadRow) => string | number | undefined | null) =>
-    Array.from(new Set(uploads.map(f).filter((v) => v != null && v !== "") as string[])).sort();
-  const fYears   = Array.from(new Set(uploads.map((u) => u.meta?.year).filter(Boolean) as number[])).sort((a,b) => b-a).map(String);
-  // Always offer "Month Awal" (baseline) even if no upload has used it yet.
-  const fMonths  = Array.from(new Set([...uniq((u) => u.meta?.bulan), "Month Awal"])).sort();
-  const fWeeks   = uniq((u) => u.meta?.week);
-  const fDealers = uniq((u) => u.meta?.store_name);
+  // Options come from BOTH meta (app uploads) and real coverage (bulk
+  // imports), so e.g. "Month Awal" appears because data actually has it.
+  const covs = Object.values(coverage);
+  const opts = (fromMeta: (u: UploadRow) => string | number | undefined | null, fromCov: (c: Coverage) => string[]) =>
+    Array.from(new Set([
+      ...uploads.map(fromMeta).filter((v) => v != null && v !== "").map(String),
+      ...covs.flatMap(fromCov),
+    ])).sort();
+  const fYears   = opts((u) => u.meta?.year, (c) => c.years).sort((a, b) => b.localeCompare(a));
+  const fMonths  = opts((u) => u.meta?.bulan, (c) => c.months);
+  const fWeeks   = opts((u) => u.meta?.week, (c) => c.weeks);
+  const fDealers = opts((u) => u.meta?.store_name, (c) => c.stores);
+
+  // A bulk-import row matches a filter if its coverage CONTAINS the value;
+  // an app-form row matches on exact equality as before.
+  const hit = (b: Batch, val: string, exact: string | null, covKey: keyof Coverage) =>
+    !val || (b.cov ? (b.cov[covKey] as string[]).includes(val) : exact === val);
 
   const shownBatches = batches.filter((b) =>
-    (!flt.year   || String(b.year)  === flt.year) &&
-    (!flt.month  || b.month         === flt.month) &&
-    (!flt.week   || b.week          === flt.week) &&
-    (!flt.dealer || b.dealer        === flt.dealer)
+    hit(b, flt.year,   b.year == null ? null : String(b.year), "years") &&
+    hit(b, flt.month,  b.month,  "months") &&
+    hit(b, flt.week,   b.week,   "weeks") &&
+    hit(b, flt.dealer, b.dealer, "stores")
   );
 
   function fmtWhen(iso: string): string {
@@ -468,12 +516,8 @@ export default function UploadPage() {
               {shownBatches.map((b) => (
                 <tr key={b.key}>
                   <td style={{ whiteSpace: "nowrap", fontSize: 12 }}>{fmtWhen(b.latest)}</td>
-                  <td>
-                    {b.month === "Month Awal"
-                      ? <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 999, background: "rgba(201,162,39,.18)", color: "var(--gold)", border: "1px solid rgba(201,162,39,.4)" }}>🏁 {b.month}</span>
-                      : b.month}
-                  </td>
-                  <td>{b.week}</td>
+                  <td><MonthCell b={b} /></td>
+                  <td>{b.cov ? <Multi items={b.cov.weeks} /> : b.week}</td>
                   <td>{b.admin}</td>
                   <td style={{ fontSize: 11, color: "var(--muted)", maxWidth: 200 }}>
                     {BADGES.map((s) => {
@@ -505,7 +549,13 @@ export default function UploadPage() {
                     </div>
                   </td>
                   <td>{b.city}</td>
-                  <td style={{ fontWeight: 600 }}>{b.dealer}</td>
+                  <td style={{ fontWeight: 600 }}>
+                    {b.cov
+                      ? (b.cov.rows === 0
+                          ? <span style={{ fontWeight: 400, fontSize: 11, color: "#f87171" }} title="Audit row with no surviving data — leftover from a re-import">⚠ empty (0 rows)</span>
+                          : <Multi items={b.cov.stores} />)
+                      : b.dealer}
+                  </td>
                   <td><button onClick={() => delBatch(b)} style={delBtnStyle}>Delete</button></td>
                 </tr>
               ))}
@@ -523,6 +573,40 @@ export default function UploadPage() {
 }
 
 const delBtnStyle: React.CSSProperties = { background: "rgba(255,80,80,.12)", border: "1px solid rgba(255,90,90,.3)", color: "#ff9a9a", borderRadius: 7, padding: "4px 10px", cursor: "pointer", fontSize: 12 };
+
+const awalPill: React.CSSProperties = {
+  fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 999,
+  background: "rgba(201,162,39,.18)", color: "var(--gold)", border: "1px solid rgba(201,162,39,.4)",
+};
+
+// A bulk import spans many months/weeks/dealers — show the first couple and
+// a "+N" rather than a wall of text; full list on hover.
+function Multi({ items }: { items: string[] }) {
+  if (!items.length) return <span style={{ color: "var(--muted)" }}>—</span>;
+  const head = items.slice(0, 2).join(", ");
+  return (
+    <span title={items.join(", ")} style={{ fontSize: 12 }}>
+      {head}{items.length > 2 && <span style={{ color: "var(--muted)" }}> +{items.length - 2}</span>}
+    </span>
+  );
+}
+
+// Baseline ("Month Awal") is called out with a pill wherever it appears —
+// including inside a bulk import that also covers ordinary months.
+function MonthCell({ b }: { b: Batch }) {
+  if (!b.cov) {
+    return b.month === "Month Awal" ? <span style={awalPill}>🏁 {b.month}</span> : <>{b.month}</>;
+  }
+  const awal = b.cov.months.filter((m) => /awal/i.test(m));
+  const rest = b.cov.months.filter((m) => !/awal/i.test(m));
+  return (
+    <span title={b.cov.months.join(", ")} style={{ display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap" }}>
+      {awal.length > 0 && <span style={awalPill}>🏁 Month Awal</span>}
+      {rest.length > 0 && <Multi items={rest} />}
+      {b.cov.months.length === 0 && <span style={{ color: "var(--muted)" }}>—</span>}
+    </span>
+  );
+}
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
