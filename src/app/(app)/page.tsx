@@ -37,7 +37,7 @@ type DealerOpt = { value: string; city: string | null };
 type Filters = { years: number[]; quarters: string[]; months: string[]; weeks: string[]; cities: string[]; dealers: DealerOpt[] };
 type BaselineVsActive = {
   baseline: { stores: number; sales: number; ad_cost: number };
-  active: { store_months: number; sales: number; ad_cost: number };
+  active: { months: number; sales: number; ad_cost: number };
 };
 
 // Sortable columns on the "Detail Data per Dealer" table. cartRate isn't a

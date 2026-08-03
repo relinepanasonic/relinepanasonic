@@ -9,7 +9,7 @@ import {
   ComposedChart, Line, PieChart, Pie,
 } from "recharts";
 
-type Side = { stores?: number; store_months?: number; sales: number; ad_cost: number };
+type Side = { stores?: number; months?: number; sales: number; ad_cost: number };
 type BaselineVsActive = {
   baseline: Side;
   active: Side;
@@ -17,7 +17,6 @@ type BaselineVsActive = {
   // brand filter. Older RPC versions omit them, hence optional.
   baseline_all?: Side;
   active_all?: Side;
-  partial_months_excluded?: number;
   // Added by Supabase Migration/36 — true when the dashboard's Month filter
   // is set, meaning `active` is that ONE month's real figures, not an
   // average. Older RPC versions omit it (treated as false: average mode).
@@ -112,8 +111,8 @@ function AdsRoasCombo({ title, hint, points }: {
 // Two donuts side by side — Panasonic's share of total store GMV, before vs
 // after. "Other" is whatever the store sold that ISN'T Panasonic, derived
 // from the Panasonic and All-Brand figures already computed above (same
-// per-store-average basis on both sides, so the ratio is unaffected by the
-// averaging — a share is scale-invariant).
+// basis on both sides, so the ratio is unaffected — a share is
+// scale-invariant regardless of how the totals were averaged).
 function ShareDonut({ label, pana, all, color }: { label: string; pana: number; all: number; color: string }) {
   const other = Math.max(all - pana, 0);
   const total = pana + other;
@@ -158,18 +157,20 @@ export default function BaselineChart({ data, scopeLabel, monthLabel }: { data: 
 
   const { baseline, active } = data;
   const stores = baseline.stores ?? 0;
-  const months = active.store_months ?? 0;
+  const months = active.months ?? 0;
   const hasBaseline = stores > 0;
   // Old RPCs (pre migration/36) don't send this flag; fall back to "average
   // mode" (false), which was the only mode that existed before.
   const monthFiltered = data.is_month_filtered ?? false;
 
-  // Baseline is a one-off per-store snapshot; Active spans many store-months
-  // — so both are normalised to a per-store-per-month basis before comparing.
+  // City-wide totals, NOT divided by store count (migration 37) — the
+  // filter is City/Dealer, not "per dealer", so Baseline and Active are
+  // each the scope's whole total. Active is still divided by the number
+  // of MONTHS (not store-months) when averaging across "All Months".
   const per = (b: Side, a: Side) => ({
-    baseSales: stores ? b.sales / stores : 0,
+    baseSales: b.sales,
     actSales:  months ? a.sales / months : 0,
-    baseAds:   stores ? b.ad_cost / stores : 0,
+    baseAds:   b.ad_cost,
     actAds:    months ? a.ad_cost / months : 0,
     baseRoas:  b.ad_cost > 0 ? b.sales / b.ad_cost : null,
     actRoas:   a.ad_cost > 0 ? a.sales / a.ad_cost : null,
@@ -199,25 +200,17 @@ export default function BaselineChart({ data, scopeLabel, monthLabel }: { data: 
       <div className="panel">
         <h3 style={{ margin: "0 0 2px" }}>Baseline vs Active Performance — <span style={{ color: GOLD }}>{scopeLabel}</span></h3>
         <div className="hint">
-          {monthFiltered
-            // A specific month was picked and this scope has no rows for it —
-            // different from the "nothing complete yet" case below.
-            ? <>No data for {monthLabel} yet for {scopeLabel}.</>
-            // Every month this scope has is still the newest (in-progress)
-            // one — nothing complete to average. Say so rather than drawing
-            // zero bars, which would read as "no sales".
-            : <>No completed month yet for {scopeLabel}. Data is uploaded weekly, and a month only counts once the next
-              month starts arriving — so the comparison appears after the first full month is behind you.</>}
+          {monthFiltered ? <>No data for {monthLabel} yet for {scopeLabel}.</> : <>No sales data yet for {scopeLabel}.</>}
         </div>
       </div>
     );
   }
 
   // "Avg" only means something when Active is an average across several
-  // store-months (the "All Months" default). With a specific month picked,
-  // Active is that one month's real total, so the label says so instead —
-  // e.g. "Panasonic Monthly Sales — Juli 2026", not "Avg Monthly Sales".
-  const activeTag = monthFiltered ? `${monthLabel}` : `avg / store / month`;
+  // months (the "All Months" default). With a specific month picked, Active
+  // is that one month's real total, so the label says so instead — e.g.
+  // "Panasonic Monthly Sales — Juli 2026", not "Avg Monthly Sales".
+  const activeTag = monthFiltered ? `${monthLabel}` : `avg / month`;
   const row = (label: string, hintSuffix: string, m: ReturnType<typeof per>) => (
     <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
       <MiniBarPanel
@@ -248,15 +241,11 @@ export default function BaselineChart({ data, scopeLabel, monthLabel }: { data: 
       <h3 style={{ margin: "0 0 2px" }}>Baseline vs Active Performance — <span style={{ color: GOLD }}>{scopeLabel}</span></h3>
       <div className="hint" style={{ marginBottom: 14 }}>
         {monthFiltered ? (
-          <>Pre-project snapshot (&quot;Month Awal&quot;, {stores} store{stores === 1 ? "" : "s"}) vs <strong style={{ color: GOLD }}>{monthLabel}</strong>
-          {" "}({months} store{months === 1 ? "" : "s"} with data that month).</>
+          <>Pre-project snapshot (&quot;Month Awal&quot;, {stores} store{stores === 1 ? "" : "s"} total) vs <strong style={{ color: GOLD }}>{monthLabel}</strong>.</>
         ) : (
-          <>Pre-project snapshot (&quot;Month Awal&quot;, {stores} store{stores === 1 ? "" : "s"}) vs average per completed month
-          ({months} store-month{months === 1 ? "" : "s"}).
-          {data.partial_months_excluded ? (
-            <> Data is uploaded weekly, so each store&apos;s newest month is still being filled in — {data.partial_months_excluded} in-progress
-            month{data.partial_months_excluded === 1 ? " is" : "s are"} excluded so a part-month can&apos;t drag the average down.</>
-          ) : null}</>
+          <>Pre-project snapshot (&quot;Month Awal&quot;, {stores} store{stores === 1 ? "" : "s"} total) vs average across
+          {" "}{months} month{months === 1 ? "" : "s"} of data — city-wide totals, not per store. Pick a specific Month
+          {" "}in the filter above to see that month&apos;s real numbers instead of an average.</>
         )}
       </div>
 

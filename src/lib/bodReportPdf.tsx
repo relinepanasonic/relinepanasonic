@@ -72,7 +72,7 @@ export type Summary = {
 };
 export type BaselineVsActive = {
   baseline: { stores: number; sales: number; ad_cost: number };
-  active: { store_months: number; sales: number; ad_cost: number };
+  active: { months: number; sales: number; ad_cost: number };
 };
 export type Scope = { year: string; quarter: string; month: string; week: string; city: string; dealer: string };
 
@@ -561,14 +561,15 @@ function ImpactBody({ bva }: { bva: BaselineVsActive | null }) {
     );
   }
   const { baseline, active } = bva;
-  // Baseline is a ONE-OFF snapshot per store; Active spans many
-  // store-months. Comparing raw totals would be apples-to-oranges, so
-  // both sides are normalised to a per-store-month average — the same
-  // basis the dashboard's Baseline vs Active panel uses.
-  const bSales = baseline.sales / baseline.stores;
-  const aSales = active.store_months ? active.sales / active.store_months : 0;
-  const bAds = baseline.ad_cost / baseline.stores;
-  const aAds = active.store_months ? active.ad_cost / active.store_months : 0;
+  // City/dealer-wide totals, not divided by store count — Baseline is
+  // whatever the scope's stores sold before the project (one fixed
+  // snapshot); Active is the scope's total per month, averaged across
+  // every month with data. Same basis the dashboard's Baseline vs Active
+  // panel uses (Supabase Migration/37).
+  const bSales = baseline.sales;
+  const aSales = active.months ? active.sales / active.months : 0;
+  const bAds = baseline.ad_cost;
+  const aAds = active.months ? active.ad_cost / active.months : 0;
   const bRoas = baseline.ad_cost > 0 ? baseline.sales / baseline.ad_cost : null;
   const aRoas = active.ad_cost > 0 ? active.sales / active.ad_cost : null;
   const salesX = bSales > 0 ? aSales / bSales : null;
@@ -579,10 +580,10 @@ function ImpactBody({ bva }: { bva: BaselineVsActive | null }) {
   const adsThin = baseline.ad_cost < baseline.sales * 0.001;
 
   const rows: { metric: string; before: string; after: string; change: string }[] = [
-    { metric: "Penjualan Panasonic / toko / bulan", before: rp(bSales), after: rp(aSales), change: salesX != null ? `${mult(salesX)}` : "—" },
-    { metric: "Biaya iklan / toko / bulan", before: rp(bAds), after: rp(aAds), change: adsX != null ? `${mult(adsX)}` : "—" },
+    { metric: "Penjualan Panasonic (total)", before: rp(bSales), after: `${rp(aSales)} / bulan`, change: salesX != null ? `${mult(salesX)}` : "—" },
+    { metric: "Biaya iklan (total)", before: rp(bAds), after: `${rp(aAds)} / bulan`, change: adsX != null ? `${mult(adsX)}` : "—" },
     { metric: "ROAS (total periode)", before: adsThin ? "tanpa iklan terkelola" : roasFmt(bRoas), after: roasFmt(aRoas), change: adsThin ? "program baru" : "—" },
-    { metric: "Cakupan data", before: `${baseline.stores} toko (Month Awal)`, after: `${active.store_months} toko-bulan aktif`, change: "—" },
+    { metric: "Cakupan data", before: `${baseline.stores} toko (Month Awal)`, after: `${active.months} bulan aktif`, change: "—" },
   ];
 
   return (
@@ -600,7 +601,7 @@ function ImpactBody({ bva }: { bva: BaselineVsActive | null }) {
       </View>
 
       <Text style={{ fontSize: 7.5, color: MUTED, fontFamily: "Helvetica-Bold", letterSpacing: 1, marginBottom: 7 }}>
-        RINCIAN SEBELUM — SESUDAH   (rata-rata per toko per bulan)
+        RINCIAN SEBELUM — SESUDAH   (total cakupan, rata-rata per bulan)
       </Text>
       <View style={{ flexDirection: "row", paddingBottom: 5, borderBottomWidth: 1, borderBottomColor: NAVY }}>
         <Text style={[s.th, { flex: 3 }]}>METRIK</Text>
@@ -617,8 +618,8 @@ function ImpactBody({ bva }: { bva: BaselineVsActive | null }) {
         </View>
       ))}
       <Text style={{ fontSize: 7.5, color: MUTED, marginTop: 9, lineHeight: 1.45 }}>
-        Catatan: &quot;Sebelum&quot; adalah snapshot Month Awal (pra-program) dari {baseline.stores} toko; &quot;Sesudah&quot; adalah rata-rata per toko per bulan
-        selama {active.store_months} toko-bulan aktif. Keduanya dinormalkan ke basis per-toko-per-bulan agar sebanding.
+        Catatan: &quot;Sebelum&quot; adalah total snapshot Month Awal (pra-program) dari {baseline.stores} toko; &quot;Sesudah&quot; adalah total seluruh
+        cakupan dibagi rata-rata per bulan selama {active.months} bulan aktif. Keduanya adalah total cakupan (kota/dealer terpilih), bukan dibagi jumlah toko.
         {adsThin ? " Sebelum program, belanja iklan hampir nol sehingga ROAS pra-program bukan rasio yang bermakna untuk dibandingkan." : ""}
       </Text>
     </View>
