@@ -42,7 +42,10 @@ function MiniBarPanel({ title, hint, points, formatter }: {
                 bar makes a filter change visible without comparing axis ticks. */}
             <Bar dataKey="value" radius={[6, 6, 2, 2]} maxBarSize={70}>
               {points.map((p, i) => <Cell key={i} fill={p.color} />)}
-              <LabelList dataKey="value" position="top" formatter={(v: unknown) => formatter(Number(v))} style={{ fill: "#e8edf8", fontSize: 10.5, fontWeight: 700 }} />
+              {/* `fill` as a direct prop, not style={{fill:...}} — recharts' Text
+                  component defaults to a dark fill and doesn't reliably pick up
+                  color from a style object, which is why this rendered black. */}
+              <LabelList dataKey="value" position="top" formatter={(v: unknown) => formatter(Number(v))} fill="#ffffff" fontSize={10.5} fontWeight={700} />
             </Bar>
           </BarChart>
         </ResponsiveContainer>
