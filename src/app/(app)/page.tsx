@@ -372,7 +372,7 @@ export default function DashboardPage() {
 
       {/* Baseline vs Active */}
       <div className="row">
-        <BaselineChart data={baseline} />
+        <BaselineChart data={baseline} scopeLabel={sel.dealer || sel.city || "All Cities"} />
       </div>
 
       {/* Dealer table */}

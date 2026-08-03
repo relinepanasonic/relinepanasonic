@@ -4,7 +4,7 @@
 // intervention actually moved the needle vs the pre-project snapshot.
 // Loaded via next/dynamic from page.tsx, same lazy-chunk treatment as the
 // other recharts-backed components in DashboardCharts.tsx.
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Cell } from "recharts";
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Cell, LabelList } from "recharts";
 
 type BaselineVsActive = {
   baseline: { stores: number; sales: number; ad_cost: number };
@@ -15,8 +15,9 @@ const idr = (n: number) => "Rp " + new Intl.NumberFormat("id-ID", { notation: "c
 const idrFull = (n: number) => "Rp " + new Intl.NumberFormat("id-ID").format(Math.round(n || 0));
 const tooltip = { background: "#0f2040", border: "1px solid rgba(201,162,39,.3)", borderRadius: 8, color: "#e8edf8", fontSize: 12 };
 const axis = { fontSize: 10, fill: "#94a3b8" };
+const GOLD = "#c9a227";
 const BASELINE_COLOR = "#94a3b8"; // grey — "before"
-const ACTIVE_COLOR = "#c9a227";   // gold — "after", matches the app's accent
+const ACTIVE_COLOR = GOLD;        // "after", matches the app's accent
 
 function MiniBarPanel({ title, hint, points, formatter }: {
   title: string; hint: string;
@@ -29,13 +30,19 @@ function MiniBarPanel({ title, hint, points, formatter }: {
       <div className="hint" style={{ marginBottom: 14 }}>{hint}</div>
       <div style={{ width: "100%", height: 220 }}>
         <ResponsiveContainer>
-          <BarChart data={points} margin={{ left: 4, right: 8, top: 6, bottom: 6 }}>
+          <BarChart data={points} margin={{ left: 4, right: 8, top: 20, bottom: 6 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,.05)" vertical={false} />
             <XAxis dataKey="name" tick={axis} axisLine={false} tickLine={false} />
             <YAxis tick={axis} tickFormatter={(v) => formatter(Number(v))} axisLine={false} tickLine={false} width={56} />
-            <Tooltip contentStyle={tooltip} formatter={(v) => [formatter(Number(v)), ""]} cursor={{ fill: "rgba(201,162,39,.05)" }} />
+            {/* Bold gold label text so the hovered bar's category (Baseline/Active) is legible against the dark tooltip */}
+            <Tooltip contentStyle={tooltip} labelStyle={{ color: GOLD, fontWeight: 700 }} formatter={(v) => [formatter(Number(v)), ""]} cursor={{ fill: "rgba(201,162,39,.05)" }} />
+            {/* The Y axis auto-rescales to each render's own data, so bar HEIGHTS
+                look similar across different filter selections even when the
+                underlying numbers differ — printing the value on top of every
+                bar makes a filter change visible without comparing axis ticks. */}
             <Bar dataKey="value" radius={[6, 6, 2, 2]} maxBarSize={70}>
               {points.map((p, i) => <Cell key={i} fill={p.color} />)}
+              <LabelList dataKey="value" position="top" formatter={(v: unknown) => formatter(Number(v))} style={{ fill: "#e8edf8", fontSize: 10.5, fontWeight: 700 }} />
             </Bar>
           </BarChart>
         </ResponsiveContainer>
@@ -44,7 +51,7 @@ function MiniBarPanel({ title, hint, points, formatter }: {
   );
 }
 
-export default function BaselineChart({ data }: { data: BaselineVsActive | null }) {
+export default function BaselineChart({ data, scopeLabel }: { data: BaselineVsActive | null; scopeLabel: string }) {
   if (!data) {
     return (
       <div className="panel">
@@ -72,15 +79,18 @@ export default function BaselineChart({ data }: { data: BaselineVsActive | null 
   if (!hasBaseline) {
     return (
       <div className="panel">
-        <h3 style={{ margin: "0 0 2px" }}>Baseline vs Active Performance</h3>
-        <div className="hint">No &quot;Month Awal&quot; baseline data for the current City/Dealer filter.</div>
+        <h3 style={{ margin: "0 0 2px" }}>Baseline vs Active Performance — <span style={{ color: GOLD }}>{scopeLabel}</span></h3>
+        <div className="hint">No &quot;Month Awal&quot; baseline data for {scopeLabel}.</div>
       </div>
     );
   }
 
   return (
     <div className="panel">
-      <h3 style={{ margin: "0 0 2px" }}>Baseline vs Active Performance</h3>
+      {/* Scope shown right in the title (gold) — changing City/Dealer changes
+          this label immediately, which is the clearest proof the chart below
+          is actually re-fetching for the new filter. */}
+      <h3 style={{ margin: "0 0 2px" }}>Baseline vs Active Performance — <span style={{ color: GOLD }}>{scopeLabel}</span></h3>
       <div className="hint" style={{ marginBottom: 14 }}>
         Pre-project snapshot (&quot;Month Awal&quot;, {baseline.stores} store{baseline.stores === 1 ? "" : "s"}) vs average per active month
         ({active.store_months} store-month{active.store_months === 1 ? "" : "s"}) — Panasonic SPOS &amp; Ads only.
