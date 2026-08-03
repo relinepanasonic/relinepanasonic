@@ -11,6 +11,11 @@ const SOURCES: DataSource[] = ["spos", "ads", "perf"];
 
 // Find the header row index for a sheet by looking for a known column.
 // Shopee CSV/xlsx exports often have a metadata preamble before the header.
+// Returns -1 when no known header is present — the caller MUST reject the
+// file rather than guessing. Falling back to row 0 (as this used to) makes
+// the metadata preamble the header, so every "data" row maps to nulls and
+// the upload silently lands as junk; worse, a file that does have campaigns
+// gets every column mis-mapped and lands as silently wrong numbers.
 function findHeaderRow(rows: unknown[][], mustInclude: string[]): number {
   for (let i = 0; i < Math.min(rows.length, 15); i++) {
     const cells = (rows[i] || []).map((c) => String(c ?? "").toLowerCase());
@@ -18,7 +23,7 @@ function findHeaderRow(rows: unknown[][], mustInclude: string[]): number {
       return i;
     }
   }
-  return 0;
+  return -1;
 }
 
 const HEADER_HINTS: Record<DataSource, string[]> = {
@@ -26,6 +31,29 @@ const HEADER_HINTS: Record<DataSource, string[]> = {
   ads: ["Nama Iklan"],
   perf: ["Total Pengunjung", "Kunjungan"],
 };
+
+// mapRow() in lib/parse.ts reads every metric by its Indonesian column name,
+// so an English-language Shopee export cannot be parsed even if we located
+// its header. Detect it to give an actionable message instead of a generic
+// "header not found".
+// Taken from real English exports. Each token is absent from the Indonesian
+// header for the same source, so these cannot false-positive:
+//   spos  ID "Kode Produk / SKU Induk"      EN "Item ID / Parent SKU"
+//   perf  ID "Total Pengunjung (Kunjungan)" EN "Visitors (Visit)"
+//   ads   ID "Nama Iklan / Mode Bidding"    EN "Ad Name / Bidding Method"
+const ENGLISH_HINTS: Record<DataSource, string[]> = {
+  spos: ["item id", "current item status", "parent sku"],
+  ads: ["ad name", "impression", "bidding method"],
+  perf: ["visitors (visit)", "conversion rate"],
+};
+function looksEnglish(rows: unknown[][], source: DataSource): boolean {
+  const hints = ENGLISH_HINTS[source];
+  for (let i = 0; i < Math.min(rows.length, 15); i++) {
+    const cells = (rows[i] || []).map((c) => String(c ?? "").toLowerCase());
+    if (hints.some((h) => cells.some((c) => c.includes(h)))) return true;
+  }
+  return false;
+}
 
 export async function POST(req: NextRequest) {
   // 1. Verify the caller and resolve their profile (client + role).
@@ -74,6 +102,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "EMPTY_FILE" }, { status: 400 });
 
   const headerIdx = findHeaderRow(matrix, HEADER_HINTS[source]);
+  if (headerIdx === -1) {
+    // Reject rather than guess — see findHeaderRow().
+    return NextResponse.json({
+      error: looksEnglish(matrix, source)
+        ? `File ini adalah export Shopee berbahasa Inggris. Ubah bahasa Shopee ke Indonesia lalu export ulang — kolomnya dibaca memakai nama kolom Indonesia (mis. "${HEADER_HINTS[source][0]}").`
+        : `Header tidak ditemukan — file ini sepertinya bukan export ${source.toUpperCase()}. Kolom wajib: "${HEADER_HINTS[source].join('" / "')}".`,
+    }, { status: 400 });
+  }
   const headers = (matrix[headerIdx] || []).map((h) => String(h ?? "").trim());
   const dataRows = matrix.slice(headerIdx + 1);
 
