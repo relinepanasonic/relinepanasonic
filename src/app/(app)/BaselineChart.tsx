@@ -4,7 +4,10 @@
 // intervention actually moved the needle vs the pre-project snapshot.
 // Loaded via next/dynamic from page.tsx, same lazy-chunk treatment as the
 // other recharts-backed components in DashboardCharts.tsx.
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Cell, LabelList } from "recharts";
+import {
+  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Cell, LabelList,
+  ComposedChart, Line, PieChart, Pie,
+} from "recharts";
 
 type Side = { stores?: number; store_months?: number; sales: number; ad_cost: number };
 type BaselineVsActive = {
@@ -59,6 +62,85 @@ function MiniBarPanel({ title, hint, points, formatter }: {
             </Bar>
           </BarChart>
         </ResponsiveContainer>
+      </div>
+    </div>
+  );
+}
+
+// Ads Spend (bars) + ROAS (line, secondary axis) in one chart — same
+// technique as DashboardCharts.tsx's CostRoas, adapted for two categorical
+// points (Baseline/Active) instead of a time series.
+function AdsRoasCombo({ title, hint, points }: {
+  title: string; hint: string;
+  points: { name: string; spend: number; roas: number | null; color: string }[];
+}) {
+  return (
+    <div className="panel" style={{ flex: 1, minWidth: 0 }}>
+      <h3 style={{ margin: "0 0 2px" }}>{title}</h3>
+      <div className="hint" style={{ marginBottom: 14 }}>{hint}</div>
+      <div style={{ width: "100%", height: 220 }}>
+        <ResponsiveContainer>
+          <ComposedChart data={points} margin={{ left: 4, right: 8, top: 20, bottom: 6 }}>
+            <defs>
+              <filter id="baseline-roasLine-glow" x="-60%" y="-60%" width="220%" height="220%">
+                <feDropShadow dx="0" dy="0" stdDeviation="2.5" floodColor={GOLD} floodOpacity="0.6" />
+              </filter>
+            </defs>
+            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,.05)" vertical={false} />
+            <XAxis dataKey="name" tick={axis} axisLine={false} tickLine={false} />
+            <YAxis yAxisId="l" tick={axis} tickFormatter={(v) => idr(Number(v))} axisLine={false} tickLine={false} width={56} />
+            <YAxis yAxisId="r" orientation="right" tick={axis} tickFormatter={(v) => Number(v).toFixed(0) + "×"} axisLine={false} tickLine={false} width={40} />
+            <Tooltip contentStyle={tooltip} labelStyle={{ color: GOLD, fontWeight: 700 }}
+              formatter={(v, n) => n === "roas" ? [(Number(v) || 0).toFixed(1) + "×", "ROAS"] : [idr(Number(v)), "Ads Spend"]}
+              cursor={{ fill: "rgba(201,162,39,.05)" }} />
+            <Bar yAxisId="l" dataKey="spend" radius={[6, 6, 2, 2]} maxBarSize={70}>
+              {points.map((p, i) => <Cell key={i} fill={p.color} />)}
+              <LabelList dataKey="spend" position="top" formatter={(v: unknown) => idr(Number(v))} fill="#ffffff" fontSize={10.5} fontWeight={700} />
+            </Bar>
+            <Line yAxisId="r" type="monotone" dataKey="roas" stroke={GOLD} strokeWidth={2.5}
+              dot={{ r: 4, fill: GOLD, stroke: "#0a1628", strokeWidth: 1 }}
+              style={{ filter: "url(#baseline-roasLine-glow)" }}
+              label={{ position: "top", fill: GOLD, fontSize: 10.5, fontWeight: 700, offset: 12,
+                formatter: (v: unknown) => v == null ? "" : Number(v).toFixed(1) + "×" }} />
+          </ComposedChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+}
+
+// Two donuts side by side — Panasonic's share of total store GMV, before vs
+// after. "Other" is whatever the store sold that ISN'T Panasonic, derived
+// from the Panasonic and All-Brand figures already computed above (same
+// per-store-average basis on both sides, so the ratio is unaffected by the
+// averaging — a share is scale-invariant).
+function ShareDonut({ label, pana, all, color }: { label: string; pana: number; all: number; color: string }) {
+  const other = Math.max(all - pana, 0);
+  const total = pana + other;
+  const points = [{ name: "Panasonic", value: pana }, { name: "Other Brands", value: other }];
+  const pct = total > 0 ? (pana / total) * 100 : 0;
+  return (
+    <div style={{ flex: 1, minWidth: 0, textAlign: "center" }}>
+      <div style={{ fontSize: 12.5, fontWeight: 700, color: "#e8edf8", marginBottom: 6 }}>{label}</div>
+      <div style={{ width: "100%", height: 190, position: "relative" }}>
+        {total > 0 ? (
+          <ResponsiveContainer>
+            <PieChart>
+              <Pie data={points} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={48} outerRadius={78} paddingAngle={2}>
+                <Cell fill={color} stroke="#0a1628" strokeWidth={2} />
+                <Cell fill="#2a3a5c" stroke="#0a1628" strokeWidth={2} />
+              </Pie>
+              <Tooltip contentStyle={tooltip} formatter={(v) => idrFull(Number(v))} />
+            </PieChart>
+          </ResponsiveContainer>
+        ) : (
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: "var(--muted)", fontSize: 12 }}>No data</div>
+        )}
+        {total > 0 && (
+          <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
+            <span style={{ fontSize: 20, fontWeight: 800, color }}>{pct.toFixed(0)}%</span>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -147,22 +229,12 @@ export default function BaselineChart({ data, scopeLabel, monthLabel }: { data: 
           { name: "Active",   value: m.actSales,  color: ACTIVE_COLOR },
         ]}
       />
-      <MiniBarPanel
-        title={monthFiltered ? `${label} Ads Spend` : `${label} Avg Ads Spend`}
+      <AdsRoasCombo
+        title={monthFiltered ? `${label} Ads Spend & ROAS` : `${label} Avg Ads Spend & ROAS`}
         hint={`${hintSuffix} · Ads · Active = ${activeTag}`}
-        formatter={idr}
         points={[
-          { name: "Baseline", value: m.baseAds, color: BASELINE_COLOR },
-          { name: "Active",   value: m.actAds,  color: ACTIVE_COLOR },
-        ]}
-      />
-      <MiniBarPanel
-        title={monthFiltered ? `${label} ROAS` : `${label} Avg ROAS`}
-        hint="Sales ÷ Ad Spend"
-        formatter={(n) => n.toFixed(1) + "×"}
-        points={[
-          { name: "Baseline", value: m.baseRoas ?? 0, color: BASELINE_COLOR },
-          { name: "Active",   value: m.actRoas ?? 0,  color: ACTIVE_COLOR },
+          { name: "Baseline", spend: m.baseAds, roas: m.baseRoas, color: BASELINE_COLOR },
+          { name: "Active",   spend: m.actAds,  roas: m.actRoas,  color: ACTIVE_COLOR },
         ]}
       />
     </div>
@@ -189,6 +261,26 @@ export default function BaselineChart({ data, scopeLabel, monthLabel }: { data: 
       </div>
 
       {row("Panasonic", "Panasonic", pana)}
+
+      {/* Market share only makes sense for Panasonic vs everything else —
+          "All Brand vs All Brand" would always be 100%, so this doesn't
+          repeat for the All Brand row below. Needs both figures, so it's
+          hidden (not zeroed) on pre-migration-34 RPCs same as the All Brand
+          row itself. */}
+      {allData && (
+        <div className="panel" style={{ marginTop: 16 }}>
+          <h3 style={{ margin: "0 0 2px" }}>Panasonic Market Share (Baseline vs Active)</h3>
+          <div className="hint" style={{ marginBottom: 10 }}>Panasonic sales ÷ total store sales (all brands) · SPOS</div>
+          <div style={{ display: "flex", gap: 16 }}>
+            <ShareDonut label="Baseline" pana={pana.baseSales} all={allData.baseSales} color={GOLD} />
+            <ShareDonut label={monthFiltered ? "Active" : "Active (avg)"} pana={pana.actSales} all={allData.actSales} color={GOLD} />
+          </div>
+          <div style={{ display: "flex", justifyContent: "center", gap: 18, marginTop: 4, fontSize: 11, color: "var(--muted)" }}>
+            <span style={{ display: "flex", alignItems: "center", gap: 5 }}><span style={{ width: 9, height: 9, borderRadius: 2, background: GOLD, display: "inline-block" }} />Panasonic</span>
+            <span style={{ display: "flex", alignItems: "center", gap: 5 }}><span style={{ width: 9, height: 9, borderRadius: 2, background: "#2a3a5c", display: "inline-block" }} />Other Brands</span>
+          </div>
+        </div>
+      )}
 
       {allData && (
         <div style={{ marginTop: 16 }}>
