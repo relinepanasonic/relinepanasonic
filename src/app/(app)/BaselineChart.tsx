@@ -15,6 +15,10 @@ type BaselineVsActive = {
   baseline_all?: Side;
   active_all?: Side;
   partial_months_excluded?: number;
+  // Added by Supabase Migration/36 — true when the dashboard's Month filter
+  // is set, meaning `active` is that ONE month's real figures, not an
+  // average. Older RPC versions omit it (treated as false: average mode).
+  is_month_filtered?: boolean;
 };
 
 const idr = (n: number) => "Rp " + new Intl.NumberFormat("id-ID", { notation: "compact", maximumFractionDigits: 2 }).format(n || 0);
@@ -60,7 +64,7 @@ function MiniBarPanel({ title, hint, points, formatter }: {
   );
 }
 
-export default function BaselineChart({ data, scopeLabel }: { data: BaselineVsActive | null; scopeLabel: string }) {
+export default function BaselineChart({ data, scopeLabel, monthLabel }: { data: BaselineVsActive | null; scopeLabel: string; monthLabel: string | null }) {
   if (!data) {
     return (
       <div className="panel">
@@ -74,6 +78,9 @@ export default function BaselineChart({ data, scopeLabel }: { data: BaselineVsAc
   const stores = baseline.stores ?? 0;
   const months = active.store_months ?? 0;
   const hasBaseline = stores > 0;
+  // Old RPCs (pre migration/36) don't send this flag; fall back to "average
+  // mode" (false), which was the only mode that existed before.
+  const monthFiltered = data.is_month_filtered ?? false;
 
   // Baseline is a one-off per-store snapshot; Active spans many store-months
   // — so both are normalised to a per-store-per-month basis before comparing.
@@ -105,26 +112,35 @@ export default function BaselineChart({ data, scopeLabel }: { data: BaselineVsAc
     );
   }
 
-  // Every month this scope has is still the newest (in-progress) one — so
-  // there's nothing complete to average. Say so rather than drawing zero
-  // bars, which would read as "no sales".
   if (months === 0) {
     return (
       <div className="panel">
         <h3 style={{ margin: "0 0 2px" }}>Baseline vs Active Performance — <span style={{ color: GOLD }}>{scopeLabel}</span></h3>
         <div className="hint">
-          No completed month yet for {scopeLabel}. Data is uploaded weekly, and a month only counts once the next
-          month starts arriving — so the comparison appears after the first full month is behind you.
+          {monthFiltered
+            // A specific month was picked and this scope has no rows for it —
+            // different from the "nothing complete yet" case below.
+            ? <>No data for {monthLabel} yet for {scopeLabel}.</>
+            // Every month this scope has is still the newest (in-progress)
+            // one — nothing complete to average. Say so rather than drawing
+            // zero bars, which would read as "no sales".
+            : <>No completed month yet for {scopeLabel}. Data is uploaded weekly, and a month only counts once the next
+              month starts arriving — so the comparison appears after the first full month is behind you.</>}
         </div>
       </div>
     );
   }
 
+  // "Avg" only means something when Active is an average across several
+  // store-months (the "All Months" default). With a specific month picked,
+  // Active is that one month's real total, so the label says so instead —
+  // e.g. "Panasonic Monthly Sales — Juli 2026", not "Avg Monthly Sales".
+  const activeTag = monthFiltered ? `${monthLabel}` : `avg / store / month`;
   const row = (label: string, hintSuffix: string, m: ReturnType<typeof per>) => (
     <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
       <MiniBarPanel
-        title={`${label} Avg Monthly Sales`}
-        hint={`${hintSuffix} · SPOS · per store / month`}
+        title={monthFiltered ? `${label} Monthly Sales` : `${label} Avg Monthly Sales`}
+        hint={`${hintSuffix} · SPOS · Active = ${activeTag}`}
         formatter={idr}
         points={[
           { name: "Baseline", value: m.baseSales, color: BASELINE_COLOR },
@@ -132,8 +148,8 @@ export default function BaselineChart({ data, scopeLabel }: { data: BaselineVsAc
         ]}
       />
       <MiniBarPanel
-        title={`${label} Avg Ads Spend`}
-        hint={`${hintSuffix} · Ads · per store / month`}
+        title={monthFiltered ? `${label} Ads Spend` : `${label} Avg Ads Spend`}
+        hint={`${hintSuffix} · Ads · Active = ${activeTag}`}
         formatter={idr}
         points={[
           { name: "Baseline", value: m.baseAds, color: BASELINE_COLOR },
@@ -141,7 +157,7 @@ export default function BaselineChart({ data, scopeLabel }: { data: BaselineVsAc
         ]}
       />
       <MiniBarPanel
-        title={`${label} Avg ROAS`}
+        title={monthFiltered ? `${label} ROAS` : `${label} Avg ROAS`}
         hint="Sales ÷ Ad Spend"
         formatter={(n) => n.toFixed(1) + "×"}
         points={[
@@ -159,12 +175,17 @@ export default function BaselineChart({ data, scopeLabel }: { data: BaselineVsAc
           is actually re-fetching for the new filter. */}
       <h3 style={{ margin: "0 0 2px" }}>Baseline vs Active Performance — <span style={{ color: GOLD }}>{scopeLabel}</span></h3>
       <div className="hint" style={{ marginBottom: 14 }}>
-        Pre-project snapshot (&quot;Month Awal&quot;, {stores} store{stores === 1 ? "" : "s"}) vs average per completed month
-        ({months} store-month{months === 1 ? "" : "s"}).
-        {data.partial_months_excluded ? (
-          <> Data is uploaded weekly, so each store&apos;s newest month is still being filled in — {data.partial_months_excluded} in-progress
-          month{data.partial_months_excluded === 1 ? " is" : "s are"} excluded so a part-month can&apos;t drag the average down.</>
-        ) : null}
+        {monthFiltered ? (
+          <>Pre-project snapshot (&quot;Month Awal&quot;, {stores} store{stores === 1 ? "" : "s"}) vs <strong style={{ color: GOLD }}>{monthLabel}</strong>
+          {" "}({months} store{months === 1 ? "" : "s"} with data that month).</>
+        ) : (
+          <>Pre-project snapshot (&quot;Month Awal&quot;, {stores} store{stores === 1 ? "" : "s"}) vs average per completed month
+          ({months} store-month{months === 1 ? "" : "s"}).
+          {data.partial_months_excluded ? (
+            <> Data is uploaded weekly, so each store&apos;s newest month is still being filled in — {data.partial_months_excluded} in-progress
+            month{data.partial_months_excluded === 1 ? " is" : "s are"} excluded so a part-month can&apos;t drag the average down.</>
+          ) : null}</>
+        )}
       </div>
 
       {row("Panasonic", "Panasonic", pana)}

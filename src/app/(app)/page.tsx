@@ -177,6 +177,11 @@ export default function DashboardPage() {
       supabase.rpc("dashboard_baseline_vs_active", {
         p_city:  sel.city   || null,
         p_store: sel.dealer || null,
+        // A specific Month picked -> Active shows exactly that month, not
+        // the multi-month average (Supabase Migration/36). "All Months"
+        // keeps averaging each store's completed months (migration 34).
+        p_year:  sel.month && sel.year ? Number(sel.year) : null,
+        p_month: sel.month || null,
       }),
     ]);
     setD(data as Summary);
@@ -372,7 +377,11 @@ export default function DashboardPage() {
 
       {/* Baseline vs Active */}
       <div className="row">
-        <BaselineChart data={baseline} scopeLabel={sel.dealer || sel.city || "All Cities"} />
+        <BaselineChart
+          data={baseline}
+          scopeLabel={sel.dealer || sel.city || "All Cities"}
+          monthLabel={sel.month ? `${sel.month}${sel.year ? " " + sel.year : ""}` : null}
+        />
       </div>
 
       {/* Dealer table */}
