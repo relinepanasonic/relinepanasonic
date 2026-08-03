@@ -21,7 +21,15 @@ type BaselineVsActive = {
   // is set, meaning `active` is that ONE month's real figures, not an
   // average. Older RPC versions omit it (treated as false: average mode).
   is_month_filtered?: boolean;
+  // Added by Supabase Migration/38 — all-brand category mix, before/after.
+  // Older RPC versions omit them; the Category Share card hides itself.
+  baseline_categories?: { category: string; sales: number }[];
+  active_categories?: { category: string; sales: number }[];
 };
+
+// Same family as the app's other multi-series palettes (DashboardCharts.tsx).
+const CAT_PALETTE = ["#c9a227", "#e8c84a", "#94a3b8", "#1e4a7a", "#3b6ea5", "#d4b94e", "#6b8cae"];
+const OTHERS_COLOR = "#3a4a6e";
 
 const idr = (n: number) => "Rp " + new Intl.NumberFormat("id-ID", { notation: "compact", maximumFractionDigits: 2 }).format(n || 0);
 const idrFull = (n: number) => "Rp " + new Intl.NumberFormat("id-ID").format(Math.round(n || 0));
@@ -120,12 +128,12 @@ function ShareDonut({ label, pana, all, color }: { label: string; pana: number; 
   const pct = total > 0 ? (pana / total) * 100 : 0;
   return (
     <div style={{ flex: 1, minWidth: 0, textAlign: "center" }}>
-      <div style={{ fontSize: 12.5, fontWeight: 700, color: "#e8edf8", marginBottom: 6 }}>{label}</div>
-      <div style={{ width: "100%", height: 190, position: "relative" }}>
+      <div style={{ fontSize: 11.5, fontWeight: 700, color: "#e8edf8", marginBottom: 4 }}>{label}</div>
+      <div style={{ width: "100%", height: 150, position: "relative" }}>
         {total > 0 ? (
           <ResponsiveContainer>
             <PieChart>
-              <Pie data={points} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={48} outerRadius={78} paddingAngle={2}>
+              <Pie data={points} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={38} outerRadius={62} paddingAngle={2}>
                 <Cell fill={color} stroke="#0a1628" strokeWidth={2} />
                 <Cell fill="#2a3a5c" stroke="#0a1628" strokeWidth={2} />
               </Pie>
@@ -137,8 +145,36 @@ function ShareDonut({ label, pana, all, color }: { label: string; pana: number; 
         )}
         {total > 0 && (
           <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
-            <span style={{ fontSize: 20, fontWeight: 800, color }}>{pct.toFixed(0)}%</span>
+            <span style={{ fontSize: 16, fontWeight: 800, color }}>{pct.toFixed(0)}%</span>
           </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Same idea as ShareDonut but N slices instead of 2 (Panasonic/Other) — the
+// category mix for one period. Colors are assigned by the CALLER from a
+// combined baseline+active ranking, so the same category keeps the same
+// color across both donuts (comparing two independently-ranked pies would
+// let colors swap between periods, defeating the point of a before/after).
+function CategoryDonut({ label, rows }: { label: string; rows: { category: string; sales: number; color: string }[] }) {
+  const total = rows.reduce((a, r) => a + r.sales, 0);
+  return (
+    <div style={{ flex: 1, minWidth: 0, textAlign: "center" }}>
+      <div style={{ fontSize: 11.5, fontWeight: 700, color: "#e8edf8", marginBottom: 4 }}>{label}</div>
+      <div style={{ width: "100%", height: 150 }}>
+        {total > 0 ? (
+          <ResponsiveContainer>
+            <PieChart>
+              <Pie data={rows} dataKey="sales" nameKey="category" cx="50%" cy="50%" innerRadius={30} outerRadius={62} paddingAngle={1.5}>
+                {rows.map((r, i) => <Cell key={i} fill={r.color} stroke="#0a1628" strokeWidth={1.5} />)}
+              </Pie>
+              <Tooltip contentStyle={tooltip} formatter={(v, n) => [idrFull(Number(v)), n as string]} />
+            </PieChart>
+          </ResponsiveContainer>
+        ) : (
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: "var(--muted)", fontSize: 12 }}>No data</div>
         )}
       </div>
     </div>
@@ -180,6 +216,32 @@ export default function BaselineChart({ data, scopeLabel, monthLabel }: { data: 
   // rather than plotting zeros that look like real "no sales" data.
   const allData = data.baseline_all && data.active_all ? per(data.baseline_all, data.active_all) : null;
 
+  // Category color assignment: rank by COMBINED baseline+active sales (not
+  // each period separately) so a category keeps the same color in both
+  // donuts — independent per-period ranking would let colors swap between
+  // "before" and "after", defeating a side-by-side comparison.
+  const catRows = ((): { baseline: { category: string; sales: number; color: string }[]; active: { category: string; sales: number; color: string }[] } | null => {
+    const b = data.baseline_categories, a = data.active_categories;
+    if (!b || !a) return null; // pre-migration-38 RPC
+    const combined = new Map<string, number>();
+    for (const r of b) combined.set(r.category, (combined.get(r.category) || 0) + r.sales);
+    for (const r of a) combined.set(r.category, (combined.get(r.category) || 0) + r.sales);
+    const ranked = [...combined.entries()].sort((x, y) => y[1] - x[1]).map(([c]) => c);
+    const top = new Set(ranked.slice(0, CAT_PALETTE.length));
+    const colorOf = (c: string) => top.has(c) ? CAT_PALETTE[ranked.indexOf(c)] : OTHERS_COLOR;
+    const bucket = (rows: { category: string; sales: number }[]) => {
+      const out = new Map<string, number>();
+      for (const r of rows) {
+        const key = top.has(r.category) ? r.category : "Others";
+        out.set(key, (out.get(key) || 0) + r.sales);
+      }
+      return [...out.entries()]
+        .map(([category, sales]) => ({ category, sales, color: category === "Others" ? OTHERS_COLOR : colorOf(category) }))
+        .sort((x, y) => y.sales - x.sales);
+    };
+    return { baseline: bucket(b), active: bucket(a) };
+  })();
+
   // Baseline ad spend is typically near-zero (pre-project, no ads program
   // yet) — dividing by a near-zero denominator produces an enormous, not
   // meaningful, ROAS figure. Flag it instead of silently plotting a
@@ -211,7 +273,8 @@ export default function BaselineChart({ data, scopeLabel, monthLabel }: { data: 
   // is that one month's real total, so the label says so instead — e.g.
   // "Panasonic Monthly Sales — Juli 2026", not "Avg Monthly Sales".
   const activeTag = monthFiltered ? `${monthLabel}` : `avg / month`;
-  const row = (label: string, hintSuffix: string, m: ReturnType<typeof per>) => (
+  // Sales + Ads/ROAS + a caller-supplied third card, all in one row of 3.
+  const row3 = (label: string, hintSuffix: string, m: ReturnType<typeof per>, extra: React.ReactNode) => (
     <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
       <MiniBarPanel
         title={monthFiltered ? `${label} Monthly Sales` : `${label} Avg Monthly Sales`}
@@ -230,6 +293,41 @@ export default function BaselineChart({ data, scopeLabel, monthLabel }: { data: 
           { name: "Active",   spend: m.actAds,  roas: m.actRoas,  color: ACTIVE_COLOR },
         ]}
       />
+      {extra}
+    </div>
+  );
+
+  const marketShareCard = allData && (
+    <div className="panel" style={{ flex: 1, minWidth: 0 }}>
+      <h3 style={{ margin: "0 0 2px" }}>Panasonic Market Share (Baseline vs Active)</h3>
+      <div className="hint" style={{ marginBottom: 6 }}>Panasonic ÷ total store sales (all brands) · SPOS</div>
+      <div style={{ display: "flex", gap: 8 }}>
+        <ShareDonut label="Baseline" pana={pana.baseSales} all={allData.baseSales} color={GOLD} />
+        <ShareDonut label={monthFiltered ? "Active" : "Active (avg)"} pana={pana.actSales} all={allData.actSales} color={GOLD} />
+      </div>
+      <div style={{ display: "flex", justifyContent: "center", gap: 14, marginTop: 2, fontSize: 10.5, color: "var(--muted)" }}>
+        <span style={{ display: "flex", alignItems: "center", gap: 4 }}><span style={{ width: 8, height: 8, borderRadius: 2, background: GOLD, display: "inline-block" }} />Panasonic</span>
+        <span style={{ display: "flex", alignItems: "center", gap: 4 }}><span style={{ width: 8, height: 8, borderRadius: 2, background: "#2a3a5c", display: "inline-block" }} />Other Brands</span>
+      </div>
+    </div>
+  );
+
+  const categoryShareCard = catRows && (
+    <div className="panel" style={{ flex: 1, minWidth: 0 }}>
+      <h3 style={{ margin: "0 0 2px" }}>Category Share (Baseline vs Active)</h3>
+      <div className="hint" style={{ marginBottom: 6 }}>Sales mix by category — all brands · SPOS</div>
+      <div style={{ display: "flex", gap: 8 }}>
+        <CategoryDonut label="Baseline" rows={catRows.baseline} />
+        <CategoryDonut label={monthFiltered ? "Active" : "Active (avg)"} rows={catRows.active} />
+      </div>
+      <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "center", gap: "3px 10px", marginTop: 4, fontSize: 9.5, color: "var(--muted)" }}>
+        {/* Union of both periods' legend entries, same fixed color per category from the ranking above. */}
+        {[...new Map([...catRows.baseline, ...catRows.active].map((r) => [r.category, r.color])).entries()].map(([cat, color]) => (
+          <span key={cat} style={{ display: "flex", alignItems: "center", gap: 4 }}>
+            <span style={{ width: 7, height: 7, borderRadius: 2, background: color, display: "inline-block" }} />{cat}
+          </span>
+        ))}
+      </div>
     </div>
   );
 
@@ -249,31 +347,16 @@ export default function BaselineChart({ data, scopeLabel, monthLabel }: { data: 
         )}
       </div>
 
-      {row("Panasonic", "Panasonic", pana)}
-
       {/* Market share only makes sense for Panasonic vs everything else —
-          "All Brand vs All Brand" would always be 100%, so this doesn't
-          repeat for the All Brand row below. Needs both figures, so it's
-          hidden (not zeroed) on pre-migration-34 RPCs same as the All Brand
-          row itself. */}
-      {allData && (
-        <div className="panel" style={{ marginTop: 16 }}>
-          <h3 style={{ margin: "0 0 2px" }}>Panasonic Market Share (Baseline vs Active)</h3>
-          <div className="hint" style={{ marginBottom: 10 }}>Panasonic sales ÷ total store sales (all brands) · SPOS</div>
-          <div style={{ display: "flex", gap: 16 }}>
-            <ShareDonut label="Baseline" pana={pana.baseSales} all={allData.baseSales} color={GOLD} />
-            <ShareDonut label={monthFiltered ? "Active" : "Active (avg)"} pana={pana.actSales} all={allData.actSales} color={GOLD} />
-          </div>
-          <div style={{ display: "flex", justifyContent: "center", gap: 18, marginTop: 4, fontSize: 11, color: "var(--muted)" }}>
-            <span style={{ display: "flex", alignItems: "center", gap: 5 }}><span style={{ width: 9, height: 9, borderRadius: 2, background: GOLD, display: "inline-block" }} />Panasonic</span>
-            <span style={{ display: "flex", alignItems: "center", gap: 5 }}><span style={{ width: 9, height: 9, borderRadius: 2, background: "#2a3a5c", display: "inline-block" }} />Other Brands</span>
-          </div>
-        </div>
-      )}
+          "All Brand vs All Brand" would always be 100%, so it rides along
+          in the Panasonic row instead of repeating in the All Brand row
+          below. Hidden (not zeroed) on pre-migration-34 RPCs, same as the
+          All Brand row itself. */}
+      {row3("Panasonic", "Panasonic", pana, marketShareCard)}
 
       {allData && (
         <div style={{ marginTop: 16 }}>
-          {row("All Brand", "Every brand in the store", allData)}
+          {row3("All Brand", "Every brand in the store", allData, categoryShareCard)}
         </div>
       )}
 
