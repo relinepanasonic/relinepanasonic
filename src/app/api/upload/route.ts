@@ -152,7 +152,23 @@ export async function POST(req: NextRequest) {
   const headers = isEnglishHeader(rawHeaders, source)
     ? rawHeaders.map((h) => EN_TO_ID[source][h.toLowerCase()] ?? h)
     : rawHeaders;
-  const dataRows = matrix.slice(headerIdx + 1);
+  // Stop at the first blank line AFTER the header. Shopee's Performa export
+  // stacks TWO tables in one sheet: a one-row period summary, a blank line,
+  // then a second header and the daily breakdown. Reading straight through
+  // meant the daily rows were parsed under the SUMMARY table's column names —
+  // and the two tables don't line up: column 6 is "Penjualan (Pesanan Siap
+  // Dikirim)" in the summary but "Penjualan (Pesanan Dibuat)" in the daily
+  // table. So every daily row contributed a placed-order figure recorded as
+  // ready-to-ship, on top of the summary row that already covered the period.
+  //
+  // Safe for the other sources: spos exports contain no blank rows at all,
+  // and the ads export's blank sits ABOVE its header (row 6, header row 7),
+  // so neither is truncated.
+  const afterHeader = matrix.slice(headerIdx + 1);
+  const blankAt = afterHeader.findIndex(
+    (r) => !Array.isArray(r) || !r.some((c) => String(c ?? "").trim() !== "")
+  );
+  const dataRows = blankAt === -1 ? afterHeader : afterHeader.slice(0, blankAt);
 
   // 4. Build raw row objects keyed by both original header and bqCol form,
   //    then map to typed sales_rows fields.
