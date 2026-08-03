@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
-import type { DataSource } from "@/lib/parse";
+import { MONTH_LIST, type DataSource } from "@/lib/parse";
 
 export const dynamic = "force-dynamic";
 
@@ -324,7 +324,12 @@ export default function UploadPage() {
       ...covs.flatMap(fromCov),
     ])).sort();
   const fYears   = opts((u) => u.meta?.year, (c) => c.years).sort((a, b) => b.localeCompare(a));
-  const fMonths  = opts((u) => u.meta?.bulan, (c) => c.months);
+  // Calendar order (Januari..Desember), "Month Awal" (baseline) last —
+  // not alphabetical, which would put "Desember" before "Januari".
+  const fMonths  = opts((u) => u.meta?.bulan, (c) => c.months).sort((a, b) => {
+    const ia = MONTH_LIST.indexOf(a), ib = MONTH_LIST.indexOf(b);
+    return (ia === -1 ? MONTH_LIST.length : ia) - (ib === -1 ? MONTH_LIST.length : ib);
+  });
   const fWeeks   = opts((u) => u.meta?.week, (c) => c.weeks);
   const fCities  = opts((u) => u.meta?.city, (c) => c.cities);
   const fDealers = opts((u) => u.meta?.store_name, (c) => c.stores);
