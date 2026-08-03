@@ -32,12 +32,8 @@ const HEADER_HINTS: Record<DataSource, string[]> = {
   perf: ["Total Pengunjung", "Kunjungan"],
 };
 
-// mapRow() in lib/parse.ts reads every metric by its Indonesian column name,
-// so an English-language Shopee export cannot be parsed even if we located
-// its header. Detect it to give an actionable message instead of a generic
-// "header not found".
-// Taken from real English exports. Each token is absent from the Indonesian
-// header for the same source, so these cannot false-positive:
+// Tokens unique to an English export's header row, per source. Each is absent
+// from the Indonesian header for that same source, so they cannot collide:
 //   spos  ID "Kode Produk / SKU Induk"      EN "Item ID / Parent SKU"
 //   perf  ID "Total Pengunjung (Kunjungan)" EN "Visitors (Visit)"
 //   ads   ID "Nama Iklan / Mode Bidding"    EN "Ad Name / Bidding Method"
@@ -46,14 +42,55 @@ const ENGLISH_HINTS: Record<DataSource, string[]> = {
   ads: ["ad name", "impression", "bidding method"],
   perf: ["visitors (visit)", "conversion rate"],
 };
-function looksEnglish(rows: unknown[][], source: DataSource): boolean {
-  const hints = ENGLISH_HINTS[source];
-  for (let i = 0; i < Math.min(rows.length, 15); i++) {
-    const cells = (rows[i] || []).map((c) => String(c ?? "").toLowerCase());
-    if (hints.some((h) => cells.some((c) => c.includes(h)))) return true;
-  }
-  return false;
-}
+
+// mapRow() in lib/parse.ts reads every metric by its Indonesian column name.
+// Rather than teach it a second vocabulary, an English header is translated
+// back to Indonesian here at the file boundary — so exactly one code path
+// parses rows and the Indonesian case is completely untouched.
+//
+// These pairs are NOT guessed. Shopee emits the same columns in the same
+// order in both languages, so the ID and EN headers of the same report were
+// aligned positionally from real exports (column counts matched exactly:
+// spos 40/40, perf 10/10, ads 35/35). Only the columns mapRow actually reads
+// are listed. Matching is exact on the lowercased name, never substring, so
+// near-duplicates like "Clicks" vs "Product Clicks" and "GMV" vs "Direct GMV"
+// cannot cross-map.
+const EN_TO_ID: Record<DataSource, Record<string, string>> = {
+  spos: {
+    "item id": "Kode Produk",
+    "product": "Produk",
+    "sales (confirmed order) (idr)": "Penjualan (Pesanan Siap Dikirim) (IDR)",
+    "units (placed order)": "Produk (Pesanan Dibuat)",
+    "buyers (placed order)": "Total Pembeli (Pesanan Dibuat)",
+    "product visitors (visit)": "Pengunjung Produk (Kunjungan)",
+    "units (add to cart)": "Dimasukkan ke Keranjang (Produk)",
+  },
+  perf: {
+    "visitors (visit)": "Total Pengunjung (Kunjungan)",
+    // Shopee ships this one without a space after "Sales"; accept both forms.
+    "sales(confirmed orders) (idr)": "Penjualan (Pesanan Siap Dikirim) (IDR)",
+    "sales (confirmed orders) (idr)": "Penjualan (Pesanan Siap Dikirim) (IDR)",
+    "buyers (placed orders)": "Total Pembeli (Pesanan Dibuat)",
+  },
+  ads: {
+    "ad name": "Nama Iklan",
+    "product id": "Kode Produk",
+    "impression": "Dilihat",
+    "clicks": "Jumlah Klik",
+    "add to cart": "Add to Cart",
+    "conversions": "Konversi",
+    "items sold": "Produk Terjual",
+    "gmv": "Omzet Penjualan",
+    "direct gmv": "Penjualan Langsung (GMV Langsung)",
+    "expense": "Biaya",
+    "roas": "Efektifitas Iklan",
+  },
+};
+
+const isEnglishHeader = (cells: string[], source: DataSource) => {
+  const lc = cells.map((c) => c.toLowerCase());
+  return ENGLISH_HINTS[source].some((h) => lc.some((c) => c.includes(h)));
+};
 
 export async function POST(req: NextRequest) {
   // 1. Verify the caller and resolve their profile (client + role).
@@ -101,16 +138,20 @@ export async function POST(req: NextRequest) {
   if (!matrix.length)
     return NextResponse.json({ error: "EMPTY_FILE" }, { status: 400 });
 
-  const headerIdx = findHeaderRow(matrix, HEADER_HINTS[source]);
+  // Locate the header in either language.
+  const headerIdx = findHeaderRow(matrix, [...HEADER_HINTS[source], ...ENGLISH_HINTS[source]]);
   if (headerIdx === -1) {
     // Reject rather than guess — see findHeaderRow().
     return NextResponse.json({
-      error: looksEnglish(matrix, source)
-        ? `File ini adalah export Shopee berbahasa Inggris. Ubah bahasa Shopee ke Indonesia lalu export ulang — kolomnya dibaca memakai nama kolom Indonesia (mis. "${HEADER_HINTS[source][0]}").`
-        : `Header tidak ditemukan — file ini sepertinya bukan export ${source.toUpperCase()}. Kolom wajib: "${HEADER_HINTS[source].join('" / "')}".`,
+      error: `Header tidak ditemukan — file ini sepertinya bukan export ${source.toUpperCase()}. Kolom wajib: "${HEADER_HINTS[source].join('" / "')}".`,
     }, { status: 400 });
   }
-  const headers = (matrix[headerIdx] || []).map((h) => String(h ?? "").trim());
+  const rawHeaders = (matrix[headerIdx] || []).map((h) => String(h ?? "").trim());
+  // English export -> rename its columns to the Indonesian names mapRow reads.
+  // Unknown columns pass through as-is; they're kept verbatim in `raw` anyway.
+  const headers = isEnglishHeader(rawHeaders, source)
+    ? rawHeaders.map((h) => EN_TO_ID[source][h.toLowerCase()] ?? h)
+    : rawHeaders;
   const dataRows = matrix.slice(headerIdx + 1);
 
   // 4. Build raw row objects keyed by both original header and bqCol form,
