@@ -6,9 +6,15 @@
 // other recharts-backed components in DashboardCharts.tsx.
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Cell, LabelList } from "recharts";
 
+type Side = { stores?: number; store_months?: number; sales: number; ad_cost: number };
 type BaselineVsActive = {
-  baseline: { stores: number; sales: number; ad_cost: number };
-  active: { store_months: number; sales: number; ad_cost: number };
+  baseline: Side;
+  active: Side;
+  // Added by Supabase Migration/34 — same figures without the Panasonic
+  // brand filter. Older RPC versions omit them, hence optional.
+  baseline_all?: Side;
+  active_all?: Side;
+  partial_months_excluded?: number;
 };
 
 const idr = (n: number) => "Rp " + new Intl.NumberFormat("id-ID", { notation: "compact", maximumFractionDigits: 2 }).format(n || 0);
@@ -65,13 +71,24 @@ export default function BaselineChart({ data, scopeLabel }: { data: BaselineVsAc
   }
 
   const { baseline, active } = data;
-  const hasBaseline = baseline.stores > 0;
-  const avgBaselineSales = hasBaseline ? baseline.sales / baseline.stores : 0;
-  const avgActiveSales = active.store_months ? active.sales / active.store_months : 0;
-  const avgBaselineAds = hasBaseline ? baseline.ad_cost / baseline.stores : 0;
-  const avgActiveAds = active.store_months ? active.ad_cost / active.store_months : 0;
-  const roasBaseline = baseline.ad_cost > 0 ? baseline.sales / baseline.ad_cost : null;
-  const roasActive = active.ad_cost > 0 ? active.sales / active.ad_cost : null;
+  const stores = baseline.stores ?? 0;
+  const months = active.store_months ?? 0;
+  const hasBaseline = stores > 0;
+
+  // Baseline is a one-off per-store snapshot; Active spans many store-months
+  // — so both are normalised to a per-store-per-month basis before comparing.
+  const per = (b: Side, a: Side) => ({
+    baseSales: stores ? b.sales / stores : 0,
+    actSales:  months ? a.sales / months : 0,
+    baseAds:   stores ? b.ad_cost / stores : 0,
+    actAds:    months ? a.ad_cost / months : 0,
+    baseRoas:  b.ad_cost > 0 ? b.sales / b.ad_cost : null,
+    actRoas:   a.ad_cost > 0 ? a.sales / a.ad_cost : null,
+  });
+  const pana = per(baseline, active);
+  // Pre-migration-34 RPCs don't return the all-brand keys; hide that row
+  // rather than plotting zeros that look like real "no sales" data.
+  const allData = data.baseline_all && data.active_all ? per(data.baseline_all, data.active_all) : null;
 
   // Baseline ad spend is typically near-zero (pre-project, no ads program
   // yet) — dividing by a near-zero denominator produces an enormous, not
@@ -88,6 +105,53 @@ export default function BaselineChart({ data, scopeLabel }: { data: BaselineVsAc
     );
   }
 
+  // Every month this scope has is still the newest (in-progress) one — so
+  // there's nothing complete to average. Say so rather than drawing zero
+  // bars, which would read as "no sales".
+  if (months === 0) {
+    return (
+      <div className="panel">
+        <h3 style={{ margin: "0 0 2px" }}>Baseline vs Active Performance — <span style={{ color: GOLD }}>{scopeLabel}</span></h3>
+        <div className="hint">
+          No completed month yet for {scopeLabel}. Data is uploaded weekly, and a month only counts once the next
+          month starts arriving — so the comparison appears after the first full month is behind you.
+        </div>
+      </div>
+    );
+  }
+
+  const row = (label: string, hintSuffix: string, m: ReturnType<typeof per>) => (
+    <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
+      <MiniBarPanel
+        title={`${label} Avg Monthly Sales`}
+        hint={`${hintSuffix} · SPOS · per store / month`}
+        formatter={idr}
+        points={[
+          { name: "Baseline", value: m.baseSales, color: BASELINE_COLOR },
+          { name: "Active",   value: m.actSales,  color: ACTIVE_COLOR },
+        ]}
+      />
+      <MiniBarPanel
+        title={`${label} Avg Ads Spend`}
+        hint={`${hintSuffix} · Ads · per store / month`}
+        formatter={idr}
+        points={[
+          { name: "Baseline", value: m.baseAds, color: BASELINE_COLOR },
+          { name: "Active",   value: m.actAds,  color: ACTIVE_COLOR },
+        ]}
+      />
+      <MiniBarPanel
+        title={`${label} Avg ROAS`}
+        hint="Sales ÷ Ad Spend"
+        formatter={(n) => n.toFixed(1) + "×"}
+        points={[
+          { name: "Baseline", value: m.baseRoas ?? 0, color: BASELINE_COLOR },
+          { name: "Active",   value: m.actRoas ?? 0,  color: ACTIVE_COLOR },
+        ]}
+      />
+    </div>
+  );
+
   return (
     <div className="panel">
       {/* Scope shown right in the title (gold) — changing City/Dealer changes
@@ -95,45 +159,29 @@ export default function BaselineChart({ data, scopeLabel }: { data: BaselineVsAc
           is actually re-fetching for the new filter. */}
       <h3 style={{ margin: "0 0 2px" }}>Baseline vs Active Performance — <span style={{ color: GOLD }}>{scopeLabel}</span></h3>
       <div className="hint" style={{ marginBottom: 14 }}>
-        Pre-project snapshot (&quot;Month Awal&quot;, {baseline.stores} store{baseline.stores === 1 ? "" : "s"}) vs average per active month
-        ({active.store_months} store-month{active.store_months === 1 ? "" : "s"}) — Panasonic SPOS &amp; Ads only.
+        Pre-project snapshot (&quot;Month Awal&quot;, {stores} store{stores === 1 ? "" : "s"}) vs average per completed month
+        ({months} store-month{months === 1 ? "" : "s"}).
+        {data.partial_months_excluded ? (
+          <> Data is uploaded weekly, so each store&apos;s newest month is still being filled in — {data.partial_months_excluded} in-progress
+          month{data.partial_months_excluded === 1 ? " is" : "s are"} excluded so a part-month can&apos;t drag the average down.</>
+        ) : null}
       </div>
-      <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
-        <MiniBarPanel
-          title="Avg Monthly Sales / Store"
-          hint="Panasonic · SPOS"
-          formatter={idr}
-          points={[
-            { name: "Baseline", value: avgBaselineSales, color: BASELINE_COLOR },
-            { name: "Active",   value: avgActiveSales,   color: ACTIVE_COLOR },
-          ]}
-        />
-        <MiniBarPanel
-          title="Avg Ads Spend / Store"
-          hint="Panasonic · Ads"
-          formatter={idr}
-          points={[
-            { name: "Baseline", value: avgBaselineAds, color: BASELINE_COLOR },
-            { name: "Active",   value: avgActiveAds,   color: ACTIVE_COLOR },
-          ]}
-        />
-        <MiniBarPanel
-          title="ROAS"
-          hint="Sales ÷ Ad Spend"
-          formatter={(n) => n.toFixed(1) + "×"}
-          points={[
-            { name: "Baseline", value: roasBaseline ?? 0, color: BASELINE_COLOR },
-            { name: "Active",   value: roasActive ?? 0,   color: ACTIVE_COLOR },
-          ]}
-        />
-      </div>
+
+      {row("Panasonic", "Panasonic", pana)}
+
+      {allData && (
+        <div style={{ marginTop: 16 }}>
+          {row("All Brand", "Every brand in the store", allData)}
+        </div>
+      )}
+
       {baselineAdsThin && (
         <div style={{ marginTop: 12, fontSize: 11.5, color: "var(--muted)", display: "flex", gap: 6 }}>
           <span>⚠</span>
           <span>
             Baseline ad spend is only {idrFull(baseline.ad_cost)} total (near zero — no ads program pre-project),
-            so Baseline ROAS ({roasBaseline ? roasBaseline.toFixed(1) + "×" : "—"}) is a near-zero-denominator artifact,
-            not a meaningful ratio to compare against Active ({roasActive ? roasActive.toFixed(1) + "×" : "—"}).
+            so Baseline ROAS ({pana.baseRoas ? pana.baseRoas.toFixed(1) + "×" : "—"}) is a near-zero-denominator artifact,
+            not a meaningful ratio to compare against Active ({pana.actRoas ? pana.actRoas.toFixed(1) + "×" : "—"}).
           </span>
         </div>
       )}
