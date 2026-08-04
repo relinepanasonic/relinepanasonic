@@ -11,7 +11,6 @@ const NAV: { href: string; icon: string; label: string; roles?: Role[] }[] = [
   { href: "/",          icon: "📊", label: "Dashboard",           roles: ["superadmin", "branch_manager", "advertiser", "pic_panasonic", "sales"] },
   { href: "/ads",       icon: "🎯", label: "Ads Performance",     roles: ["superadmin", "advertiser"] },
   { href: "/calc",      icon: "🧮", label: "Price Calculator",    roles: ["superadmin", "branch_manager", "pic_panasonic", "sales"] },
-  { href: "/marketfee", icon: "💰", label: "Market Place Fee",    roles: ["superadmin", "branch_manager", "pic_panasonic", "sales"] },
   { href: "/upload",    icon: "⬆️", label: "Upload Data",         roles: ["superadmin", "client_admin"] },
   { href: "/reports",   icon: "📄", label: "Monthly Report",      roles: ["superadmin", "client_admin"] },
   { href: "/core",      icon: "🗂️", label: "Core List",          roles: ["superadmin", "client_admin", "advertiser"] },
@@ -28,8 +27,8 @@ const ROLE_LABEL: Record<Role, string> = {
   sales:          "Sales",
 };
 
-// Mobile bottom-nav: 5 most-used destinations
-const BOTTOM = ["/", "/ads", "/calc", "/marketfee", "/upload"];
+// Mobile bottom-nav: most-used destinations
+const BOTTOM = ["/", "/ads", "/calc", "/upload"];
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -75,7 +74,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   }
 
   const visible = NAV.filter((n) => !n.roles || (role && n.roles.includes(role)));
-  const current = NAV.find((n) => n.href === path);
+  // Nested routes (e.g. /calc/marketplace-fee) should still resolve to their
+  // parent nav entry ("/calc") for the title/active state — exact match first,
+  // then longest-prefix match so "/" doesn't swallow everything else.
+  const isActive = (href: string) => href === "/" ? path === "/" : path === href || path.startsWith(href + "/");
+  const current = NAV.find((n) => n.href === path) ?? [...NAV].sort((a, b) => b.href.length - a.href.length).find((n) => isActive(n.href));
 
   return (
     <div className="app">
@@ -92,7 +95,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         </div>
         <ul className="nav-list">
           {visible.map((n) => (
-            <li key={n.href} className={path === n.href ? "active" : ""}>
+            <li key={n.href} className={isActive(n.href) ? "active" : ""}>
               <Link href={n.href} style={{ display: "flex", alignItems: "center", gap: 11, width: "100%", color: "inherit", textDecoration: "none" }}>
                 <span className="ic">{n.icon}</span> {n.label}
               </Link>
@@ -139,7 +142,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         {BOTTOM.filter((href) => visible.some((v) => v.href === href)).map((href) => {
           const n = NAV.find((x) => x.href === href)!;
           return (
-            <Link key={href} href={href} className={`bn-item ${path === href ? "active" : ""}`}>
+            <Link key={href} href={href} className={`bn-item ${isActive(href) ? "active" : ""}`}>
               <span style={{ fontSize: 20 }}>{n.icon}</span>
               <span>{n.label.split(" ")[0]}</span>
             </Link>

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { MONTH_LIST } from "@/lib/parse";
@@ -162,74 +163,88 @@ export default function MarketFeePage() {
   }, [rows, search, platformFilter]);
 
   return (
-    <div className="panel">
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10, marginBottom: 4 }}>
-        <div>
-          <h3 style={{ margin: 0 }}>Market Place Fee</h3>
-          <div className="hint">
-            {rows.length.toLocaleString("id-ID")} entries · every fee number below is editable{canEdit ? "" : " (admin only)"}.
+    <>
+      <style>{`
+        .mode-tab{padding:7px 16px;border-radius:9px;border:1px solid var(--card-border);background:var(--glass);
+          color:var(--text-2);font-weight:700;font-size:13px;cursor:pointer;text-decoration:none;display:inline-block}
+        .mode-tab.on{background:linear-gradient(135deg,var(--gold),var(--gold-soft));color:var(--navy-deep);border-color:transparent}
+      `}</style>
+
+      {/* ── Sub-page tabs ── */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 18 }}>
+        <Link href="/calc" className="mode-tab">Massive Calculator</Link>
+        <span className="mode-tab on">Marketplace Fee</span>
+      </div>
+
+      <div className="panel">
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10, marginBottom: 4 }}>
+          <div>
+            <h3 style={{ margin: 0 }}>Market Place Fee</h3>
+            <div className="hint">
+              {rows.length.toLocaleString("id-ID")} entries · every fee number below is editable{canEdit ? "" : " (admin only)"}.
+            </div>
           </div>
+          {canEdit && (
+            <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+              <label className="btn-ghost" style={{ cursor: uploading ? "not-allowed" : "pointer", opacity: uploading ? .6 : 1 }}>
+                {uploading ? "Importing…" : "Upload CSV"}
+                <input type="file" accept=".csv,.xlsx,.xls" style={{ display: "none" }} disabled={uploading}
+                  onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadCsv(f); e.target.value = ""; }} />
+              </label>
+              <button className="btn-gold" onClick={() => setShowAdd(true)}>+ Add Fee</button>
+            </div>
+          )}
         </div>
-        {canEdit && (
-          <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-            <label className="btn-ghost" style={{ cursor: uploading ? "not-allowed" : "pointer", opacity: uploading ? .6 : 1 }}>
-              {uploading ? "Importing…" : "Upload CSV"}
-              <input type="file" accept=".csv,.xlsx,.xls" style={{ display: "none" }} disabled={uploading}
-                onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadCsv(f); e.target.value = ""; }} />
-            </label>
-            <button className="btn-gold" onClick={() => setShowAdd(true)}>+ Add Fee</button>
-          </div>
+
+        {uploadMsg && (
+          <div style={{ marginTop: 10, fontSize: 13, color: uploadMsg.startsWith("✓") ? "var(--gold)" : "#f87171" }}>{uploadMsg}</div>
         )}
-      </div>
 
-      {uploadMsg && (
-        <div style={{ marginTop: 10, fontSize: 13, color: uploadMsg.startsWith("✓") ? "var(--gold)" : "#f87171" }}>{uploadMsg}</div>
-      )}
-
-      <div className="filterbar" style={{ marginTop: 14, marginBottom: 4 }}>
-        <div className="fld" style={{ minWidth: 260 }}>
-          <label>Search</label>
-          <input type="text" placeholder="Category / Sub Category / Product / Jenis Toko"
-            value={search} onChange={(e) => setSearch(e.target.value)}
-            style={inputStyle} />
+        <div className="filterbar" style={{ marginTop: 14, marginBottom: 4 }}>
+          <div className="fld" style={{ minWidth: 260 }}>
+            <label>Search</label>
+            <input type="text" placeholder="Category / Sub Category / Product / Jenis Toko"
+              value={search} onChange={(e) => setSearch(e.target.value)}
+              style={inputStyle} />
+          </div>
+          <div className="fld">
+            <label>Platform</label>
+            <select value={platformFilter} onChange={(e) => setPlatformFilter(e.target.value)}>
+              <option value="">All Platforms</option>
+              {platforms.map((p) => <option key={p} value={p}>{p}</option>)}
+            </select>
+          </div>
         </div>
-        <div className="fld">
-          <label>Platform</label>
-          <select value={platformFilter} onChange={(e) => setPlatformFilter(e.target.value)}>
-            <option value="">All Platforms</option>
-            {platforms.map((p) => <option key={p} value={p}>{p}</option>)}
-          </select>
+
+        <div className="tbl-wrap" style={{ marginTop: 14, maxHeight: 640, overflowX: "auto" }}>
+          <table className="tbl" style={{ whiteSpace: "nowrap", width: "max-content", minWidth: "100%" }}>
+            <thead>
+              <tr>
+                <th>Category</th><th>Sub Category</th><th>Jenis Product</th><th>Platform</th><th>Jenis Toko</th>
+                {NUMERIC_FIELDS.map((f) => <th className="num" key={f.key}>{f.label}</th>)}
+                <th>Kategori Kirim</th><th>Last Edited</th>{canEdit && <th></th>}
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((r) => (
+                <FeeRow key={r.id} fee={r} canEdit={canEdit} onSave={saveFee} onDelete={delFee} onHistory={setHistoryFor} />
+              ))}
+              {!loading && filtered.length === 0 && (
+                <tr><td colSpan={NUMERIC_FIELDS.length + 8} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>
+                  {rows.length ? "No fees match these filters" : "No fee entries yet"}
+                </td></tr>
+              )}
+              {loading && (
+                <tr><td colSpan={NUMERIC_FIELDS.length + 8} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>Loading…</td></tr>
+              )}
+            </tbody>
+          </table>
         </div>
-      </div>
 
-      <div className="tbl-wrap" style={{ marginTop: 14, maxHeight: 640, overflowX: "auto" }}>
-        <table className="tbl" style={{ whiteSpace: "nowrap", width: "max-content", minWidth: "100%" }}>
-          <thead>
-            <tr>
-              <th>Category</th><th>Sub Category</th><th>Jenis Product</th><th>Platform</th><th>Jenis Toko</th>
-              {NUMERIC_FIELDS.map((f) => <th className="num" key={f.key}>{f.label}</th>)}
-              <th>Kategori Kirim</th><th>Last Edited</th>{canEdit && <th></th>}
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.map((r) => (
-              <FeeRow key={r.id} fee={r} canEdit={canEdit} onSave={saveFee} onDelete={delFee} onHistory={setHistoryFor} />
-            ))}
-            {!loading && filtered.length === 0 && (
-              <tr><td colSpan={NUMERIC_FIELDS.length + 8} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>
-                {rows.length ? "No fees match these filters" : "No fee entries yet"}
-              </td></tr>
-            )}
-            {loading && (
-              <tr><td colSpan={NUMERIC_FIELDS.length + 8} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>Loading…</td></tr>
-            )}
-          </tbody>
-        </table>
+        {showAdd && <AddFeeModal onAdd={addFee} onClose={() => setShowAdd(false)} />}
+        {historyFor && <HistoryModal fee={historyFor} supabase={supabase} onClose={() => setHistoryFor(null)} />}
       </div>
-
-      {showAdd && <AddFeeModal onAdd={addFee} onClose={() => setShowAdd(false)} />}
-      {historyFor && <HistoryModal fee={historyFor} supabase={supabase} onClose={() => setHistoryFor(null)} />}
-    </div>
+    </>
   );
 }
 
