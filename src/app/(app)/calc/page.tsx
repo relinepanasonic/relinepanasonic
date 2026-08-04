@@ -17,7 +17,7 @@ type Fee = {
 };
 
 type CalcRow = {
-  id: string; item_product: string | null;
+  id: string; item_product: string | null; product_line: string | null;
   modal_produk_rp: number; harga_jual_rp: number;
   fee_id: string | null; target_roas: number;
   berat_kg: number; ukuran_cm3: number;
@@ -26,20 +26,65 @@ type CalcRow = {
   biaya_lain_rp: number;
 };
 
-function formatRp(n: number): string { return Math.round(n || 0).toLocaleString("id-ID"); }
-function parseRp(s: string): number { return Number(s.replace(/[^\d-]/g, "")) || 0; }
-function feeLabel(f: Fee): string {
-  return [f.category, f.sub_category, f.jenis_product, f.platform, f.jenis_toko].filter(Boolean).join(" · ");
+type FeeSel = { category: string; sub_category: string; jenis_product: string; platform: string; jenis_toko: string };
+const FEE_FIELDS: (keyof FeeSel)[] = ["category", "sub_category", "jenis_product", "platform", "jenis_toko"];
+const emptySel: FeeSel = { category: "", sub_category: "", jenis_product: "", platform: "", jenis_toko: "" };
+
+function selFromFee(f: Fee | null): FeeSel {
+  if (!f) return emptySel;
+  return { category: f.category, sub_category: f.sub_category ?? "", jenis_product: f.jenis_product ?? "", platform: f.platform, jenis_toko: f.jenis_toko ?? "" };
+}
+// Every dropdown filters against the OTHER four current selections (any
+// pick order works, not just left-to-right), and if narrowing the field
+// down leaves exactly one possible value, auto-fill it -- otherwise
+// picking all 5 by hand on a 2,837-row fee table is a lot of clicking.
+function optionsFor(field: keyof FeeSel, sel: FeeSel, fees: Fee[]): string[] {
+  const others = FEE_FIELDS.filter((k) => k !== field);
+  const vals = new Set<string>();
+  for (const f of fees) {
+    const rec: Record<keyof FeeSel, string> = {
+      category: f.category, sub_category: f.sub_category ?? "", jenis_product: f.jenis_product ?? "",
+      platform: f.platform, jenis_toko: f.jenis_toko ?? "",
+    };
+    if (others.every((k) => !sel[k] || rec[k] === sel[k])) {
+      if (rec[field]) vals.add(rec[field]);
+    }
+  }
+  return Array.from(vals).sort();
+}
+function refineSel(sel: FeeSel, fees: Fee[]): FeeSel {
+  let cur = { ...sel };
+  for (let pass = 0; pass < 3; pass++) {
+    let changed = false;
+    for (const field of FEE_FIELDS) {
+      const opts = optionsFor(field, cur, fees);
+      if (cur[field] && !opts.includes(cur[field])) { cur = { ...cur, [field]: "" }; changed = true; }
+      else if (!cur[field] && opts.length === 1) { cur = { ...cur, [field]: opts[0] }; changed = true; }
+    }
+    if (!changed) break;
+  }
+  return cur;
+}
+function resolveFee(sel: FeeSel, fees: Fee[]): Fee | null {
+  if (FEE_FIELDS.some((k) => !sel[k])) return null;
+  return fees.find((f) =>
+    f.category === sel.category && (f.sub_category ?? "") === sel.sub_category
+    && (f.jenis_product ?? "") === sel.jenis_product && f.platform === sel.platform
+    && (f.jenis_toko ?? "") === sel.jenis_toko) ?? null;
 }
 
-// Mirrors the source sheet's math, verified against the user's own
-// explanation rather than guessed: Total Biaya bundles every marketplace
-// fee PLUS ad spend (so Profit already nets out ads); the seller types a
-// target ROAS and Biaya Ads/% Ads are derived from it, not the other way
-// round; Gratis Ongkir is min(pct% x Harga Jual, Rp cap), and for Shopee
-// specifically the pct/cap pair switches from the "biasa" tier to the
-// "khusus" tier once the product is over 5kg or 20,000 cm3 (Tiktok has no
-// such tier split, it always uses the one pct/cap pair on the fee row).
+function formatRp(n: number): string { return Math.round(n || 0).toLocaleString("id-ID"); }
+function parseRp(s: string): number { return Number(s.replace(/[^\d-]/g, "")) || 0; }
+
+// Mirrors the source sheet's math, confirmed with the user rather than
+// guessed: Total Biaya bundles every marketplace fee PLUS ad spend (so
+// Profit already nets out ads); the seller types Harga Jual directly and
+// a target ROAS, and Biaya Ads/% Ads are derived from ROAS (Biaya Ads =
+// Harga Jual / ROAS); Gratis Ongkir is min(pct% x Harga Jual, Rp cap),
+// and for Shopee specifically the pct/cap pair switches from the
+// "biasa" tier to the "khusus" tier once the product is over 5kg or
+// 20,000 cm3 (Tiktok has no such tier split, it always uses the one
+// pct/cap pair on the fee row).
 function computeCalc(input: {
   hargaJual: number; modalProduk: number; targetRoas: number;
   beratKg: number; ukuranCm3: number;
@@ -68,10 +113,11 @@ function computeCalc(input: {
   const totalBiaya = platformFeeRp + biayaProsesRp + biayaLayananRp + biayaOngkir
     + promoXtraRp + paylater3moRp + paylater6moRp + biayaAds + input.biayaLain;
   const profit = hargaJual - input.modalProduk - totalBiaya;
+  const hargaMarkupPct = input.modalProduk > 0 ? (hargaJual / input.modalProduk - 1) * 100 : null;
   const marginPct = hargaJual > 0 ? (profit / hargaJual) * 100 : null;
 
   return { platformFeeRp, biayaProsesRp, biayaLayananRp, isKhusus, biayaOngkir, promoXtraRp,
-    paylater3moRp, paylater6moRp, biayaAds, pctAds, totalBiaya, profit, marginPct };
+    paylater3moRp, paylater6moRp, biayaAds, pctAds, totalBiaya, profit, hargaMarkupPct, marginPct };
 }
 
 async function fetchAll<T>(supabase: ReturnType<typeof createClient>, table: string, clientId: string, order: string): Promise<T[]> {
@@ -96,7 +142,6 @@ export default function MassiveCalculatorPage() {
   const [fees, setFees] = useState<Fee[]>([]);
   const [rows, setRows] = useState<CalcRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [pickerFor, setPickerFor] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
 
   const feesById = useMemo(() => new Map(fees.map((f) => [f.id, f])), [fees]);
@@ -155,6 +200,7 @@ export default function MassiveCalculatorPage() {
         .mode-tab.on{background:linear-gradient(135deg,var(--gold),var(--gold-soft));color:var(--navy-deep);border-color:transparent}
         .calc-tbl td, .calc-tbl th{white-space:nowrap}
         .calc-ro{color:var(--muted);font-size:12px}
+        .calc-sel{background:rgba(10,22,40,.5);border:1px solid rgba(201,162,39,.25);border-radius:6px;padding:4px 6px;color:var(--text);font-size:12px;max-width:150px}
       `}</style>
 
       <div style={{ display: "flex", gap: 8, marginBottom: 18 }}>
@@ -166,7 +212,7 @@ export default function MassiveCalculatorPage() {
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10, marginBottom: 4 }}>
           <div>
             <h3 style={{ margin: 0 }}>Massive Calculator</h3>
-            <div className="hint">{rows.length.toLocaleString("id-ID")} product rows · pick a product's fee row, fill in price and weight, Total Biaya / Profit update live.</div>
+            <div className="hint">{rows.length.toLocaleString("id-ID")} product rows · pick Category/Sub Category/Jenis Product/Platform/Jenis Toko to link a fee row, fill in price and weight, Total Biaya / Profit update live.</div>
           </div>
           <button className="btn-gold" disabled={adding || !clientId} onClick={addRow}>{adding ? "Adding…" : "+ Add Product"}</button>
         </div>
@@ -177,12 +223,17 @@ export default function MassiveCalculatorPage() {
               <tr>
                 <th style={stickyTh}>No</th>
                 <th style={stickyTh}>Item Product</th>
-                <th style={stickyTh}>Product / Fee Link</th>
+                <th style={stickyTh}>Category</th>
                 <th className="num" style={stickyTh}>Modal Produk</th>
-                <th className="num" style={stickyTh}>Harga Jual</th>
+                <th className="num" style={stickyTh}>Harga Jual (Rp)</th>
+                <th className="num" style={stickyTh}>Harga Jual (%)</th>
                 <th className="num" style={stickyTh}>Total Biaya</th>
                 <th className="num" style={stickyTh}>Profit</th>
-                <th className="num" style={stickyTh}>Margin %</th>
+                <th style={stickyTh}>Platform</th>
+                <th style={stickyTh}>Jenis Toko</th>
+                <th style={stickyTh}>Category (Fee)</th>
+                <th style={stickyTh}>Sub Category</th>
+                <th style={stickyTh}>Jenis Product</th>
                 <th className="num" style={stickyTh}>Target ROAS</th>
                 <th className="num" style={stickyTh}>% Ads</th>
                 <th className="num" style={stickyTh}>Biaya Ads</th>
@@ -207,37 +258,31 @@ export default function MassiveCalculatorPage() {
             </thead>
             <tbody>
               {rows.map((r, i) => (
-                <CalcRowLine key={r.id} no={i + 1} row={r} fee={r.fee_id ? feesById.get(r.fee_id) ?? null : null}
-                  onSave={saveRow} onDelete={deleteRow} onPick={() => setPickerFor(r.id)} />
+                <CalcRowLine key={r.id} no={i + 1} row={r} fee={r.fee_id ? feesById.get(r.fee_id) ?? null : null} fees={fees}
+                  onSave={saveRow} onDelete={deleteRow} />
               ))}
               {!loading && rows.length === 0 && (
-                <tr><td colSpan={28} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>No product rows yet — click “+ Add Product” to start.</td></tr>
+                <tr><td colSpan={32} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>No product rows yet — click “+ Add Product” to start.</td></tr>
               )}
               {loading && (
-                <tr><td colSpan={28} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>Loading…</td></tr>
+                <tr><td colSpan={32} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>Loading…</td></tr>
               )}
             </tbody>
           </table>
         </div>
-
-        {pickerFor && (
-          <FeePickerModal fees={fees}
-            onPick={(fee) => { saveRow(pickerFor, { fee_id: fee.id }); setPickerFor(null); }}
-            onClose={() => setPickerFor(null)} />
-        )}
       </div>
     </>
   );
 }
 
-function CalcRowLine({ no, row, fee, onSave, onDelete, onPick }: {
-  no: number; row: CalcRow; fee: Fee | null;
+function CalcRowLine({ no, row, fee, fees, onSave, onDelete }: {
+  no: number; row: CalcRow; fee: Fee | null; fees: Fee[];
   onSave: (id: string, patch: Partial<CalcRow>) => void;
   onDelete: (id: string) => void;
-  onPick: () => void;
 }) {
   const [v, setV] = useState(() => ({
     item_product: row.item_product || "",
+    product_line: row.product_line || "",
     modal_produk_rp: formatRp(row.modal_produk_rp),
     harga_jual_rp: formatRp(row.harga_jual_rp),
     target_roas: String(row.target_roas || ""),
@@ -249,9 +294,11 @@ function CalcRowLine({ no, row, fee, onSave, onDelete, onPick }: {
     paylater_3mo_on: row.paylater_3mo_on,
     paylater_6mo_on: row.paylater_6mo_on,
   }));
+  const [sel, setSel] = useState<FeeSel>(() => selFromFee(fee));
 
   const parsed = {
     item_product: v.item_product,
+    product_line: v.product_line,
     modal_produk_rp: parseRp(v.modal_produk_rp),
     harga_jual_rp: parseRp(v.harga_jual_rp),
     target_roas: Number(v.target_roas) || 0,
@@ -264,6 +311,7 @@ function CalcRowLine({ no, row, fee, onSave, onDelete, onPick }: {
     paylater_6mo_on: v.paylater_6mo_on,
   };
   const dirty = parsed.item_product !== (row.item_product || "")
+    || parsed.product_line !== (row.product_line || "")
     || parsed.modal_produk_rp !== row.modal_produk_rp
     || parsed.harga_jual_rp !== row.harga_jual_rp
     || parsed.target_roas !== row.target_roas
@@ -286,12 +334,36 @@ function CalcRowLine({ no, row, fee, onSave, onDelete, onPick }: {
   function save() { onSave(row.id, parsed); }
   function reset() {
     setV({
-      item_product: row.item_product || "", modal_produk_rp: formatRp(row.modal_produk_rp), harga_jual_rp: formatRp(row.harga_jual_rp),
+      item_product: row.item_product || "", product_line: row.product_line || "",
+      modal_produk_rp: formatRp(row.modal_produk_rp), harga_jual_rp: formatRp(row.harga_jual_rp),
       target_roas: String(row.target_roas || ""), berat_kg: String(row.berat_kg || ""), ukuran_cm3: String(row.ukuran_cm3 || ""),
       biaya_lain_rp: formatRp(row.biaya_lain_rp), gratis_ongkir_on: row.gratis_ongkir_on, promo_xtra_on: row.promo_xtra_on,
       paylater_3mo_on: row.paylater_3mo_on, paylater_6mo_on: row.paylater_6mo_on,
     });
   }
+
+  function pick(field: keyof FeeSel, value: string) {
+    const next = refineSel({ ...sel, [field]: value }, fees);
+    setSel(next);
+    const match = resolveFee(next, fees);
+    if ((match?.id ?? null) !== row.fee_id) onSave(row.id, { fee_id: match?.id ?? null });
+  }
+  function clearFee() {
+    setSel(emptySel);
+    if (row.fee_id) onSave(row.id, { fee_id: null });
+  }
+
+  const feeSelect = (field: keyof FeeSel) => {
+    const opts = optionsFor(field, sel, fees);
+    const value = sel[field];
+    const list = value && !opts.includes(value) ? [value, ...opts] : opts;
+    return (
+      <select className="calc-sel" value={value} onChange={(e) => pick(field, e.target.value)}>
+        <option value="">— pick —</option>
+        {list.map((o) => <option key={o} value={o}>{o}</option>)}
+      </select>
+    );
+  };
 
   const txt = (val: string, onChange: (s: string) => void, width: number) => (
     <input type="text" value={val} onChange={(e) => onChange(e.target.value)}
@@ -303,17 +375,26 @@ function CalcRowLine({ no, row, fee, onSave, onDelete, onPick }: {
       <td>{no}</td>
       <td>
         <input type="text" value={v.item_product} onChange={(e) => setV((s) => ({ ...s, item_product: e.target.value }))}
-          placeholder="Product name" style={{ width: 160, background: "rgba(10,22,40,.5)", border: "1px solid rgba(201,162,39,.25)", borderRadius: 6, padding: "4px 6px", color: "var(--text)", fontSize: 12.5 }} />
+          placeholder="Product name" style={{ width: 150, background: "rgba(10,22,40,.5)", border: "1px solid rgba(201,162,39,.25)", borderRadius: 6, padding: "4px 6px", color: "var(--text)", fontSize: 12.5 }} />
       </td>
-      <td style={{ maxWidth: 240, whiteSpace: "normal", fontSize: 12 }}>
-        {fee ? <span title={feeLabel(fee)}>{feeLabel(fee)}</span> : <span className="calc-ro">— no fee linked —</span>}
-        <div><button onClick={onPick} className="btn-ghost" style={{ padding: "2px 8px", fontSize: 11, marginTop: 4 }}>{fee ? "Change" : "Pick Product"}</button></div>
+      <td>
+        <input type="text" value={v.product_line} onChange={(e) => setV((s) => ({ ...s, product_line: e.target.value }))}
+          placeholder="e.g. RAC" style={{ width: 70, background: "rgba(10,22,40,.5)", border: "1px solid rgba(201,162,39,.25)", borderRadius: 6, padding: "4px 6px", color: "var(--text)", fontSize: 12.5 }} />
       </td>
       <td className="num">Rp {txt(v.modal_produk_rp, (s) => setV((st) => ({ ...st, modal_produk_rp: formatRp(parseRp(s)) })), 90)}</td>
       <td className="num">Rp {txt(v.harga_jual_rp, (s) => setV((st) => ({ ...st, harga_jual_rp: formatRp(parseRp(s)) })), 90)}</td>
+      <td className="num calc-ro">{calc.hargaMarkupPct === null ? "—" : `${calc.hargaMarkupPct.toFixed(1)}%`}</td>
       <td className="num" style={{ fontWeight: 700 }}>Rp {formatRp(calc.totalBiaya)}</td>
-      <td className="num" style={{ fontWeight: 700, color: calc.profit >= 0 ? "var(--gold)" : "#ff9a9a" }}>Rp {formatRp(calc.profit)}</td>
-      <td className="num calc-ro">{calc.marginPct === null ? "—" : `${calc.marginPct.toFixed(1)}%`}</td>
+      <td className="num" style={{ fontWeight: 700, color: calc.profit >= 0 ? "var(--gold)" : "#ff9a9a" }}>
+        Rp {formatRp(calc.profit)}<div style={{ fontSize: 11, fontWeight: 400 }}>{calc.marginPct === null ? "—" : `${calc.marginPct.toFixed(1)}%`}</div>
+      </td>
+      <td>{feeSelect("platform")}</td>
+      <td>{feeSelect("jenis_toko")}</td>
+      <td>{feeSelect("category")}</td>
+      <td>{feeSelect("sub_category")}</td>
+      <td>{feeSelect("jenis_product")}
+        {fee && <button onClick={clearFee} className="btn-ghost" style={{ padding: "1px 6px", fontSize: 10, marginLeft: 4 }}>✕</button>}
+      </td>
       <td className="num">{txt(v.target_roas, (s) => setV((st) => ({ ...st, target_roas: s.replace(/[^\d.]/g, "") })), 60)}</td>
       <td className="num calc-ro">{calc.pctAds.toFixed(1)}%</td>
       <td className="num calc-ro">Rp {formatRp(calc.biayaAds)}</td>
@@ -346,43 +427,6 @@ function CalcRowLine({ no, row, fee, onSave, onDelete, onPick }: {
   );
 }
 
-function FeePickerModal({ fees, onPick, onClose }: { fees: Fee[]; onPick: (fee: Fee) => void; onClose: () => void }) {
-  const [q, setQ] = useState("");
-  const matches = useMemo(() => {
-    const query = q.trim().toLowerCase();
-    if (query.length < 2) return [];
-    return fees.filter((f) => feeLabel(f).toLowerCase().includes(query)).slice(0, 300);
-  }, [fees, q]);
-
-  return (
-    <div style={overlay} onClick={onClose}>
-      <div style={dialog} onClick={(e) => e.stopPropagation()}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-          <h3 style={{ margin: 0 }}>Pick a Product / Fee Row</h3>
-          <button className="btn-ghost" onClick={onClose}>✕ Close</button>
-        </div>
-        <input type="text" autoFocus placeholder="Search category / sub category / product / platform / jenis toko…"
-          value={q} onChange={(e) => setQ(e.target.value)} style={{ ...inputStyle, marginBottom: 10 }} />
-        <div style={{ maxHeight: 420, overflowY: "auto", border: "1px solid var(--card-border)", borderRadius: 10 }}>
-          {q.trim().length < 2 && <div style={{ padding: 16, color: "var(--muted)", fontSize: 13 }}>Type at least 2 characters to search {fees.length.toLocaleString("id-ID")} fee entries.</div>}
-          {q.trim().length >= 2 && matches.length === 0 && <div style={{ padding: 16, color: "var(--muted)", fontSize: 13 }}>No matches.</div>}
-          {matches.map((f) => (
-            <button key={f.id} onClick={() => onPick(f)} style={pickItemStyle}>
-              <span style={{ fontWeight: 600 }}>{f.category}</span>
-              <span className="calc-ro"> · {[f.sub_category, f.jenis_product, f.platform, f.jenis_toko].filter(Boolean).join(" · ")}</span>
-            </button>
-          ))}
-          {matches.length === 300 && <div style={{ padding: 10, color: "var(--muted)", fontSize: 12 }}>Showing first 300 matches — refine your search.</div>}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 const stickyTh: React.CSSProperties = { position: "sticky", top: 0, zIndex: 1 };
-const inputStyle: React.CSSProperties = { background: "rgba(10,22,40,.5)", border: "1px solid rgba(201,162,39,.2)", borderRadius: 8, padding: "8px 10px", color: "#e8edf8", fontSize: 13, width: "100%", boxSizing: "border-box" };
 const saveBtnStyle: React.CSSProperties = { background: "linear-gradient(135deg,var(--gold),var(--gold-soft))", border: "none", color: "var(--navy-deep)", borderRadius: 7, padding: "4px 12px", cursor: "pointer", fontSize: 12, fontWeight: 700 };
 const delBtnStyle: React.CSSProperties = { background: "rgba(255,80,80,.12)", border: "1px solid rgba(255,90,90,.3)", color: "#ff9a9a", borderRadius: 7, padding: "4px 10px", cursor: "pointer", fontSize: 12 };
-const overlay: React.CSSProperties = { position: "fixed", inset: 0, background: "rgba(2,6,16,.82)", backdropFilter: "blur(4px)", zIndex: 9000, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "30px 20px", overflowY: "auto" };
-const dialog: React.CSSProperties = { width: "min(96vw,640px)", background: "var(--card,#0d1a36)", border: "1px solid var(--card-border,rgba(201,162,39,.2))", borderRadius: 18, padding: 24, boxShadow: "0 30px 80px rgba(0,0,0,.7)" };
-const pickItemStyle: React.CSSProperties = { display: "block", width: "100%", textAlign: "left", background: "none", border: "none", borderBottom: "1px solid var(--line)", padding: "9px 12px", cursor: "pointer", color: "var(--text)", fontSize: 12.5 };
