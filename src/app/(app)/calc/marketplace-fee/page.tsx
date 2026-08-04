@@ -39,6 +39,13 @@ const NUMERIC_FIELDS: { key: NumericField; label: string; unit: "%" | "Rp" }[] =
   { key: "spaylater_xtra_6mo_pct", label: "Spay Later Xtra 6 mo", unit: "%" },
 ];
 
+function formatRp(n: number): string {
+  return Math.round(n || 0).toLocaleString("id-ID");
+}
+function parseRp(s: string): number {
+  return Number(s.replace(/[^\d-]/g, "")) || 0;
+}
+
 function currentMonthLabel(): string {
   const d = new Date();
   return `${MONTH_LIST[d.getMonth()]} ${d.getFullYear()}`;
@@ -256,19 +263,22 @@ function FeeRow({ fee, canEdit, onSave, onDelete, onHistory }: {
 }) {
   const [values, setValues] = useState<Record<NumericField, string>>(() => {
     const v = {} as Record<NumericField, string>;
-    for (const f of NUMERIC_FIELDS) v[f.key] = String(fee[f.key]);
+    for (const f of NUMERIC_FIELDS) v[f.key] = f.unit === "Rp" ? formatRp(fee[f.key]) : String(fee[f.key]);
     return v;
   });
-  const dirty = NUMERIC_FIELDS.some((f) => Number(values[f.key]) !== fee[f.key]);
+  const numeric = useMemo(() => {
+    const n = {} as Record<NumericField, number>;
+    for (const f of NUMERIC_FIELDS) n[f.key] = f.unit === "Rp" ? parseRp(values[f.key]) : Number(values[f.key]) || 0;
+    return n;
+  }, [values]);
+  const dirty = NUMERIC_FIELDS.some((f) => numeric[f.key] !== fee[f.key]);
 
   function save() {
-    const patch = {} as Record<NumericField, number>;
-    for (const f of NUMERIC_FIELDS) patch[f.key] = Number(values[f.key]) || 0;
-    onSave(fee, patch);
+    onSave(fee, numeric);
   }
   function reset() {
     const v = {} as Record<NumericField, string>;
-    for (const f of NUMERIC_FIELDS) v[f.key] = String(fee[f.key]);
+    for (const f of NUMERIC_FIELDS) v[f.key] = f.unit === "Rp" ? formatRp(fee[f.key]) : String(fee[f.key]);
     setValues(v);
   }
 
@@ -284,9 +294,15 @@ function FeeRow({ fee, canEdit, onSave, onDelete, onHistory }: {
           {canEdit ? (
             <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
               {f.unit === "Rp" && <span style={{ color: "var(--muted)" }}>Rp</span>}
-              <input type="number" step="0.01" value={values[f.key]}
-                onChange={(e) => setValues((v) => ({ ...v, [f.key]: e.target.value }))}
-                style={{ width: f.unit === "Rp" ? 76 : 60, textAlign: "right", background: "rgba(10,22,40,.5)", border: "1px solid rgba(201,162,39,.25)", borderRadius: 6, padding: "4px 6px", color: "var(--text)", fontSize: 12.5 }} />
+              {f.unit === "Rp" ? (
+                <input type="text" inputMode="numeric" value={values[f.key]}
+                  onChange={(e) => setValues((v) => ({ ...v, [f.key]: formatRp(parseRp(e.target.value)) }))}
+                  style={{ width: 86, textAlign: "right", background: "rgba(10,22,40,.5)", border: "1px solid rgba(201,162,39,.25)", borderRadius: 6, padding: "4px 6px", color: "var(--text)", fontSize: 12.5 }} />
+              ) : (
+                <input type="number" step="0.01" value={values[f.key]}
+                  onChange={(e) => setValues((v) => ({ ...v, [f.key]: e.target.value }))}
+                  style={{ width: 60, textAlign: "right", background: "rgba(10,22,40,.5)", border: "1px solid rgba(201,162,39,.25)", borderRadius: 6, padding: "4px 6px", color: "var(--text)", fontSize: 12.5 }} />
+              )}
               {f.unit === "%" && <span style={{ color: "var(--muted)" }}>%</span>}
             </span>
           ) : (
@@ -338,7 +354,12 @@ function AddFeeModal({ onAdd, onClose }: {
           <ModalField label="Kategori Kirim"><input style={inputStyle} value={f.kategori_kirim} onChange={(e) => setF({ ...f, kategori_kirim: e.target.value })} /></ModalField>
           {NUMERIC_FIELDS.map((nf) => (
             <ModalField label={nf.label} key={nf.key}>
-              <input type="number" step="0.01" style={inputStyle} value={f[nf.key]} onChange={(e) => setF({ ...f, [nf.key]: Number(e.target.value) })} />
+              {nf.unit === "Rp" ? (
+                <input type="text" inputMode="numeric" style={inputStyle} value={formatRp(f[nf.key])}
+                  onChange={(e) => setF({ ...f, [nf.key]: parseRp(e.target.value) })} />
+              ) : (
+                <input type="number" step="0.01" style={inputStyle} value={f[nf.key]} onChange={(e) => setF({ ...f, [nf.key]: Number(e.target.value) })} />
+              )}
             </ModalField>
           ))}
         </div>
