@@ -227,12 +227,20 @@ const FUNNEL_STAGES: { key: "impression" | "click" | "in_cart" | "sales"; label:
 const FUNNEL_COLORS = ["#3b6ea5", "#2f5a8a", "#24476e", "#c9a227"]; // last stage gold, matches the app's accent
 
 export function ProductFunnel({ data }: { data?: { impression: number; click: number; in_cart: number; sales: number } }) {
-  if (!data || !data.impression) return <Empty />;
-  const values = FUNNEL_STAGES.map((s) => data[s.key] || 0);
-  const top = values[0] || 1;
-  // A stage that's a genuine 0.1% of Impression would render as an
-  // invisible sliver — floor the drawn width (not the displayed %) so
-  // every stage stays legible.
+  const values = FUNNEL_STAGES.map((s) => (data ? data[s.key] || 0 : 0));
+  // Gate on ANY stage having data, not specifically Impression — Impression
+  // and Click were only added to the parser recently (Supabase Migration/40),
+  // so a store can legitimately have real In Cart/Sales history while those
+  // two are still 0 until its next upload. Hiding the whole chart on that
+  // basis would throw away real data that does exist.
+  if (!data || values.every((v) => !v)) return <Empty />;
+  // Denominator is the largest stage present, not assumed to be Impression —
+  // during the same transition, Impression can be 0 while a later stage
+  // (e.g. In Cart) is the only one with real numbers.
+  const top = Math.max(...values, 1);
+  // A stage that's a genuine 0.1% of the top would render as an invisible
+  // sliver — floor the drawn width (not the displayed %) so every stage
+  // that has data stays legible.
   const MIN_FRAC = 0.12;
   const fracs = values.map((v) => Math.max(v / top, v > 0 ? MIN_FRAC : 0));
 
