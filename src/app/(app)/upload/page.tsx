@@ -103,6 +103,7 @@ export default function UploadPage() {
   const [uploads, setUploads] = useState<UploadRow[]>([]);
   const [coverage, setCoverage] = useState<Record<string, Coverage>>({});
   const [dealerRows, setDealerRows] = useState<DealerRow[]>([]);
+  const [baselineDealers, setBaselineDealers] = useState<Omit<DealerRow, "trend">[]>([]);
   const [flt,     setFlt]     = useState({ year: "", month: "", week: "", city: "", dealer: "", source: "" }); // city/source kept for reset compat
 
   // load uploads + what each one actually contains
@@ -162,6 +163,10 @@ export default function UploadPage() {
       // "Detail Data per Dealer" panel, not raw upload-metadata counts.
       const { data: snap } = await supabase.rpc("get_dashboard_snapshot");
       setDealerRows(((snap as { dealers?: DealerRow[] } | null)?.dealers) || []);
+
+      // Same shape, but Month Awal (pre-project baseline) instead of live data.
+      const { data: base } = await supabase.rpc("baseline_dealers", { p_client_id: cid });
+      setBaselineDealers((base as Omit<DealerRow, "trend">[]) || []);
     })();
   }, [supabase, loadUploads]);
 
@@ -517,6 +522,44 @@ export default function UploadPage() {
                     <tr key={i}>
                       <td style={{ fontWeight: 600 }}>{r.store_name}</td>
                       <td><Sparkline id={`up-spark-${i}`} points={(r.trend || []).map((t) => t.sales)} /></td>
+                      <td>{r.city || "—"}</td>
+                      <td className="num">{idr(r.sales)}</td>
+                      <td className="num">{num(r.traffic)}</td>
+                      <td className="num">{num(r.in_cart)}</td>
+                      <td className="num">{cr.toFixed(1)}%</td>
+                      <td className="num">{idr(r.ad_cost)}</td>
+                      <td className="num"><span className={`pill ${!r.roas ? "" : r.roas >= 3 ? "good" : r.roas >= 1 ? "warn" : "bad"}`}>{r.roas ? r.roas.toFixed(2) + "×" : "—"}</span></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ───── Baseline Dealer ───── */}
+      {baselineDealers.length > 0 && (
+        <div className="panel" style={{ marginTop: 18 }}>
+          <h3 style={{ margin: "0 0 4px" }}>Baseline Dealer</h3>
+          <div className="hint">Pre-project snapshot (&quot;Month Awal&quot;) per dealer — same columns as Data per Dealer above.</div>
+          <div className="tbl-wrap" style={{ marginTop: 14, maxHeight: 440 }}>
+            <table className="tbl">
+              <thead>
+                <tr>
+                  <th>Dealer</th><th style={{ width: 90 }}>Trend</th><th>City</th><th className="num">Sales</th><th className="num">Traffic</th>
+                  <th className="num">In-Cart</th><th className="num">Cart Rate</th><th className="num">Ads Cost</th><th className="num">ROAS</th>
+                </tr>
+              </thead>
+              <tbody>
+                {baselineDealers.map((r, i) => {
+                  const cr = r.traffic ? (r.in_cart / r.traffic) * 100 : 0;
+                  return (
+                    <tr key={i}>
+                      <td style={{ fontWeight: 600 }}>{r.store_name}</td>
+                      {/* Baseline is one snapshot, not a series — Sparkline
+                          already renders blank for fewer than 2 points. */}
+                      <td><Sparkline id={`base-spark-${i}`} points={[]} /></td>
                       <td>{r.city || "—"}</td>
                       <td className="num">{idr(r.sales)}</td>
                       <td className="num">{num(r.traffic)}</td>
