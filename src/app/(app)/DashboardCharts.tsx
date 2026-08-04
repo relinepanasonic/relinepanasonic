@@ -226,9 +226,9 @@ const FUNNEL_STAGES: { key: "impression" | "click" | "in_cart" | "sales"; label:
 ];
 const FUNNEL_COLORS = ["#3b6ea5", "#2f5a8a", "#24476e", "#c9a227"]; // last stage gold, matches the app's accent
 
-function StageList({ values }: { values: number[] }) {
+function StageList({ values, style }: { values: number[]; style?: React.CSSProperties }) {
   return (
-    <div style={{ display: "grid", gap: 14, minWidth: 0 }}>
+    <div style={{ display: "grid", gap: 14, minWidth: 0, ...style }}>
       {FUNNEL_STAGES.map((s, i) => (
         <div key={s.key}>
           <div style={{ fontSize: 10, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".04em" }}>{s.label}</div>
@@ -288,8 +288,15 @@ export function ProductFunnel({ data }: { data?: { impression: number; click: nu
 
   return (
     <div style={{ width: "100%", height: 280, display: "flex", flexDirection: "column", justifyContent: "center" }}>
-      <div style={{ display: "flex", gap: 18, alignItems: "center" }}>
-        <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} style={{ flexShrink: 0 }}>
+      {/* flexWrap + a real min-width on the svg (not flexShrink:0, which
+          pinned it at a literal 380px and forced the panel to either clip
+          it under overflow:hidden or overflow horizontally on any screen
+          narrower than ~500px — every phone). width:100%/max-width lets it
+          scale down via the viewBox instead of the raw HTML width attr;
+          wrapping drops the stage numbers below the shape once there's no
+          room beside it. */}
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 18, alignItems: "center", justifyContent: "center" }}>
+        <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", maxWidth: W, height: "auto", flex: "1 1 200px" }}>
           {FUNNEL_STAGES.map((s, i) => {
             const y = PAD_TOP + i * (ROW_H + GAP);
             const wTop = fracs[i] * (W - 20);

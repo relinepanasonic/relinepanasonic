@@ -138,6 +138,18 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover{opacity:1}
 .panel h3{margin:0 0 4px;font-size:15px;color:#fff;font-weight:800}
 .panel .hint{font-size:11px;color:var(--muted);margin-bottom:10px}
 
+/* Flex-wrap row for BaselineChart's 3-across panels (Sales / Ads+ROAS /
+   Share). Unlike .row (CSS grid, only reflows at the 1100px/760px
+   breakpoints), each child gets a real min-width and wraps on its own —
+   correct on any viewport, including landscape phones that fall between
+   those two breakpoints and would otherwise be squeezed instead of
+   stacked (recharts axis labels overlapping bar labels at ~110px wide). */
+.chart-row{display:flex;flex-wrap:wrap;gap:16px;margin-bottom:16px}
+.chart-row>*{flex:1 1 280px;min-width:280px}
+/* Baseline/Active mini-donut pairs inside a Share card — same idea, smaller floor. */
+.donut-pair{display:flex;flex-wrap:wrap;gap:8px}
+.donut-pair>*{flex:1 1 120px;min-width:120px}
+
 /* Table */
 .tbl-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
 table.tbl{width:100%;border-collapse:collapse;font-size:13px}

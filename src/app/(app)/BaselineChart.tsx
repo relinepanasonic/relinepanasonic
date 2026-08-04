@@ -45,7 +45,7 @@ function MiniBarPanel({ title, hint, points, formatter }: {
   formatter: (n: number) => string;
 }) {
   return (
-    <div className="panel" style={{ flex: 1, minWidth: 0 }}>
+    <div className="panel">
       <h3 style={{ margin: "0 0 2px" }}>{title}</h3>
       <div className="hint" style={{ marginBottom: 14 }}>{hint}</div>
       <div style={{ width: "100%", height: 220 }}>
@@ -82,7 +82,7 @@ function AdsRoasCombo({ title, hint, points }: {
   points: { name: string; spend: number; roas: number | null; color: string }[];
 }) {
   return (
-    <div className="panel" style={{ flex: 1, minWidth: 0 }}>
+    <div className="panel">
       <h3 style={{ margin: "0 0 2px" }}>{title}</h3>
       <div className="hint" style={{ marginBottom: 14 }}>{hint}</div>
       <div style={{ width: "100%", height: 220 }}>
@@ -127,7 +127,7 @@ function ShareDonut({ label, pana, all, color }: { label: string; pana: number; 
   const points = [{ name: "Panasonic", value: pana }, { name: "Other Brands", value: other }];
   const pct = total > 0 ? (pana / total) * 100 : 0;
   return (
-    <div style={{ flex: 1, minWidth: 0, textAlign: "center" }}>
+    <div style={{ textAlign: "center" }}>
       <div style={{ fontSize: 11.5, fontWeight: 700, color: "#e8edf8", marginBottom: 4 }}>{label}</div>
       <div style={{ width: "100%", height: 150, position: "relative" }}>
         {total > 0 ? (
@@ -161,7 +161,7 @@ function ShareDonut({ label, pana, all, color }: { label: string; pana: number; 
 function CategoryDonut({ label, rows }: { label: string; rows: { category: string; sales: number; color: string }[] }) {
   const total = rows.reduce((a, r) => a + r.sales, 0);
   return (
-    <div style={{ flex: 1, minWidth: 0, textAlign: "center" }}>
+    <div style={{ textAlign: "center" }}>
       <div style={{ fontSize: 11.5, fontWeight: 700, color: "#e8edf8", marginBottom: 4 }}>{label}</div>
       <div style={{ width: "100%", height: 150 }}>
         {total > 0 ? (
@@ -275,7 +275,7 @@ export default function BaselineChart({ data, scopeLabel, monthLabel }: { data: 
   const activeTag = monthFiltered ? `${monthLabel}` : `avg / month`;
   // Sales + Ads/ROAS + a caller-supplied third card, all in one row of 3.
   const row3 = (label: string, hintSuffix: string, m: ReturnType<typeof per>, extra: React.ReactNode) => (
-    <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
+    <div className="chart-row">
       <MiniBarPanel
         title={monthFiltered ? `${label} Monthly Sales` : `${label} Avg Monthly Sales`}
         hint={`${hintSuffix} · SPOS · Active = ${activeTag}`}
@@ -298,10 +298,10 @@ export default function BaselineChart({ data, scopeLabel, monthLabel }: { data: 
   );
 
   const marketShareCard = allData && (
-    <div className="panel" style={{ flex: 1, minWidth: 0 }}>
+    <div className="panel">
       <h3 style={{ margin: "0 0 2px" }}>Panasonic Market Share (Baseline vs Active)</h3>
       <div className="hint" style={{ marginBottom: 6 }}>Panasonic ÷ total store sales (all brands) · SPOS</div>
-      <div style={{ display: "flex", gap: 8 }}>
+      <div className="donut-pair">
         <ShareDonut label="Baseline" pana={pana.baseSales} all={allData.baseSales} color={GOLD} />
         <ShareDonut label={monthFiltered ? "Active" : "Active (avg)"} pana={pana.actSales} all={allData.actSales} color={GOLD} />
       </div>
@@ -313,10 +313,10 @@ export default function BaselineChart({ data, scopeLabel, monthLabel }: { data: 
   );
 
   const categoryShareCard = catRows && (
-    <div className="panel" style={{ flex: 1, minWidth: 0 }}>
+    <div className="panel">
       <h3 style={{ margin: "0 0 2px" }}>Category Share (Baseline vs Active)</h3>
       <div className="hint" style={{ marginBottom: 6 }}>Sales mix by category — all brands · SPOS</div>
-      <div style={{ display: "flex", gap: 8 }}>
+      <div className="donut-pair">
         <CategoryDonut label="Baseline" rows={catRows.baseline} />
         <CategoryDonut label={monthFiltered ? "Active" : "Active (avg)"} rows={catRows.active} />
       </div>
