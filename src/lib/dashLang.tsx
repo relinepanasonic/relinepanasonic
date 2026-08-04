@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useState } from "react";
 
 // Shared ID/EN/JP layer for the Dashboard page + its lazy-loaded charts
 // (DashboardCharts.tsx, BaselineChart.tsx) and the BOD PDF (bodReportPdf.tsx).
@@ -30,6 +30,24 @@ export function useLang(): [Lang, (l: Lang) => void] {
   const [lang, setLang] = useState<Lang>(getStoredLang);
   useEffect(() => { setStoredLang(lang); }, [lang]);
   return [lang, setLang];
+}
+
+// The ID/EN/JP switcher itself lives in the sidebar (layout.tsx, so it's on
+// every page, not re-packed into the Dashboard's filter bar), but the
+// Dashboard page and its charts need to read the current value too. A
+// context (provided once around the whole app shell in layout.tsx) keeps
+// both in sync without prop-drilling across a layout/page boundary.
+const LangContext = createContext<{ lang: Lang; setLang: (l: Lang) => void } | null>(null);
+export function LangProvider({ children }: { children: React.ReactNode }) {
+  const [lang, setLangState] = useState<Lang>("id");
+  useEffect(() => { setLangState(getStoredLang()); }, []);
+  function setLang(l: Lang) { setLangState(l); setStoredLang(l); }
+  return <LangContext.Provider value={{ lang, setLang }}>{children}</LangContext.Provider>;
+}
+export function useLangContext(): { lang: Lang; setLang: (l: Lang) => void } {
+  const ctx = useContext(LangContext);
+  if (!ctx) throw new Error("useLangContext must be used inside <LangProvider>");
+  return ctx;
 }
 
 // {name}-style placeholders, substituted manually (no templating dependency).

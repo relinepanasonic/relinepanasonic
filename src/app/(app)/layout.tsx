@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { LangProvider, LANGS, useLangContext } from "@/lib/dashLang";
 
 type Role = "superadmin" | "client_admin" | "branch_manager" | "store_user" | "advertiser" | "pic_panasonic" | "sales";
 
@@ -31,6 +32,14 @@ const ROLE_LABEL: Record<Role, string> = {
 const BOTTOM = ["/", "/ads", "/calc", "/upload"];
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <LangProvider>
+      <AppShell>{children}</AppShell>
+    </LangProvider>
+  );
+}
+
+function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const path = usePathname();
   const [supabase] = useState(() => createClient());
@@ -102,7 +111,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             </li>
           ))}
         </ul>
-        <div className="foot">v1.0 · Supabase</div>
+        <div className="foot">
+          {role && <div style={{ fontSize: 11.5, fontWeight: 700, color: "var(--gold)", marginBottom: 8 }}>{ROLE_LABEL[role]}</div>}
+          <LangSwitcher />
+          <div style={{ marginTop: 8, opacity: .7 }}>v1.0 · Supabase</div>
+        </div>
       </aside>
 
       {/* Main */}
@@ -149,6 +162,28 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           );
         })}
       </nav>
+    </div>
+  );
+}
+
+// ID/EN/JP switcher — lives here (sidebar) rather than on the Dashboard's
+// filter bar so it's a persistent, app-wide control instead of getting
+// packed in among the per-page filters. Reads/writes the shared LangContext
+// (see dashLang.tsx) so the Dashboard page and BOD PDF pick up the change.
+function LangSwitcher() {
+  const { lang, setLang } = useLangContext();
+  return (
+    <div style={{ display: "flex", gap: 2, background: "rgba(10,22,40,.4)", border: "1px solid var(--card-border)", borderRadius: 8, padding: 2, width: "fit-content" }}>
+      {LANGS.map((l) => (
+        <button key={l.code} onClick={() => setLang(l.code)}
+          style={{
+            padding: "3px 9px", fontSize: 11, fontWeight: 700, borderRadius: 6, border: "none", cursor: "pointer",
+            background: lang === l.code ? "linear-gradient(135deg,var(--gold),var(--gold-soft))" : "transparent",
+            color: lang === l.code ? "var(--navy-deep)" : "var(--text-2)",
+          }}>
+          {l.label}
+        </button>
+      ))}
     </div>
   );
 }

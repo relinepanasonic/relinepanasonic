@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import nextDynamic from "next/dynamic";
 import { ArrowUp, ArrowDown, ArrowUpDown, Download } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
-import { DASH_T, LANGS, getStoredLang, setStoredLang, tf, type Lang } from "@/lib/dashLang";
+import { DASH_T, useLangContext, tf } from "@/lib/dashLang";
 
 export const dynamic = "force-dynamic";
 
@@ -110,9 +110,7 @@ export default function DashboardPage() {
   const [baseline, setBaseline] = useState<BaselineVsActive | null>(null);
   const [dealerSort, setDealerSort] = useState<{ key: DealerSortKey; dir: SortDir } | null>(null);
   const [reporting, setReporting] = useState(false);
-  const [lang, setLang] = useState<Lang>("id");
-  useEffect(() => { setLang(getStoredLang()); }, []);
-  function changeLang(l: Lang) { setLang(l); setStoredLang(l); }
+  const { lang } = useLangContext();
   const s = DASH_T[lang];
 
   // Renders the BOD deck for whatever is currently selected in the filter
@@ -303,20 +301,6 @@ export default function DashboardPage() {
             {s.f_loading}
           </span>
         )}
-        {/* Language switcher — persisted to localStorage, travels with the
-            BOD PDF request so "Report" downloads in whatever's selected. */}
-        <div style={{ display: "flex", gap: 2, alignSelf: "center", background: "rgba(10,22,40,.4)", border: "1px solid var(--card-border)", borderRadius: 8, padding: 2 }}>
-          {LANGS.map((l) => (
-            <button key={l.code} onClick={() => changeLang(l.code)}
-              style={{
-                padding: "4px 10px", fontSize: 11.5, fontWeight: 700, borderRadius: 6, border: "none", cursor: "pointer",
-                background: lang === l.code ? "linear-gradient(135deg,var(--gold),var(--gold-soft))" : "transparent",
-                color: lang === l.code ? "var(--navy-deep)" : "var(--text-2)",
-              }}>
-              {l.label}
-            </button>
-          ))}
-        </div>
         {/* marginLeft:auto parks this at the right edge of the filter row */}
         <button
           className="btn-gold"
