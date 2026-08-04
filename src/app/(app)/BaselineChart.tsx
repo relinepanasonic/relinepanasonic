@@ -8,6 +8,7 @@ import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Cell, LabelList,
   ComposedChart, Line, PieChart, Pie,
 } from "recharts";
+import { DASH_T, tf, type Lang } from "@/lib/dashLang";
 
 type Side = { stores?: number; months?: number; sales: number; ad_cost: number };
 type BaselineVsActive = {
@@ -77,10 +78,12 @@ function MiniBarPanel({ title, hint, points, formatter }: {
 // Ads Spend (bars) + ROAS (line, secondary axis) in one chart — same
 // technique as DashboardCharts.tsx's CostRoas, adapted for two categorical
 // points (Baseline/Active) instead of a time series.
-function AdsRoasCombo({ title, hint, points }: {
+function AdsRoasCombo({ title, hint, points, lang = "id" }: {
   title: string; hint: string;
   points: { name: string; spend: number; roas: number | null; color: string }[];
+  lang?: Lang;
 }) {
+  const t = DASH_T[lang];
   return (
     <div className="panel">
       <h3 style={{ margin: "0 0 2px" }}>{title}</h3>
@@ -98,7 +101,7 @@ function AdsRoasCombo({ title, hint, points }: {
             <YAxis yAxisId="l" tick={axis} tickFormatter={(v) => idr(Number(v))} axisLine={false} tickLine={false} width={56} />
             <YAxis yAxisId="r" orientation="right" tick={axis} tickFormatter={(v) => Number(v).toFixed(0) + "×"} axisLine={false} tickLine={false} width={40} />
             <Tooltip contentStyle={tooltip} labelStyle={{ color: GOLD, fontWeight: 700 }}
-              formatter={(v, n) => n === "roas" ? [(Number(v) || 0).toFixed(1) + "×", "ROAS"] : [idr(Number(v)), "Ads Spend"]}
+              formatter={(v, n) => n === "roas" ? [(Number(v) || 0).toFixed(1) + "×", t.c_roas] : [idr(Number(v)), t.c_adsSpend]}
               cursor={{ fill: "rgba(201,162,39,.05)" }} />
             <Bar yAxisId="l" dataKey="spend" radius={[6, 6, 2, 2]} maxBarSize={70}>
               {points.map((p, i) => <Cell key={i} fill={p.color} />)}
@@ -121,10 +124,11 @@ function AdsRoasCombo({ title, hint, points }: {
 // from the Panasonic and All-Brand figures already computed above (same
 // basis on both sides, so the ratio is unaffected — a share is
 // scale-invariant regardless of how the totals were averaged).
-function ShareDonut({ label, pana, all, color }: { label: string; pana: number; all: number; color: string }) {
+function ShareDonut({ label, pana, all, color, lang = "id" }: { label: string; pana: number; all: number; color: string; lang?: Lang }) {
+  const t = DASH_T[lang];
   const other = Math.max(all - pana, 0);
   const total = pana + other;
-  const points = [{ name: "Panasonic", value: pana }, { name: "Other Brands", value: other }];
+  const points = [{ name: t.b_panasonic, value: pana }, { name: t.b_otherBrands, value: other }];
   const pct = total > 0 ? (pana / total) * 100 : 0;
   return (
     <div style={{ textAlign: "center" }}>
@@ -141,7 +145,7 @@ function ShareDonut({ label, pana, all, color }: { label: string; pana: number; 
             </PieChart>
           </ResponsiveContainer>
         ) : (
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: "var(--muted)", fontSize: 12 }}>No data</div>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: "var(--muted)", fontSize: 12 }}>{DASH_T[lang].c_noData}</div>
         )}
         {total > 0 && (
           <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
@@ -158,7 +162,7 @@ function ShareDonut({ label, pana, all, color }: { label: string; pana: number; 
 // combined baseline+active ranking, so the same category keeps the same
 // color across both donuts (comparing two independently-ranked pies would
 // let colors swap between periods, defeating the point of a before/after).
-function CategoryDonut({ label, rows }: { label: string; rows: { category: string; sales: number; color: string }[] }) {
+function CategoryDonut({ label, rows, lang = "id" }: { label: string; rows: { category: string; sales: number; color: string }[]; lang?: Lang }) {
   const total = rows.reduce((a, r) => a + r.sales, 0);
   return (
     <div style={{ textAlign: "center" }}>
@@ -174,19 +178,20 @@ function CategoryDonut({ label, rows }: { label: string; rows: { category: strin
             </PieChart>
           </ResponsiveContainer>
         ) : (
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: "var(--muted)", fontSize: 12 }}>No data</div>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: "var(--muted)", fontSize: 12 }}>{DASH_T[lang].c_noData}</div>
         )}
       </div>
     </div>
   );
 }
 
-export default function BaselineChart({ data, scopeLabel, monthLabel }: { data: BaselineVsActive | null; scopeLabel: string; monthLabel: string | null }) {
+export default function BaselineChart({ data, scopeLabel, monthLabel, lang = "id" }: { data: BaselineVsActive | null; scopeLabel: string; monthLabel: string | null; lang?: Lang }) {
+  const t = DASH_T[lang];
   if (!data) {
     return (
       <div className="panel">
-        <h3 style={{ margin: "0 0 2px" }}>Baseline vs Active Performance</h3>
-        <div className="hint">Loading…</div>
+        <h3 style={{ margin: "0 0 2px" }}>{t.b_title}</h3>
+        <div className="hint">{t.b_loading}</div>
       </div>
     );
   }
@@ -251,8 +256,8 @@ export default function BaselineChart({ data, scopeLabel, monthLabel }: { data: 
   if (!hasBaseline) {
     return (
       <div className="panel">
-        <h3 style={{ margin: "0 0 2px" }}>Baseline vs Active Performance — <span style={{ color: GOLD }}>{scopeLabel}</span></h3>
-        <div className="hint">No &quot;Month Awal&quot; baseline data for {scopeLabel}.</div>
+        <h3 style={{ margin: "0 0 2px" }}>{t.b_title} — <span style={{ color: GOLD }}>{scopeLabel}</span></h3>
+        <div className="hint">{tf(t.b_noBaseline, { scope: scopeLabel })}</div>
       </div>
     );
   }
@@ -260,9 +265,9 @@ export default function BaselineChart({ data, scopeLabel, monthLabel }: { data: 
   if (months === 0) {
     return (
       <div className="panel">
-        <h3 style={{ margin: "0 0 2px" }}>Baseline vs Active Performance — <span style={{ color: GOLD }}>{scopeLabel}</span></h3>
+        <h3 style={{ margin: "0 0 2px" }}>{t.b_title} — <span style={{ color: GOLD }}>{scopeLabel}</span></h3>
         <div className="hint">
-          {monthFiltered ? <>No data for {monthLabel} yet for {scopeLabel}.</> : <>No sales data yet for {scopeLabel}.</>}
+          {monthFiltered ? tf(t.b_noDataMonth, { month: monthLabel || "", scope: scopeLabel }) : tf(t.b_noDataYear, { scope: scopeLabel })}
         </div>
       </div>
     );
@@ -272,26 +277,29 @@ export default function BaselineChart({ data, scopeLabel, monthLabel }: { data: 
   // months (the "All Months" default). With a specific month picked, Active
   // is that one month's real total, so the label says so instead — e.g.
   // "Panasonic Monthly Sales — Juli 2026", not "Avg Monthly Sales".
-  const activeTag = monthFiltered ? `${monthLabel}` : `avg / month`;
+  const activeTag = monthFiltered ? `${monthLabel}` : t.b_avgPerMonth;
+  const baselineLabel = t.b_baseline;
+  const activeLabel = monthFiltered ? t.b_active : t.b_activeAvg;
   // Sales + Ads/ROAS + a caller-supplied third card, all in one row of 3.
   const row3 = (label: string, hintSuffix: string, m: ReturnType<typeof per>, extra: React.ReactNode) => (
     <div className="chart-row">
       <MiniBarPanel
-        title={monthFiltered ? `${label} Monthly Sales` : `${label} Avg Monthly Sales`}
-        hint={`${hintSuffix} · SPOS · Active = ${activeTag}`}
+        title={tf(monthFiltered ? t.b_monthlySalesTitle : t.b_avgMonthlySalesTitle, { label })}
+        hint={tf(t.b_hintSuffixSales, { suffix: hintSuffix, tag: activeTag })}
         formatter={idr}
         points={[
-          { name: "Baseline", value: m.baseSales, color: BASELINE_COLOR },
-          { name: "Active",   value: m.actSales,  color: ACTIVE_COLOR },
+          { name: baselineLabel, value: m.baseSales, color: BASELINE_COLOR },
+          { name: activeLabel,   value: m.actSales,  color: ACTIVE_COLOR },
         ]}
       />
       <AdsRoasCombo
-        title={monthFiltered ? `${label} Ads Spend & ROAS` : `${label} Avg Ads Spend & ROAS`}
-        hint={`${hintSuffix} · Ads · Active = ${activeTag}`}
+        title={tf(monthFiltered ? t.b_adsRoasTitle : t.b_avgAdsRoasTitle, { label })}
+        hint={tf(t.b_hintSuffixAds, { suffix: hintSuffix, tag: activeTag })}
         points={[
-          { name: "Baseline", spend: m.baseAds, roas: m.baseRoas, color: BASELINE_COLOR },
-          { name: "Active",   spend: m.actAds,  roas: m.actRoas,  color: ACTIVE_COLOR },
+          { name: baselineLabel, spend: m.baseAds, roas: m.baseRoas, color: BASELINE_COLOR },
+          { name: activeLabel,   spend: m.actAds,  roas: m.actRoas,  color: ACTIVE_COLOR },
         ]}
+        lang={lang}
       />
       {extra}
     </div>
@@ -299,26 +307,26 @@ export default function BaselineChart({ data, scopeLabel, monthLabel }: { data: 
 
   const marketShareCard = allData && (
     <div className="panel">
-      <h3 style={{ margin: "0 0 2px" }}>Panasonic Market Share (Baseline vs Active)</h3>
-      <div className="hint" style={{ marginBottom: 6 }}>Panasonic ÷ total store sales (all brands) · SPOS</div>
+      <h3 style={{ margin: "0 0 2px" }}>{t.b_marketShareTitle}</h3>
+      <div className="hint" style={{ marginBottom: 6 }}>{t.b_marketShareHint}</div>
       <div className="donut-pair">
-        <ShareDonut label="Baseline" pana={pana.baseSales} all={allData.baseSales} color={GOLD} />
-        <ShareDonut label={monthFiltered ? "Active" : "Active (avg)"} pana={pana.actSales} all={allData.actSales} color={GOLD} />
+        <ShareDonut label={baselineLabel} pana={pana.baseSales} all={allData.baseSales} color={GOLD} lang={lang} />
+        <ShareDonut label={activeLabel} pana={pana.actSales} all={allData.actSales} color={GOLD} lang={lang} />
       </div>
       <div style={{ display: "flex", justifyContent: "center", gap: 14, marginTop: 2, fontSize: 10.5, color: "var(--muted)" }}>
-        <span style={{ display: "flex", alignItems: "center", gap: 4 }}><span style={{ width: 8, height: 8, borderRadius: 2, background: GOLD, display: "inline-block" }} />Panasonic</span>
-        <span style={{ display: "flex", alignItems: "center", gap: 4 }}><span style={{ width: 8, height: 8, borderRadius: 2, background: "#2a3a5c", display: "inline-block" }} />Other Brands</span>
+        <span style={{ display: "flex", alignItems: "center", gap: 4 }}><span style={{ width: 8, height: 8, borderRadius: 2, background: GOLD, display: "inline-block" }} />{t.b_panasonic}</span>
+        <span style={{ display: "flex", alignItems: "center", gap: 4 }}><span style={{ width: 8, height: 8, borderRadius: 2, background: "#2a3a5c", display: "inline-block" }} />{t.b_otherBrands}</span>
       </div>
     </div>
   );
 
   const categoryShareCard = catRows && (
     <div className="panel">
-      <h3 style={{ margin: "0 0 2px" }}>Category Share (Baseline vs Active)</h3>
-      <div className="hint" style={{ marginBottom: 6 }}>Sales mix by category — all brands · SPOS</div>
+      <h3 style={{ margin: "0 0 2px" }}>{t.b_categoryShareTitle}</h3>
+      <div className="hint" style={{ marginBottom: 6 }}>{t.b_categoryShareHint}</div>
       <div className="donut-pair">
-        <CategoryDonut label="Baseline" rows={catRows.baseline} />
-        <CategoryDonut label={monthFiltered ? "Active" : "Active (avg)"} rows={catRows.active} />
+        <CategoryDonut label={baselineLabel} rows={catRows.baseline} lang={lang} />
+        <CategoryDonut label={activeLabel} rows={catRows.active} lang={lang} />
       </div>
       <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "center", gap: "3px 10px", marginTop: 4, fontSize: 9.5, color: "var(--muted)" }}>
         {/* Union of both periods' legend entries, same fixed color per category from the ranking above. */}
@@ -336,14 +344,12 @@ export default function BaselineChart({ data, scopeLabel, monthLabel }: { data: 
       {/* Scope shown right in the title (gold) — changing City/Dealer changes
           this label immediately, which is the clearest proof the chart below
           is actually re-fetching for the new filter. */}
-      <h3 style={{ margin: "0 0 2px" }}>Baseline vs Active Performance — <span style={{ color: GOLD }}>{scopeLabel}</span></h3>
+      <h3 style={{ margin: "0 0 2px" }}>{t.b_title} — <span style={{ color: GOLD }}>{scopeLabel}</span></h3>
       <div className="hint" style={{ marginBottom: 14 }}>
         {monthFiltered ? (
-          <>Pre-project snapshot (&quot;Month Awal&quot;, {stores} store{stores === 1 ? "" : "s"} total) vs <strong style={{ color: GOLD }}>{monthLabel}</strong>.</>
+          tf(t.b_scopeMonthHint, { stores, storesPlural: stores === 1 ? "" : "s", month: monthLabel || "" })
         ) : (
-          <>Pre-project snapshot (&quot;Month Awal&quot;, {stores} store{stores === 1 ? "" : "s"} total) vs average across
-          {" "}{months} month{months === 1 ? "" : "s"} of data — city-wide totals, not per store. Pick a specific Month
-          {" "}in the filter above to see that month&apos;s real numbers instead of an average.</>
+          tf(t.b_scopeAvgHint, { stores, storesPlural: stores === 1 ? "" : "s", months, monthsPlural: months === 1 ? "" : "s" })
         )}
       </div>
 
@@ -352,11 +358,11 @@ export default function BaselineChart({ data, scopeLabel, monthLabel }: { data: 
           in the Panasonic row instead of repeating in the All Brand row
           below. Hidden (not zeroed) on pre-migration-34 RPCs, same as the
           All Brand row itself. */}
-      {row3("Panasonic", "Panasonic", pana, marketShareCard)}
+      {row3(t.b_panasonic, t.b_panasonic, pana, marketShareCard)}
 
       {allData && (
         <div style={{ marginTop: 16 }}>
-          {row3("All Brand", "Every brand in the store", allData, categoryShareCard)}
+          {row3(t.b_allBrand, t.b_everyBrand, allData, categoryShareCard)}
         </div>
       )}
 
@@ -364,9 +370,11 @@ export default function BaselineChart({ data, scopeLabel, monthLabel }: { data: 
         <div style={{ marginTop: 12, fontSize: 11.5, color: "var(--muted)", display: "flex", gap: 6 }}>
           <span>⚠</span>
           <span>
-            Baseline ad spend is only {idrFull(baseline.ad_cost)} total (near zero — no ads program pre-project),
-            so Baseline ROAS ({pana.baseRoas ? pana.baseRoas.toFixed(1) + "×" : "—"}) is a near-zero-denominator artifact,
-            not a meaningful ratio to compare against Active ({pana.actRoas ? pana.actRoas.toFixed(1) + "×" : "—"}).
+            {tf(t.b_thinAdsWarning, {
+              amount: idrFull(baseline.ad_cost),
+              baseRoas: pana.baseRoas ? pana.baseRoas.toFixed(1) + "×" : "—",
+              activeRoas: pana.actRoas ? pana.actRoas.toFixed(1) + "×" : "—",
+            })}
           </span>
         </div>
       )}

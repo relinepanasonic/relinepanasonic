@@ -5,6 +5,8 @@ import {
   BodReportDocument, prevMonth, lastN,
   type Summary, type BaselineVsActive, type Scope,
 } from "@/lib/bodReportPdf";
+import { BOD_T, periodOrAllLabel } from "@/lib/bodLang";
+import type { Lang } from "@/lib/dashLang";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -23,13 +25,15 @@ export async function POST(req: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "AUTH_REQUIRED" }, { status: 401 });
 
-  const f = (await req.json()) as Partial<Scope>;
+  const f = (await req.json()) as Partial<Scope> & { lang?: Lang };
   const year = f.year ? Number(f.year) : null;
   const quarter = f.quarter || null;
   const month = f.month || null;
   const week = f.week || null;
   const city = f.city || null;
   const dealer = f.dealer || null;
+  const lang: Lang = f.lang === "en" || f.lang === "jp" ? f.lang : "id";
+  const t = BOD_T[lang];
 
   const args = (y: number | null, q: string | null, m: string | null, w: string | null) => ({
     p_year: y, p_quarter: q, p_month: m, p_week: w, p_city: city, p_store: dealer,
@@ -57,7 +61,8 @@ export async function POST(req: NextRequest) {
   ]);
 
   if (curRes.error || !curRes.data) {
-    return NextResponse.json({ error: curRes.error?.message || "Tidak ada data untuk filter ini" }, { status: 400 });
+    const noDataMsg = lang === "en" ? "No data for this filter" : lang === "jp" ? "このフィルターに該当するデータがありません" : "Tidak ada data untuk filter ini";
+    return NextResponse.json({ error: curRes.error?.message || noDataMsg }, { status: 400 });
   }
 
   const current = curRes.data as Summary;
@@ -66,31 +71,28 @@ export async function POST(req: NextRequest) {
   const trend = lastN(trendSummary?.monthly_sales || [], 6, upTo);
   const costRoasTrend = lastN(trendSummary?.cost_roas || [], 6, upTo);
 
-  const scopeLabel = dealer || city || "Seluruh Dealer Panasonic";
-  const periodLabel = [
-    month ? `${month} ${year ?? ""}`.trim()
-      : quarter ? `${quarter} ${year ?? ""}`.trim()
-      : year ? String(year)
-      : "Seluruh Periode",
-    week || null,
-  ].filter(Boolean).join(" · ");
+  const scopeLabel = dealer || city || t.scopeAllDealers;
+  const periodLabel = periodOrAllLabel(lang, f.year || "", quarter || "", month || "", week);
+  const dateLocale = lang === "en" ? "en-US" : lang === "jp" ? "ja-JP" : "id-ID";
 
   const buffer = await renderToBuffer(
     BodReportDocument({
       scopeLabel,
       periodLabel,
-      generatedAt: new Date().toLocaleDateString("id-ID", { day: "2-digit", month: "long", year: "numeric" }),
+      generatedAt: new Date().toLocaleDateString(dateLocale, { day: "2-digit", month: "long", year: "numeric" }),
       scope: { year: f.year || "", quarter: quarter || "", month: month || "", week: week || "", city: city || "", dealer: dealer || "" },
       current,
       previous: (prevRes.data as Summary) || null,
       trend,
       costRoasTrend,
       bva: (bvaRes.data as BaselineVsActive) || null,
+      lang,
     })
   );
 
   const safe = (v: string) => v.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "");
-  const filename = `Laporan-BOD-Panasonic_${safe(scopeLabel)}_${safe(periodLabel) || "semua"}.pdf`;
+  const filenamePrefix = lang === "en" ? "BOD-Report-Panasonic" : lang === "jp" ? "BOD-Report-Panasonic-JP" : "Laporan-BOD-Panasonic";
+  const filename = `${filenamePrefix}_${safe(scopeLabel)}_${safe(periodLabel) || "semua"}.pdf`;
 
   return new NextResponse(new Uint8Array(buffer), {
     status: 200,

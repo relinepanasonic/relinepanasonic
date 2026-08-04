@@ -10,6 +10,7 @@ import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
   ComposedChart, Line, LineChart, PieChart, Pie, Cell, Legend,
 } from "recharts";
+import { DASH_T, type Lang } from "@/lib/dashLang";
 
 const PALETTE = ["#c9a227", "#e8c84a", "#94a3b8", "#1e4a7a", "#3b6ea5", "#d4b94e", "#6b8cae", "#0f2040"];
 
@@ -22,7 +23,7 @@ const num = (n: number) => new Intl.NumberFormat("id-ID").format(Math.round(n ||
 const tooltip = { background: "#0f2040", border: "1px solid rgba(201,162,39,.3)", borderRadius: 8, color: "#e8edf8", fontSize: 12 };
 const axis = { fontSize: 10, fill: "#94a3b8" };
 
-function Empty() { return <div style={{ height: 280, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--muted)", fontSize: 13 }}>No data yet</div>; }
+function Empty({ lang = "id" }: { lang?: Lang }) { return <div style={{ height: 280, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--muted)", fontSize: 13 }}>{DASH_T[lang].c_noData}</div>; }
 
 // Gives bars a glossy top-to-bottom gradient + soft drop shadow — a cheap
 // "3D" look without a real perspective transform (which would break
@@ -42,8 +43,9 @@ function BarDefs({ id, color }: { id: string; color: string }) {
   );
 }
 
-export function BarsChart({ data, x, y, color }: { data: Record<string, unknown>[]; x: string; y: string; color: string }) {
-  if (!data.length) return <Empty />;
+export function BarsChart({ data, x, y, color, lang = "id" }: { data: Record<string, unknown>[]; x: string; y: string; color: string; lang?: Lang }) {
+  if (!data.length) return <Empty lang={lang} />;
+  const t = DASH_T[lang];
   const gid = `barGrad-${y}`;
   return (
     <div style={{ width: "100%", height: 300 }}>
@@ -53,7 +55,7 @@ export function BarsChart({ data, x, y, color }: { data: Record<string, unknown>
           <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,.05)" vertical={false} />
           <XAxis dataKey={x} tick={axis} interval={0} angle={-25} textAnchor="end" height={50} axisLine={false} tickLine={false} />
           <YAxis tick={axis} tickFormatter={(v) => idr(Number(v))} axisLine={false} tickLine={false} width={52} />
-          <Tooltip contentStyle={tooltip} formatter={(v) => [idr(Number(v)), "Sales"]} cursor={{ fill: "rgba(201,162,39,.05)" }} />
+          <Tooltip contentStyle={tooltip} formatter={(v) => [idr(Number(v)), t.c_sales]} cursor={{ fill: "rgba(201,162,39,.05)" }} />
           <Bar dataKey={y} fill={`url(#${gid})`} style={{ filter: `url(#${gid}-shadow)` }} radius={[6, 6, 2, 2]} maxBarSize={46} />
         </BarChart>
       </ResponsiveContainer>
@@ -93,7 +95,8 @@ function WrappedTick({ x, y, payload, width }: {
   );
 }
 
-export function HBarChart({ data }: { data: { name: string; sales: number }[] }) {
+export function HBarChart({ data, lang = "id" }: { data: { name: string; sales: number }[]; lang?: Lang }) {
+  const t = DASH_T[lang];
   const [gutter, setGutter] = useState(150);
   const boxRef = useRef<HTMLDivElement | null>(null);
 
@@ -112,7 +115,7 @@ export function HBarChart({ data }: { data: { name: string; sales: number }[] })
   const gid = "barGrad-hbar";
   return (
     <div ref={boxRef} style={{ width: "100%", height: 320 }}>
-      {!data.length ? <Empty /> : (
+      {!data.length ? <Empty lang={lang} /> : (
         <ResponsiveContainer>
           <BarChart layout="vertical" data={data} margin={{ left: 8, right: 16, top: 4, bottom: 4 }}>
             <defs>
@@ -128,7 +131,7 @@ export function HBarChart({ data }: { data: { name: string; sales: number }[] })
             <XAxis type="number" tick={axis} tickFormatter={(v) => idr(Number(v))} axisLine={false} tickLine={false} />
             <YAxis type="category" dataKey="name" width={gutter} axisLine={false} tickLine={false}
               interval={0} tick={<WrappedTick width={gutter} />} />
-            <Tooltip contentStyle={tooltip} formatter={(v) => [idr(Number(v)), "Sales"]} cursor={{ fill: "rgba(201,162,39,.05)" }} />
+            <Tooltip contentStyle={tooltip} formatter={(v) => [idr(Number(v)), t.c_sales]} cursor={{ fill: "rgba(201,162,39,.05)" }} />
             <Bar dataKey="sales" fill={`url(#${gid})`} style={{ filter: `url(#${gid}-shadow)` }} radius={[2, 6, 6, 2]} maxBarSize={20} />
           </BarChart>
         </ResponsiveContainer>
@@ -137,9 +140,9 @@ export function HBarChart({ data }: { data: { name: string; sales: number }[] })
   );
 }
 
-export function Donut({ data, colors }: { data: { name: string; value: number }[]; colors?: string[] }) {
+export function Donut({ data, colors, lang = "id" }: { data: { name: string; value: number }[]; colors?: string[]; lang?: Lang }) {
   const filtered = data.filter((x) => x.value > 0);
-  if (!filtered.length) return <Empty />;
+  if (!filtered.length) return <Empty lang={lang} />;
   const palette = colors || PALETTE;
   return (
     <div style={{ width: "100%", height: 300 }}>
@@ -168,8 +171,9 @@ export function Donut({ data, colors }: { data: { name: string; value: number }[
   );
 }
 
-export function CostRoas({ data }: { data: { label: string; cost: number; roas: number | null }[] }) {
-  if (!data.length) return <Empty />;
+export function CostRoas({ data, lang = "id" }: { data: { label: string; cost: number; roas: number | null }[]; lang?: Lang }) {
+  if (!data.length) return <Empty lang={lang} />;
+  const t = DASH_T[lang];
   return (
     <div style={{ width: "100%", height: 300 }}>
       <ResponsiveContainer>
@@ -184,7 +188,7 @@ export function CostRoas({ data }: { data: { label: string; cost: number; roas: 
           <XAxis dataKey="label" tick={axis} interval={0} angle={-25} textAnchor="end" height={50} axisLine={false} tickLine={false} />
           <YAxis yAxisId="l" tick={axis} tickFormatter={(v) => idr(Number(v))} axisLine={false} tickLine={false} width={52} />
           <YAxis yAxisId="r" orientation="right" tick={axis} axisLine={false} tickLine={false} width={32} />
-          <Tooltip contentStyle={tooltip} formatter={(v, n) => n === "roas" ? [(Number(v) || 0).toFixed(2) + "×", "ROAS"] : [idr(Number(v)), "Cost"]} cursor={{ fill: "rgba(201,162,39,.05)" }} />
+          <Tooltip contentStyle={tooltip} formatter={(v, n) => n === "roas" ? [(Number(v) || 0).toFixed(2) + "×", t.c_roas] : [idr(Number(v)), t.c_cost]} cursor={{ fill: "rgba(201,162,39,.05)" }} />
           <Bar yAxisId="l" dataKey="cost" fill="url(#costRoasBar)" style={{ filter: "url(#costRoasBar-shadow)" }} radius={[6, 6, 2, 2]} maxBarSize={40} />
           <Line yAxisId="r" type="monotone" dataKey="roas" stroke="#c9a227" strokeWidth={2.5}
                 dot={{ r: 3.5, fill: "#c9a227", stroke: "#0a1628", strokeWidth: 1 }}
@@ -195,8 +199,9 @@ export function CostRoas({ data }: { data: { label: string; cost: number; roas: 
   );
 }
 
-export function TrafficTrend({ data }: { data: { label: string; traffic: number; in_cart: number }[] }) {
-  if (!data.length) return <Empty />;
+export function TrafficTrend({ data, lang = "id" }: { data: { label: string; traffic: number; in_cart: number }[]; lang?: Lang }) {
+  if (!data.length) return <Empty lang={lang} />;
+  const t = DASH_T[lang];
   return (
     <div style={{ width: "100%", height: 300 }}>
       <ResponsiveContainer>
@@ -204,7 +209,7 @@ export function TrafficTrend({ data }: { data: { label: string; traffic: number;
           <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,.05)" vertical={false} />
           <XAxis dataKey="label" tick={axis} interval={0} angle={-25} textAnchor="end" height={50} axisLine={false} tickLine={false} />
           <YAxis tick={axis} tickFormatter={(v) => num(Number(v))} axisLine={false} tickLine={false} width={48} />
-          <Tooltip contentStyle={tooltip} formatter={(v, n) => [num(Number(v)), n === "in_cart" ? "In-Cart" : "Traffic"]} />
+          <Tooltip contentStyle={tooltip} formatter={(v, n) => [num(Number(v)), n === "in_cart" ? t.c_inCart : t.c_traffic]} />
           <Legend wrapperStyle={{ fontSize: 11 }} />
           <Line type="monotone" dataKey="traffic" stroke="#94a3b8" strokeWidth={2.5} dot={{ r: 3 }} />
           <Line type="monotone" dataKey="in_cart" stroke="#c9a227" strokeWidth={2.5} dot={{ r: 3 }} />
@@ -218,20 +223,21 @@ export function TrafficTrend({ data }: { data: { label: string; traffic: number;
 // Shape only borrowed as a reference from another project's funnel (a
 // wide-to-narrow stack of trapezoids with a % label per stage); colors and
 // data are this app's own, not a copy of that project's chart.
-const FUNNEL_STAGES: { key: "impression" | "click" | "in_cart" | "sales"; label: string }[] = [
-  { key: "impression", label: "Impression" },
-  { key: "click",      label: "Click" },
-  { key: "in_cart",    label: "In Cart" },
-  { key: "sales",      label: "Sales" },
+const FUNNEL_STAGES: { key: "impression" | "click" | "in_cart" | "sales" }[] = [
+  { key: "impression" }, { key: "click" }, { key: "in_cart" }, { key: "sales" },
 ];
 const FUNNEL_COLORS = ["#3b6ea5", "#2f5a8a", "#24476e", "#c9a227"]; // last stage gold, matches the app's accent
+function funnelLabel(t: (typeof DASH_T)["id"], key: (typeof FUNNEL_STAGES)[number]["key"]): string {
+  return key === "impression" ? t.c_funnelImpression : key === "click" ? t.c_funnelClick : key === "in_cart" ? t.c_funnelInCart : t.c_funnelSales;
+}
 
-function StageList({ values, style }: { values: number[]; style?: React.CSSProperties }) {
+function StageList({ values, style, lang = "id" }: { values: number[]; style?: React.CSSProperties; lang?: Lang }) {
+  const t = DASH_T[lang];
   return (
     <div style={{ display: "grid", gap: 14, minWidth: 0, ...style }}>
       {FUNNEL_STAGES.map((s, i) => (
         <div key={s.key}>
-          <div style={{ fontSize: 10, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".04em" }}>{s.label}</div>
+          <div style={{ fontSize: 10, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".04em" }}>{funnelLabel(t, s.key)}</div>
           <div style={{ fontSize: 17, fontWeight: 700, color: values[i] ? "#e8edf8" : "var(--muted)" }}>{num(values[i])}</div>
         </div>
       ))}
@@ -239,9 +245,10 @@ function StageList({ values, style }: { values: number[]; style?: React.CSSPrope
   );
 }
 
-export function ProductFunnel({ data }: { data?: { impression: number; click: number; in_cart: number; sales: number } }) {
+export function ProductFunnel({ data, lang = "id" }: { data?: { impression: number; click: number; in_cart: number; sales: number }; lang?: Lang }) {
+  const t = DASH_T[lang];
   const values = FUNNEL_STAGES.map((s) => (data ? data[s.key] || 0 : 0));
-  if (!data || values.every((v) => !v)) return <Empty />;
+  if (!data || values.every((v) => !v)) return <Empty lang={lang} />;
 
   // A funnel is only a funnel if the TOP stage has data. Impression/Click
   // are newer columns (Supabase Migration/40) than the rest, so a period
@@ -253,11 +260,9 @@ export function ProductFunnel({ data }: { data?: { impression: number; click: nu
   if (partial) {
     return (
       <div style={{ width: "100%", height: 280, display: "flex", flexDirection: "column", justifyContent: "center", gap: 14 }}>
-        <StageList values={values} />
+        <StageList values={values} lang={lang} />
         <div style={{ fontSize: 11, color: "var(--muted)", lineHeight: 1.5, borderTop: "1px solid rgba(255,255,255,.07)", paddingTop: 10 }}>
-          Funnel shape hidden — some stages have no data yet, so the proportions would be meaningless.
-          Impression &amp; Click are read from the newer SPOS template columns
-          (<em>Jumlah Produk Dilihat</em> / <em>Produk Diklik</em>); they fill in as SPOS files are re-uploaded.
+          {t.c_funnelPartialNote}
         </div>
       </div>
     );
@@ -319,13 +324,11 @@ export function ProductFunnel({ data }: { data?: { impression: number; click: nu
             );
           })}
         </svg>
-        <StageList values={values} />
+        <StageList values={values} lang={lang} />
       </div>
       {nonMonotonic && (
         <div style={{ fontSize: 10.5, color: "var(--muted)", lineHeight: 1.45, marginTop: 8, paddingTop: 8, borderTop: "1px solid rgba(255,255,255,.07)" }}>
-          A later stage exceeds an earlier one. Periods uploaded with the older SPOS template have no true
-          impression/click columns — those fall back to <em>Halaman Produk Dilihat</em> (page views) and
-          <em> Klik Pencarian</em> (search clicks only), which undercounts real clicks.
+          {t.c_funnelNonMonotonicNote}
         </div>
       )}
     </div>

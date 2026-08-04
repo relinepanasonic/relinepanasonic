@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import nextDynamic from "next/dynamic";
 import { ArrowUp, ArrowDown, ArrowUpDown, Download } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { DASH_T, LANGS, getStoredLang, setStoredLang, tf, type Lang } from "@/lib/dashLang";
 
 export const dynamic = "force-dynamic";
 
@@ -83,7 +84,7 @@ const compact = (n: number) => {
 const num = (n: number) => new Intl.NumberFormat("id-ID").format(Math.round(n || 0));
 
 // Collapse the full brand mix down to Panasonic vs everything else.
-function panasonicVsOther(brandShare: { brand: string; sales: number }[]) {
+function panasonicVsOther(brandShare: { brand: string; sales: number }[], otherLabel: string) {
   let panasonic = 0, other = 0;
   for (const b of brandShare) {
     if ((b.brand || "").toLowerCase() === "panasonic") panasonic += b.sales;
@@ -91,7 +92,7 @@ function panasonicVsOther(brandShare: { brand: string; sales: number }[]) {
   }
   return [
     { name: "Panasonic", value: panasonic },
-    { name: "Other",     value: other },
+    { name: otherLabel,  value: other },
   ];
 }
 
@@ -109,20 +110,26 @@ export default function DashboardPage() {
   const [baseline, setBaseline] = useState<BaselineVsActive | null>(null);
   const [dealerSort, setDealerSort] = useState<{ key: DealerSortKey; dir: SortDir } | null>(null);
   const [reporting, setReporting] = useState(false);
+  const [lang, setLang] = useState<Lang>("id");
+  useEffect(() => { setLang(getStoredLang()); }, []);
+  function changeLang(l: Lang) { setLang(l); setStoredLang(l); }
+  const s = DASH_T[lang];
 
   // Renders the BOD deck for whatever is currently selected in the filter
-  // bar — same scope the charts below are showing.
+  // bar — same scope the charts below are showing. `lang` travels with the
+  // request so the PDF comes back in whatever language the dashboard is
+  // currently displaying.
   async function downloadReport() {
     setReporting(true);
     try {
       const res = await fetch("/api/reports/bod", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(sel),
+        body: JSON.stringify({ ...sel, lang }),
       });
       if (!res.ok) {
         const j = await res.json().catch(() => ({}));
-        alert(j.error || "Gagal membuat laporan.");
+        alert(j.error || s.f_reportFailed);
         return;
       }
       const blob = await res.blob();
@@ -271,10 +278,10 @@ export default function DashboardPage() {
             boxShadow: "0 30px 80px rgba(0,0,0,.6)",
           }}>
             <div className="rep-ring" />
-            <div style={{ color: "#fff", fontWeight: 800, fontSize: 16, letterSpacing: .2 }}>Building Report</div>
+            <div style={{ color: "#fff", fontWeight: 800, fontSize: 16, letterSpacing: .2 }}>{s.f_buildingReport}</div>
             <div className="rep-bar"><span /></div>
             <div style={{ color: "var(--muted)", fontSize: 11.5, textAlign: "center", maxWidth: 260, lineHeight: 1.5 }}>
-              Menyusun 7 halaman PDF (16:9) dari filter yang dipilih — mohon tunggu sebentar.
+              {s.f_buildingNote}
             </div>
           </div>
         </div>,
@@ -283,25 +290,39 @@ export default function DashboardPage() {
 
       {/* Filters — matching GAS: Year / Quarter / Month / Week / City / Dealer */}
       <div className="filterbar">
-        <Sel label="Year"    value={sel.year}    onChange={(v) => setSel((s) => ({ ...s, year: v }))}    opts={filters.years.map(String)}    all="All Years" />
-        <Sel label="Quarter" value={sel.quarter} onChange={(v) => setSel((s) => ({ ...s, quarter: v, month: QUARTER_MONTHS[v]?.includes(s.month) ? s.month : "" }))} opts={filters.quarters} all="All Quarters" />
-        <Sel label="Month"   value={sel.month}   onChange={(v) => setSel((s) => ({ ...s, month: v }))}   opts={sel.quarter ? filters.months.filter((m) => QUARTER_MONTHS[sel.quarter]?.includes(m)) : filters.months}   all="All Months" />
-        <Sel label="Week"    value={sel.week}    onChange={(v) => setSel((s) => ({ ...s, week: v }))}    opts={filters.weeks}                all="All Weeks" />
-        <Sel label="City"    value={sel.city}    onChange={(v) => setSel((s) => ({ ...s, city: v, dealer: dealersInCity(filters.dealers, v).some((d) => d.value === s.dealer) ? s.dealer : "" }))} opts={filters.cities} all="All Cities" />
-        <Sel label="Dealer"  value={sel.dealer}  onChange={(v) => setSel((s) => ({ ...s, dealer: v }))}  opts={dealersInCity(filters.dealers, sel.city).map((d) => d.value)} all="All Dealers" />
-        <button className="btn-ghost" onClick={() => setSel({ year: "", quarter: "", month: "", week: "", city: "", dealer: "" })}>Reset</button>
+        <Sel label={s.f_year}    value={sel.year}    onChange={(v) => setSel((s) => ({ ...s, year: v }))}    opts={filters.years.map(String)}    all={s.f_allYears} />
+        <Sel label={s.f_quarter} value={sel.quarter} onChange={(v) => setSel((s) => ({ ...s, quarter: v, month: QUARTER_MONTHS[v]?.includes(s.month) ? s.month : "" }))} opts={filters.quarters} all={s.f_allQuarters} />
+        <Sel label={s.f_month}   value={sel.month}   onChange={(v) => setSel((s) => ({ ...s, month: v }))}   opts={sel.quarter ? filters.months.filter((m) => QUARTER_MONTHS[sel.quarter]?.includes(m)) : filters.months}   all={s.f_allMonths} />
+        <Sel label={s.f_week}    value={sel.week}    onChange={(v) => setSel((s) => ({ ...s, week: v }))}    opts={filters.weeks}                all={s.f_allWeeks} />
+        <Sel label={s.f_city}    value={sel.city}    onChange={(v) => setSel((s) => ({ ...s, city: v, dealer: dealersInCity(filters.dealers, v).some((d) => d.value === s.dealer) ? s.dealer : "" }))} opts={filters.cities} all={s.f_allCities} />
+        <Sel label={s.f_dealer}  value={sel.dealer}  onChange={(v) => setSel((s) => ({ ...s, dealer: v }))}  opts={dealersInCity(filters.dealers, sel.city).map((d) => d.value)} all={s.f_allDealers} />
+        <button className="btn-ghost" onClick={() => setSel({ year: "", quarter: "", month: "", week: "", city: "", dealer: "" })}>{s.f_reset}</button>
         {loading && (
           <span style={{ alignSelf: "center", display: "flex", alignItems: "center", gap: 6, color: "var(--gold)", fontSize: 12 }}>
             <span style={{ display: "inline-block", width: 14, height: 14, borderRadius: "50%", border: "2px solid rgba(201,162,39,.3)", borderTopColor: "#c9a227", animation: "spin .7s linear infinite" }} />
-            Memuat data…
+            {s.f_loading}
           </span>
         )}
+        {/* Language switcher — persisted to localStorage, travels with the
+            BOD PDF request so "Report" downloads in whatever's selected. */}
+        <div style={{ display: "flex", gap: 2, alignSelf: "center", background: "rgba(10,22,40,.4)", border: "1px solid var(--card-border)", borderRadius: 8, padding: 2 }}>
+          {LANGS.map((l) => (
+            <button key={l.code} onClick={() => changeLang(l.code)}
+              style={{
+                padding: "4px 10px", fontSize: 11.5, fontWeight: 700, borderRadius: 6, border: "none", cursor: "pointer",
+                background: lang === l.code ? "linear-gradient(135deg,var(--gold),var(--gold-soft))" : "transparent",
+                color: lang === l.code ? "var(--navy-deep)" : "var(--text-2)",
+              }}>
+              {l.label}
+            </button>
+          ))}
+        </div>
         {/* marginLeft:auto parks this at the right edge of the filter row */}
         <button
           className="btn-gold"
           onClick={downloadReport}
           disabled={reporting}
-          title="Unduh laporan PDF 16:9 sesuai filter yang dipilih"
+          title={s.f_reportTooltip}
           style={{
             marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 6,
             padding: "7px 14px", fontSize: 12.5, fontWeight: 700, borderRadius: 9,
@@ -311,7 +332,7 @@ export default function DashboardPage() {
           {reporting
             ? <span style={{ width: 14, height: 14, borderRadius: "50%", border: "2px solid rgba(18,35,68,.35)", borderTopColor: "var(--navy-deep)", animation: "spin .7s linear infinite" }} />
             : <Download size={14} strokeWidth={2.5} />}
-          {reporting ? "Building Report" : "Report"}
+          {reporting ? s.f_buildingReport : s.f_report}
         </button>
       </div>
 
@@ -321,63 +342,63 @@ export default function DashboardPage() {
         {loading && !d && (
           <div style={{ position: "absolute", inset: 0, zIndex: 10, background: "rgba(10,22,40,.6)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", borderRadius: 12, gap: 12, backdropFilter: "blur(3px)" }}>
             <div style={{ width: 40, height: 40, borderRadius: "50%", border: "3px solid rgba(201,162,39,.25)", borderTopColor: "#c9a227", animation: "spin .8s linear infinite" }} />
-            <span style={{ color: "var(--gold)", fontSize: 13 }}>Memuat data…</span>
+            <span style={{ color: "var(--gold)", fontSize: 13 }}>{s.f_loading}</span>
           </div>
         )}
         <div className="kpi-grid" style={{ opacity: loading && d ? 0.55 : 1, transition: "opacity .2s" }}>
-          <div className="kpi kpi-hero"><div className="kpi-icon">💰</div><div className="lbl">Panasonic Sales</div><div className="val">{!k && loading ? <span className="ske" style={{ width: 140, height: 36 }} /> : k ? idr(k.sales) : "—"}</div><div className="kpi-sub">{k ? idrFull(k.sales) : "SPOS · Siap Dikirim"}</div></div>
-          <div className="kpi"><div className="kpi-icon">🏪</div><div className="lbl">Total GMV</div><div className="val">{!k && loading ? <span className="ske" style={{ width: 130, height: 36 }} /> : k ? idr(k.gmv) : "—"}</div><div className="kpi-sub">{k ? idrFull(k.gmv) : "Performa"}</div></div>
-          <div className="kpi"><div className="kpi-icon">👁</div><div className="lbl">Pana Traffic</div><div className="val">{!k && loading ? <span className="ske" style={{ width: 80, height: 36 }} /> : k ? compact(k.traffic) : "—"}</div></div>
-          <div className="kpi"><div className="kpi-icon">🛒</div><div className="lbl">Pana In-Cart</div><div className="val">{!k && loading ? <span className="ske" style={{ width: 80, height: 36 }} /> : k ? compact(k.in_cart) : "—"}</div><div className="kpi-sub">{k ? cartRate.toFixed(1) + "% cart rate" : ""}</div></div>
-          <div className="kpi"><div className="kpi-icon">📣</div><div className="lbl">Ads Cost</div><div className="val">{!k && loading ? <span className="ske" style={{ width: 110, height: 36 }} /> : k ? idr(k.ad_cost) : "—"}</div></div>
-          <div className="kpi kpi-roas"><div className="kpi-icon">⚡</div><div className="lbl">ROAS</div><div className="val">{!k && loading ? <span className="ske" style={{ width: 70, height: 36 }} /> : k && k.roas ? k.roas.toFixed(2) + "×" : "—"}</div><div className="roas-bar"><div className="roas-fill" style={{ width: roasPct + "%" }} /></div></div>
+          <div className="kpi kpi-hero"><div className="kpi-icon">💰</div><div className="lbl">{s.k_panasonicSales}</div><div className="val">{!k && loading ? <span className="ske" style={{ width: 140, height: 36 }} /> : k ? idr(k.sales) : "—"}</div><div className="kpi-sub">{k ? idrFull(k.sales) : s.k_panasonicSalesSub}</div></div>
+          <div className="kpi"><div className="kpi-icon">🏪</div><div className="lbl">{s.k_totalGmv}</div><div className="val">{!k && loading ? <span className="ske" style={{ width: 130, height: 36 }} /> : k ? idr(k.gmv) : "—"}</div><div className="kpi-sub">{k ? idrFull(k.gmv) : s.k_totalGmvSub}</div></div>
+          <div className="kpi"><div className="kpi-icon">👁</div><div className="lbl">{s.k_panaTraffic}</div><div className="val">{!k && loading ? <span className="ske" style={{ width: 80, height: 36 }} /> : k ? compact(k.traffic) : "—"}</div></div>
+          <div className="kpi"><div className="kpi-icon">🛒</div><div className="lbl">{s.k_panaInCart}</div><div className="val">{!k && loading ? <span className="ske" style={{ width: 80, height: 36 }} /> : k ? compact(k.in_cart) : "—"}</div><div className="kpi-sub">{k ? cartRate.toFixed(1) + "% " + s.k_cartRate : ""}</div></div>
+          <div className="kpi"><div className="kpi-icon">📣</div><div className="lbl">{s.k_adsCost}</div><div className="val">{!k && loading ? <span className="ske" style={{ width: 110, height: 36 }} /> : k ? idr(k.ad_cost) : "—"}</div></div>
+          <div className="kpi kpi-roas"><div className="kpi-icon">⚡</div><div className="lbl">{s.k_roas}</div><div className="val">{!k && loading ? <span className="ske" style={{ width: 70, height: 36 }} /> : k && k.roas ? k.roas.toFixed(2) + "×" : "—"}</div><div className="roas-bar"><div className="roas-fill" style={{ width: roasPct + "%" }} /></div></div>
         </div>
       </div>
 
       {/* Monthly sales */}
       <div className="row">
-        <Panel title="Panasonic Monthly Sales" hint="Penjualan Siap Dikirim per bulan · SPOS">
-          <BarsChart data={byMonth(d?.monthly_sales || [])} x="label" y="sales" color="#c9a227" />
+        <Panel title={s.p_monthlySalesTitle} hint={s.p_monthlySalesHint}>
+          <BarsChart data={byMonth(d?.monthly_sales || [])} x="label" y="sales" color="#c9a227" lang={lang} />
         </Panel>
       </div>
 
       {/* Top products + brand share */}
       <div className="row c2">
-        <Panel title="Top 10 Best-Selling Products" hint="Sales · parent rows only">
-          <HBarChart data={d?.top_products || []} />
+        <Panel title={s.p_topProductsTitle} hint={s.p_topProductsHint}>
+          <HBarChart data={d?.top_products || []} lang={lang} />
         </Panel>
-        <Panel title="Brand Share of Sales" hint="Panasonic vs Other · SPOS">
-          <Donut data={panasonicVsOther(d?.brand_share || [])} colors={["#c9a227", "#3b6ea5"]} />
+        <Panel title={s.p_brandShareTitle} hint={s.p_brandShareHint}>
+          <Donut data={panasonicVsOther(d?.brand_share || [], s.b_otherBrands)} colors={["#c9a227", "#3b6ea5"]} lang={lang} />
         </Panel>
       </div>
 
       {/* Cost vs ROAS + traffic trend */}
       <div className="row c2b">
-        <Panel title="Monthly Ads Cost vs ROAS" hint="Columns = cost · line = ROAS">
-          <CostRoas data={byMonth(d?.cost_roas || [])} />
+        <Panel title={s.p_costRoasTitle} hint={s.p_costRoasHint}>
+          <CostRoas data={byMonth(d?.cost_roas || [])} lang={lang} />
         </Panel>
-        <Panel title="Traffic vs Add-to-Cart" hint="Funnel trend per month">
-          <TrafficTrend data={byMonth(d?.traffic_trend || [])} />
+        <Panel title={s.p_trafficTrendTitle} hint={s.p_trafficTrendHint}>
+          <TrafficTrend data={byMonth(d?.traffic_trend || [])} lang={lang} />
         </Panel>
       </div>
 
       {/* Store monthly + product funnel */}
       <div className="row c2">
-        <Panel title="Store Sales by Month" hint="All brands GMV · Performa">
-          <BarsChart data={byMonth(d?.store_monthly || [])} x="label" y="gmv" color="#1e4a7a" />
+        <Panel title={s.p_storeMonthlyTitle} hint={s.p_storeMonthlyHint}>
+          <BarsChart data={byMonth(d?.store_monthly || [])} x="label" y="gmv" color="#1e4a7a" lang={lang} />
         </Panel>
-        <Panel title="Product Funnel" hint="Panasonic · SPOS · Impression → Click → In Cart → Sales">
-          <ProductFunnel data={d?.funnel} />
+        <Panel title={s.p_productFunnelTitle} hint={s.p_productFunnelHint}>
+          <ProductFunnel data={d?.funnel} lang={lang} />
         </Panel>
       </div>
 
       {/* Category + category share */}
       <div className="row c2">
-        <Panel title="Sales by Category" hint="SPOS · product type">
-          <BarsChart data={d?.by_category || []} x="category" y="sales" color="#e8c84a" />
+        <Panel title={s.p_salesByCategoryTitle} hint={s.p_salesByCategoryHint}>
+          <BarsChart data={d?.by_category || []} x="category" y="sales" color="#e8c84a" lang={lang} />
         </Panel>
-        <Panel title="Category Share (%)" hint="Sales mix by category">
-          <Donut data={(d?.by_category || []).map((c) => ({ name: c.category, value: c.sales }))} />
+        <Panel title={s.p_categoryShareTitle} hint={s.p_categoryShareHint}>
+          <Donut data={(d?.by_category || []).map((c) => ({ name: c.category, value: c.sales }))} lang={lang} />
         </Panel>
       </div>
 
@@ -385,27 +406,28 @@ export default function DashboardPage() {
       <div className="row">
         <BaselineChart
           data={baseline}
-          scopeLabel={sel.dealer || sel.city || "All Cities"}
+          scopeLabel={sel.dealer || sel.city || s.f_allCities}
           monthLabel={sel.month ? `${sel.month}${sel.year ? " " + sel.year : ""}` : null}
+          lang={lang}
         />
       </div>
 
       {/* Dealer table */}
       <div className="panel">
-        <h3>Detail Data per Dealer</h3>
-        <div className="hint">{dealerSort ? `Sorted by ${dealerSort.key} (${dealerSort.dir})` : "Sorted by sales · click a column to sort"}</div>
+        <h3>{s.t_title}</h3>
+        <div className="hint">{dealerSort ? tf(s.t_sortedBy, { key: dealerSort.key, dir: dealerSort.dir }) : s.t_sortHint}</div>
         <div className="tbl-wrap" style={{ maxHeight: 440 }}>
           <table className="tbl">
             <thead><tr>
-              <SortableTh label="Dealer" sortKey="store_name" sort={dealerSort} onSort={toggleDealerSort} align="left" />
-              <th style={{ width: 90 }}>Trend</th>
-              <SortableTh label="City" sortKey="city" sort={dealerSort} onSort={toggleDealerSort} align="left" />
-              <SortableTh label="Sales" sortKey="sales" sort={dealerSort} onSort={toggleDealerSort} />
-              <SortableTh label="Traffic" sortKey="traffic" sort={dealerSort} onSort={toggleDealerSort} />
-              <SortableTh label="In-Cart" sortKey="in_cart" sort={dealerSort} onSort={toggleDealerSort} />
-              <SortableTh label="Cart Rate" sortKey="cartRate" sort={dealerSort} onSort={toggleDealerSort} />
-              <SortableTh label="Ads Cost" sortKey="ad_cost" sort={dealerSort} onSort={toggleDealerSort} />
-              <SortableTh label="ROAS" sortKey="roas" sort={dealerSort} onSort={toggleDealerSort} />
+              <SortableTh label={s.t_dealer} sortKey="store_name" sort={dealerSort} onSort={toggleDealerSort} align="left" />
+              <th style={{ width: 90 }}>{s.t_trend}</th>
+              <SortableTh label={s.t_city} sortKey="city" sort={dealerSort} onSort={toggleDealerSort} align="left" />
+              <SortableTh label={s.t_sales} sortKey="sales" sort={dealerSort} onSort={toggleDealerSort} />
+              <SortableTh label={s.t_traffic} sortKey="traffic" sort={dealerSort} onSort={toggleDealerSort} />
+              <SortableTh label={s.t_inCart} sortKey="in_cart" sort={dealerSort} onSort={toggleDealerSort} />
+              <SortableTh label={s.t_cartRate} sortKey="cartRate" sort={dealerSort} onSort={toggleDealerSort} />
+              <SortableTh label={s.t_adsCost} sortKey="ad_cost" sort={dealerSort} onSort={toggleDealerSort} />
+              <SortableTh label={s.t_roas} sortKey="roas" sort={dealerSort} onSort={toggleDealerSort} />
             </tr></thead>
             <tbody>
               {sortedDealers.map((r, i) => (
@@ -421,7 +443,7 @@ export default function DashboardPage() {
                   <td className="num"><span className={`pill ${!r.roas ? "" : r.roas >= 3 ? "good" : r.roas >= 1 ? "warn" : "bad"}`}>{r.roas ? r.roas.toFixed(2) + "×" : "—"}</span></td>
                 </tr>
               ))}
-              {sortedDealers.length === 0 && <tr><td colSpan={9} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>No data yet</td></tr>}
+              {sortedDealers.length === 0 && <tr><td colSpan={9} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>{s.t_noData}</td></tr>}
             </tbody>
           </table>
         </div>

@@ -4,6 +4,8 @@ import {
 } from "@react-pdf/renderer";
 import { Fragment } from "react";
 import { MONTH_LIST } from "@/lib/parse";
+import type { Lang } from "@/lib/dashLang";
+import { BOD_T, tf, buildNarrative, buildInsightCards, buildActions } from "@/lib/bodLang";
 
 // =====================================================================
 // Panasonic BOD report — landscape 16:9 slide deck.
@@ -141,8 +143,8 @@ function niceMax(v: number) {
   return Math.ceil(v / mag) * mag;
 }
 
-function BarsSvg({ data, w, h, highlightLast = true }: { data: { label: string; value: number }[]; w: number; h: number; highlightLast?: boolean }) {
-  if (!data.length) return <Empty w={w} h={h} />;
+function BarsSvg({ data, w, h, highlightLast = true, lang = "id" }: { data: { label: string; value: number }[]; w: number; h: number; highlightLast?: boolean; lang?: Lang }) {
+  if (!data.length) return <Empty w={w} h={h} lang={lang} />;
   const padL = 46, padR = 8, padT = 16, padB = 18;
   const cw = w - padL - padR, ch = h - padT - padB;
   const max = niceMax(Math.max(...data.map((d) => d.value), 1));
@@ -176,8 +178,8 @@ function BarsSvg({ data, w, h, highlightLast = true }: { data: { label: string; 
   );
 }
 
-function CostRoasSvg({ data, w, h }: { data: { label: string; cost: number; roas: number | null }[]; w: number; h: number }) {
-  if (!data.length) return <Empty w={w} h={h} />;
+function CostRoasSvg({ data, w, h, lang = "id" }: { data: { label: string; cost: number; roas: number | null }[]; w: number; h: number; lang?: Lang }) {
+  if (!data.length) return <Empty w={w} h={h} lang={lang} />;
   const padL = 40, padR = 34, padT = 16, padB = 18;
   const cw = w - padL - padR, ch = h - padT - padB;
   const maxC = niceMax(Math.max(...data.map((d) => d.cost), 1));
@@ -213,8 +215,8 @@ function CostRoasSvg({ data, w, h }: { data: { label: string; cost: number; roas
   );
 }
 
-function FunnelSvg({ rows, w, h }: { rows: { label: string; value: number; note?: string }[]; w: number; h: number }) {
-  if (!rows.length || !rows[0].value) return <Empty w={w} h={h} />;
+function FunnelSvg({ rows, w, h, lang = "id" }: { rows: { label: string; value: number; note?: string }[]; w: number; h: number; lang?: Lang }) {
+  if (!rows.length || !rows[0].value) return <Empty w={w} h={h} lang={lang} />;
   const padL = 58, padR = 8;
   const barH = 15, gap = (h - rows.length * barH) / (rows.length + 1);
   const cw = w - padL - padR - 130;
@@ -241,7 +243,7 @@ function FunnelSvg({ rows, w, h }: { rows: { label: string; value: number; note?
 
 // Donut drawn from two arc paths; a 100%/0% split degenerates as an arc,
 // so those render as plain rings instead.
-function DonutSvg({ share, w, h }: { share: number; w: number; h: number }) {
+function DonutSvg({ share, w, h, lang = "id" }: { share: number; w: number; h: number; lang?: Lang }) {
   const cxp = w / 2, cyp = h / 2;
   const R = Math.min(w, h) / 2 - 4, r = R * 0.62;
   const frac = Math.max(0, Math.min(1, share));
@@ -273,15 +275,15 @@ function DonutSvg({ share, w, h }: { share: number; w: number; h: number }) {
     <Svg width={w} height={h}>
       {body}
       <Text x={cxp} y={cyp + 2} style={{ fontSize: 17, fill: NAVY, textAnchor: "middle", fontFamily: "Times-Bold" } as never}>{pct(frac * 100)}</Text>
-      <Text x={cxp} y={cyp + 14} style={{ fontSize: 6.5, fill: MUTED, textAnchor: "middle" } as never}>Panasonic</Text>
+      <Text x={cxp} y={cyp + 14} style={{ fontSize: 6.5, fill: MUTED, textAnchor: "middle" } as never}>{BOD_T[lang].donutPanasonic}</Text>
     </Svg>
   );
 }
 
-function Empty({ w, h }: { w: number; h: number }) {
+function Empty({ w, h, lang = "id" }: { w: number; h: number; lang?: Lang }) {
   return (
     <Svg width={w} height={h}>
-      <Text x={w / 2} y={h / 2} style={{ fontSize: 8, fill: MUTED, textAnchor: "middle" } as never}>Data tidak tersedia untuk filter ini</Text>
+      <Text x={w / 2} y={h / 2} style={{ fontSize: 8, fill: MUTED, textAnchor: "middle" } as never}>{BOD_T[lang].chartEmpty}</Text>
     </Svg>
   );
 }
@@ -326,26 +328,6 @@ function KpiCard({ label, value, sub, delta, hero, width, height }: {
   );
 }
 
-/* ---------------- narrative ---------------- */
-function buildNarrative(cur: Kpis, prev: Kpis | null, periodLabel: string, scopeLabel: string): string {
-  const dSales = pctDelta(cur.sales, prev?.sales);
-  const dAds = pctDelta(cur.ad_cost, prev?.ad_cost);
-  const share = cur.gmv > 0 ? (cur.sales / cur.gmv) * 100 : null;
-  const parts: string[] = [];
-  parts.push(`Pada ${periodLabel}, penjualan Panasonic di ${scopeLabel} mencapai ${rp(cur.sales)}${dSales != null ? ` — ${dSales >= 0 ? "naik" : "turun"} ${pct(Math.abs(dSales))} dibanding periode sebelumnya` : ""}.`);
-  if (dAds != null && dSales != null) {
-    parts.push(dAds < 0 && dSales > 0
-      ? `Pertumbuhan ini efisien: biaya iklan justru turun ${pct(Math.abs(dAds))} menjadi ${rp(cur.ad_cost)}, sehingga ROAS berada di ${roasFmt(cur.roas)}.`
-      : `Biaya iklan ${dAds >= 0 ? "naik" : "turun"} ${pct(Math.abs(dAds))} menjadi ${rp(cur.ad_cost)}, dengan ROAS ${roasFmt(cur.roas)}.`);
-  } else {
-    parts.push(`Biaya iklan tercatat ${rp(cur.ad_cost)} dengan ROAS ${roasFmt(cur.roas)}.`);
-  }
-  const atc = cur.traffic > 0 ? (cur.in_cart / cur.traffic) * 100 : 0;
-  parts.push(`Funnel mencatat ${cnt(cur.traffic)} kunjungan produk dan ${cnt(cur.in_cart)} tambah-ke-keranjang (rasio ${pct(atc)}).`);
-  if (share != null) parts.push(`Panasonic menyumbang ${pct(share)} dari total penjualan toko dealer (${rp(cur.gmv)}).`);
-  return parts.join(" ");
-}
-
 /* ==================================================================== */
 export function BodReportDocument(props: {
   scopeLabel: string;
@@ -357,8 +339,10 @@ export function BodReportDocument(props: {
   trend: MonthPoint[];
   costRoasTrend: CostRoasPoint[];
   bva: BaselineVsActive | null;
+  lang?: Lang;
 }) {
-  const { scopeLabel, periodLabel, generatedAt, current, previous, trend, costRoasTrend, bva } = props;
+  const { scopeLabel, periodLabel, generatedAt, current, previous, trend, costRoasTrend, bva, lang = "id" } = props;
+  const t = BOD_T[lang];
   const k = current.kpis, pk = previous?.kpis ?? null;
 
   const panaSales = current.brand_share.find((b) => (b.brand || "").toLowerCase() === "panasonic")?.sales ?? 0;
@@ -370,11 +354,11 @@ export function BodReportDocument(props: {
   const products = (current.top_products || []).slice(0, 10);
   const prodTotal = products.reduce((a, p) => a + p.sales, 0) || 1;
 
-  const footL = "Reline · Panasonic E-Commerce Dealer Program";
-  const footR = "Sumber: dashboard Reline (SPOS · Performa · Ads) · ROAS = Penjualan Panasonic ÷ Biaya Iklan";
+  const footL = t.footL;
+  const footR = t.footR;
 
   return (
-    <Document title={`Laporan BOD Panasonic — ${scopeLabel} — ${periodLabel}`}>
+    <Document title={`${t.cover_reportLine} — ${scopeLabel} — ${periodLabel}`}>
       {/* ============ COVER ============ */}
       <Page size={PAGE_SIZE} style={{ width: PAGE_W, height: PAGE_H, fontFamily: "Helvetica", backgroundColor: NAVY }}>
         <View style={{ position: "absolute", top: 0, right: 0, width: 190, height: PAGE_H, backgroundColor: NAVY_DEEP }} />
@@ -382,91 +366,91 @@ export function BodReportDocument(props: {
         <View style={{ paddingHorizontal: 64, paddingTop: 54 }}>
           <Text style={{ fontFamily: "Times-Bold", fontSize: 22, color: WHITE }}>Reline</Text>
           <Text style={{ fontSize: 7.5, color: GOLD_SOFT, letterSpacing: 2.2, marginTop: 3, fontFamily: "Helvetica-Bold" }}>
-            PANASONIC E-COMMERCE PERFORMANCE
+            {t.cover_kicker}
           </Text>
         </View>
         <View style={{ paddingHorizontal: 64, marginTop: 108 }}>
-          <Text style={{ fontSize: 10, color: GOLD, letterSpacing: 1.5, fontFamily: "Helvetica-Bold" }}>LAPORAN PERFORMA — BOARD OF DIRECTORS</Text>
+          <Text style={{ fontSize: 10, color: GOLD, letterSpacing: 1.5, fontFamily: "Helvetica-Bold" }}>{t.cover_reportLine}</Text>
           <Text style={{ fontFamily: "Times-Bold", fontSize: 42, color: WHITE, marginTop: 14 }}>{clip(scopeLabel, 36)}</Text>
           <Text style={{ fontSize: 13, color: "#c3cee3", marginTop: 12 }}>
-            {periodLabel}   ·   Fokus Brand: Panasonic
+            {periodLabel}   ·   {t.cover_focusBrand}
           </Text>
         </View>
         <View style={{ position: "absolute", left: 64, bottom: 62 }}>
           <View style={{ width: 420, height: 1, backgroundColor: GOLD, opacity: 0.65, marginBottom: 13 }} />
-          <Text style={{ fontSize: 9.5, color: "#c3cee3" }}>Disiapkan untuk:  Panasonic — Board of Directors</Text>
-          <Text style={{ fontSize: 9.5, color: "#c3cee3", marginTop: 5 }}>Kanal:  Shopee   ·   Program Dealer E-Commerce</Text>
-          <Text style={{ fontSize: 8, color: MUTED, marginTop: 9 }}>Dibuat {generatedAt}</Text>
+          <Text style={{ fontSize: 9.5, color: "#c3cee3" }}>{t.cover_preparedFor}</Text>
+          <Text style={{ fontSize: 9.5, color: "#c3cee3", marginTop: 5 }}>{t.cover_channel}</Text>
+          <Text style={{ fontSize: 8, color: MUTED, marginTop: 9 }}>{tf(t.cover_generated, { date: generatedAt })}</Text>
         </View>
       </Page>
 
-      {/* ============ 01 RINGKASAN EKSEKUTIF ============ */}
+      {/* ============ 01 EXECUTIVE SUMMARY ============ */}
       <Page size={PAGE_SIZE} style={s.page}>
-        <Header no="01" title="Ringkasan Eksekutif" />
+        <Header no="01" title={t.sec1_title} />
         <View style={{ height: 82, backgroundColor: NAVY, borderRadius: 8, padding: 13, marginBottom: 13 }}>
-          <Text style={{ fontSize: 7.5, color: GOLD_SOFT, fontFamily: "Helvetica-Bold", letterSpacing: 1 }}>RINGKASAN</Text>
+          <Text style={{ fontSize: 7.5, color: GOLD_SOFT, fontFamily: "Helvetica-Bold", letterSpacing: 1 }}>{t.summaryLabel}</Text>
           <Text style={{ fontSize: 9, color: "#e6ebf5", marginTop: 6, lineHeight: 1.5 }}>
-            {clip(buildNarrative(k, pk, periodLabel, scopeLabel), 460)}
+            {clip(buildNarrative(lang, k, pk, periodLabel, scopeLabel, { rp, pct, roasFmt, cnt }, pctDelta), 460)}
           </Text>
         </View>
         <View style={{ flexDirection: "row", gap: 14, marginBottom: 12 }}>
-          <KpiCard width={COL3} height={132} hero label="PENJUALAN PANASONIC · SIAP DIKIRIM" value={rp(k.sales)} sub="SPOS · parent row" delta={pctDelta(k.sales, pk?.sales)} />
-          <KpiCard width={COL3} height={132} label="TRAFIK PRODUK" value={cnt(k.traffic)} sub="Pengunjung produk" delta={pctDelta(k.traffic, pk?.traffic)} />
-          <KpiCard width={COL3} height={132} label="TAMBAH KE KERANJANG" value={cnt(k.in_cart)} sub={`Rasio ATC ${pct(atcRate)}`} delta={pctDelta(k.in_cart, pk?.in_cart)} />
+          <KpiCard width={COL3} height={132} hero label={t.kpi_sales} value={rp(k.sales)} sub={t.kpi_salesSub} delta={pctDelta(k.sales, pk?.sales)} />
+          <KpiCard width={COL3} height={132} label={t.kpi_traffic} value={cnt(k.traffic)} sub={t.kpi_trafficSub} delta={pctDelta(k.traffic, pk?.traffic)} />
+          <KpiCard width={COL3} height={132} label={t.kpi_inCart} value={cnt(k.in_cart)} sub={tf(t.kpi_inCartSub, { pct: pct(atcRate) })} delta={pctDelta(k.in_cart, pk?.in_cart)} />
         </View>
         <View style={{ flexDirection: "row", gap: 14 }}>
-          <KpiCard width={COL3} height={132} label="BIAYA IKLAN" value={rp(k.ad_cost)} sub="Panasonic · Ads" delta={pctDelta(k.ad_cost, pk?.ad_cost)} />
-          <KpiCard width={COL3} height={132} hero label="ROAS · SALES ÷ BIAYA" value={roasFmt(k.roas)} sub={`Dari ${rp(k.ad_cost)} belanja iklan`} delta={pctDelta(k.roas ?? 0, pk?.roas ?? null)} />
-          <KpiCard width={COL3} height={132} label="TOTAL TOKO · SEMUA BRAND" value={rp(k.gmv)} sub={`Pangsa Panasonic: ${pct(shareFrac * 100)}`} delta={pctDelta(k.gmv, pk?.gmv)} />
+          <KpiCard width={COL3} height={132} label={t.kpi_adsCost} value={rp(k.ad_cost)} sub={t.kpi_adsCostSub} delta={pctDelta(k.ad_cost, pk?.ad_cost)} />
+          <KpiCard width={COL3} height={132} hero label={t.kpi_roas} value={roasFmt(k.roas)} sub={tf(t.kpi_roasSub, { rp: rp(k.ad_cost) })} delta={pctDelta(k.roas ?? 0, pk?.roas ?? null)} />
+          <KpiCard width={COL3} height={132} label={t.kpi_gmv} value={rp(k.gmv)} sub={tf(t.kpi_gmvSub, { pct: pct(shareFrac * 100) })} delta={pctDelta(k.gmv, pk?.gmv)} />
         </View>
         <Footer left={footL} right={footR} />
       </Page>
 
-      {/* ============ 02 DAMPAK PROGRAM RELINE ============ */}
+      {/* ============ 02 IMPACT ============ */}
       <Page size={PAGE_SIZE} style={s.page}>
-        <Header no="02" title="Dampak Program Reline — Sebelum vs Sesudah" />
-        <ImpactBody bva={bva} />
+        <Header no="02" title={t.sec2_title} />
+        <ImpactBody bva={bva} lang={lang} />
         <Footer left={footL} right={footR} />
       </Page>
 
-      {/* ============ 03 TREN & KOMPOSISI ============ */}
+      {/* ============ 03 TRENDS & COMPOSITION ============ */}
       <Page size={PAGE_SIZE} style={s.page}>
-        <Header no="03" title="Tren & Komposisi" />
+        <Header no="03" title={t.sec3_title} />
         <View style={{ flexDirection: "row", gap: 14, marginBottom: 12 }}>
           <View style={[s.card, { width: COL2, height: 185 }]}>
-            <Text style={s.cardTitle}>Performa Penjualan Panasonic</Text>
-            <Text style={s.cardSub}>Penjualan siap dikirim · {trend.length} periode terakhir</Text>
+            <Text style={s.cardTitle}>{t.p3_salesTitle}</Text>
+            <Text style={s.cardSub}>{tf(t.p3_salesSub, { n: trend.length })}</Text>
             <View style={{ marginTop: 6 }}>
-              <BarsSvg w={COL2 - 24} h={132} data={trend.map((t) => ({ label: `${MONTH_SHORT[t.month] || clip(t.month, 3)}`, value: t.sales }))} />
+              <BarsSvg w={COL2 - 24} h={132} data={trend.map((tr) => ({ label: `${MONTH_SHORT[tr.month] || clip(tr.month, 3)}`, value: tr.sales }))} lang={lang} />
             </View>
           </View>
           <View style={[s.card, { width: COL2, height: 185 }]}>
-            <Text style={s.cardTitle}>Biaya Iklan & ROAS</Text>
-            <Text style={s.cardSub}>Biaya vs efisiensi · {costRoasTrend.length} periode terakhir</Text>
+            <Text style={s.cardTitle}>{t.p3_costRoasTitle}</Text>
+            <Text style={s.cardSub}>{tf(t.p3_costRoasSub, { n: costRoasTrend.length })}</Text>
             <View style={{ marginTop: 6 }}>
-              <CostRoasSvg w={COL2 - 24} h={132} data={costRoasTrend.map((c) => ({ label: `${MONTH_SHORT[c.month] || clip(c.month, 3)}`, cost: c.cost, roas: c.roas }))} />
+              <CostRoasSvg w={COL2 - 24} h={132} data={costRoasTrend.map((c) => ({ label: `${MONTH_SHORT[c.month] || clip(c.month, 3)}`, cost: c.cost, roas: c.roas }))} lang={lang} />
             </View>
           </View>
         </View>
         <View style={{ flexDirection: "row", gap: 14 }}>
           <View style={[s.card, { width: COL2, height: 185 }]}>
-            <Text style={s.cardTitle}>Funnel Konversi</Text>
-            <Text style={s.cardSub}>Trafik → keranjang · {periodLabel}</Text>
+            <Text style={s.cardTitle}>{t.p3_funnelTitle}</Text>
+            <Text style={s.cardSub}>{tf(t.p3_funnelSub, { period: periodLabel })}</Text>
             <View style={{ marginTop: 6 }}>
               <FunnelSvg w={COL2 - 24} h={132} rows={[
-                { label: "Trafik", value: k.traffic },
-                { label: "Keranjang", value: k.in_cart, note: `(${pct(atcRate)} dari trafik)` },
-              ]} />
+                { label: t.p3_traffic, value: k.traffic },
+                { label: t.p3_cart, value: k.in_cart, note: tf(t.p3_cartNote, { pct: pct(atcRate) }) },
+              ]} lang={lang} />
             </View>
           </View>
           <View style={[s.card, { width: COL2, height: 185 }]}>
-            <Text style={s.cardTitle}>Pangsa Toko</Text>
-            <Text style={s.cardSub}>Panasonic vs brand lain (pendapatan)</Text>
+            <Text style={s.cardTitle}>{t.p3_shareTitle}</Text>
+            <Text style={s.cardSub}>{t.p3_shareSub}</Text>
             <View style={{ flexDirection: "row", alignItems: "center", marginTop: 4 }}>
-              <DonutSvg share={shareFrac} w={COL2 - 160} h={128} />
+              <DonutSvg share={shareFrac} w={COL2 - 160} h={128} lang={lang} />
               <View style={{ marginLeft: 10 }}>
-                <Legend color={GOLD} text={`Panasonic — ${rpShort(panaSales)}`} />
-                <Legend color="#d7dce6" text={`Brand lain — ${rpShort(otherSales)}`} />
+                <Legend color={GOLD} text={tf(t.p3_legendPana, { v: rpShort(panaSales) })} />
+                <Legend color="#d7dce6" text={tf(t.p3_legendOther, { v: rpShort(otherSales) })} />
               </View>
             </View>
           </View>
@@ -474,18 +458,18 @@ export function BodReportDocument(props: {
         <Footer left={footL} right={footR} />
       </Page>
 
-      {/* ============ 04 PERFORMA DEALER ============ */}
+      {/* ============ 04 DEALER PERFORMANCE ============ */}
       <Page size={PAGE_SIZE} style={s.page}>
-        <Header no="04" title={`Performa Dealer — ${dealers.length} dealer`} />
+        <Header no="04" title={tf(t.sec4_title, { n: dealers.length })} />
         <View style={{ flexDirection: "row", paddingBottom: 6, borderBottomWidth: 1, borderBottomColor: NAVY }}>
-          <Text style={[s.th, { width: 26 }]}>#</Text>
-          <Text style={[s.th, { flex: 3 }]}>DEALER</Text>
-          <Text style={[s.th, { flex: 1.7 }]}>KOTA</Text>
-          <Text style={[s.th, { flex: 1.5, textAlign: "right" }]}>PENJUALAN</Text>
-          <Text style={[s.th, { flex: 1.2, textAlign: "right" }]}>TRAFIK</Text>
-          <Text style={[s.th, { flex: 1.2, textAlign: "right" }]}>KERANJANG</Text>
-          <Text style={[s.th, { flex: 1.3, textAlign: "right" }]}>BIAYA IKLAN</Text>
-          <Text style={[s.th, { flex: 0.9, textAlign: "right" }]}>ROAS</Text>
+          <Text style={[s.th, { width: 26 }]}>{t.p4_no}</Text>
+          <Text style={[s.th, { flex: 3 }]}>{t.p4_dealer}</Text>
+          <Text style={[s.th, { flex: 1.7 }]}>{t.p4_city}</Text>
+          <Text style={[s.th, { flex: 1.5, textAlign: "right" }]}>{t.p4_sales}</Text>
+          <Text style={[s.th, { flex: 1.2, textAlign: "right" }]}>{t.p4_traffic}</Text>
+          <Text style={[s.th, { flex: 1.2, textAlign: "right" }]}>{t.p4_cart}</Text>
+          <Text style={[s.th, { flex: 1.3, textAlign: "right" }]}>{t.p4_adsCost}</Text>
+          <Text style={[s.th, { flex: 0.9, textAlign: "right" }]}>{t.p4_roas}</Text>
         </View>
         {dealers.slice(0, 11).map((d, i) => (
           <View key={i} style={{ flexDirection: "row", alignItems: "center", height: 27, backgroundColor: i % 2 ? "#eef1f7" : "transparent", paddingHorizontal: 2 }}>
@@ -499,23 +483,23 @@ export function BodReportDocument(props: {
             <Text style={[s.td, { flex: 0.9, textAlign: "right", fontFamily: "Helvetica-Bold", color: d.roas != null && d.roas >= 3 ? GREEN : INK }]}>{roasFmt(d.roas)}</Text>
           </View>
         ))}
-        {!dealers.length && <Text style={{ fontSize: 9, color: MUTED, marginTop: 14 }}>Tidak ada data dealer untuk filter ini.</Text>}
+        {!dealers.length && <Text style={{ fontSize: 9, color: MUTED, marginTop: 14 }}>{t.p4_empty}</Text>}
         {dealers.length > 11 && (
           <Text style={{ fontSize: 7.5, color: MUTED, marginTop: 8, fontStyle: "italic" }}>
-            Menampilkan 11 dealer teratas dari {dealers.length}. Total penjualan seluruh dealer: {rp(dealers.reduce((a, x) => a + x.sales, 0))}.
+            {tf(t.p4_overflow, { n: dealers.length, v: rp(dealers.reduce((a, x) => a + x.sales, 0)) })}
           </Text>
         )}
         <Footer left={footL} right={footR} />
       </Page>
 
-      {/* ============ 05 PRODUK TERLARIS ============ */}
+      {/* ============ 05 TOP PRODUCTS ============ */}
       <Page size={PAGE_SIZE} style={s.page}>
-        <Header no="05" title={`10 Produk Terlaris — ${periodLabel}`} />
+        <Header no="05" title={tf(t.sec5_title, { period: periodLabel })} />
         <View style={{ flexDirection: "row", paddingBottom: 6, borderBottomWidth: 1, borderBottomColor: NAVY }}>
-          <Text style={[s.th, { width: 30 }]}>#</Text>
-          <Text style={[s.th, { flex: 6 }]}>PRODUK</Text>
-          <Text style={[s.th, { flex: 1.6, textAlign: "right" }]}>PENJUALAN</Text>
-          <Text style={[s.th, { flex: 1, textAlign: "right" }]}>% PANA.</Text>
+          <Text style={[s.th, { width: 30 }]}>{t.p5_no}</Text>
+          <Text style={[s.th, { flex: 6 }]}>{t.p5_product}</Text>
+          <Text style={[s.th, { flex: 1.6, textAlign: "right" }]}>{t.p5_sales}</Text>
+          <Text style={[s.th, { flex: 1, textAlign: "right" }]}>{t.p5_panaPct}</Text>
         </View>
         {products.map((p, i) => (
           <View key={i} style={{ flexDirection: "row", alignItems: "center", height: 29, backgroundColor: i % 2 ? "#eef1f7" : "transparent", paddingHorizontal: 2 }}>
@@ -525,14 +509,14 @@ export function BodReportDocument(props: {
             <Text style={[s.td, { flex: 1, textAlign: "right", color: MUTED }]}>{pct((p.sales / prodTotal) * 100)}</Text>
           </View>
         ))}
-        {!products.length && <Text style={{ fontSize: 9, color: MUTED, marginTop: 14 }}>Tidak ada data produk untuk filter ini.</Text>}
+        {!products.length && <Text style={{ fontSize: 9, color: MUTED, marginTop: 14 }}>{t.p5_empty}</Text>}
         <Footer left={footL} right={footR} />
       </Page>
 
-      {/* ============ 06 MAKNA & LANGKAH SELANJUTNYA ============ */}
+      {/* ============ 06 INSIGHTS & NEXT STEPS ============ */}
       <Page size={PAGE_SIZE} style={s.page}>
-        <Header no="06" title="Makna & Langkah Selanjutnya" />
-        <Insights k={k} pk={pk} atcRate={atcRate} shareFrac={shareFrac} dealers={dealers} />
+        <Header no="06" title={t.sec6_title} />
+        <Insights k={k} pk={pk} atcRate={atcRate} shareFrac={shareFrac} dealers={dealers} lang={lang} />
         <Footer left={footL} right={footR} />
       </Page>
     </Document>
@@ -549,13 +533,14 @@ function Legend({ color, text }: { color: string; text: string }) {
 }
 
 /* ---------------- 02 body ---------------- */
-function ImpactBody({ bva }: { bva: BaselineVsActive | null }) {
+function ImpactBody({ bva, lang = "id" }: { bva: BaselineVsActive | null; lang?: Lang }) {
+  const t = BOD_T[lang];
   if (!bva || !bva.baseline.stores) {
     return (
       <View style={[s.card, { height: 160, justifyContent: "center", alignItems: "center" }]}>
-        <Text style={{ fontSize: 11, color: NAVY, fontFamily: "Times-Bold" }}>Data baseline (&quot;Month Awal&quot;) belum tersedia</Text>
+        <Text style={{ fontSize: 11, color: NAVY, fontFamily: "Times-Bold" }}>{t.p2_noBaselineTitle}</Text>
         <Text style={{ fontSize: 8.5, color: MUTED, marginTop: 6, textAlign: "center" }}>
-          Perbandingan sebelum-vs-sesudah membutuhkan data &quot;Month Awal&quot; untuk cakupan yang dipilih.
+          {t.p2_noBaselineNote}
         </Text>
       </View>
     );
@@ -580,34 +565,34 @@ function ImpactBody({ bva }: { bva: BaselineVsActive | null }) {
   const adsThin = baseline.ad_cost < baseline.sales * 0.001;
 
   const rows: { metric: string; before: string; after: string; change: string }[] = [
-    { metric: "Penjualan Panasonic (total)", before: rp(bSales), after: `${rp(aSales)} / bulan`, change: salesX != null ? `${mult(salesX)}` : "—" },
-    { metric: "Biaya iklan (total)", before: rp(bAds), after: `${rp(aAds)} / bulan`, change: adsX != null ? `${mult(adsX)}` : "—" },
-    { metric: "ROAS (total periode)", before: adsThin ? "tanpa iklan terkelola" : roasFmt(bRoas), after: roasFmt(aRoas), change: adsThin ? "program baru" : "—" },
-    { metric: "Cakupan data", before: `${baseline.stores} toko (Month Awal)`, after: `${active.months} bulan aktif`, change: "—" },
+    { metric: t.p2_rowSales, before: rp(bSales), after: `${rp(aSales)}${t.p2_perMonth}`, change: salesX != null ? `${mult(salesX)}` : "—" },
+    { metric: t.p2_rowAds, before: rp(bAds), after: `${rp(aAds)}${t.p2_perMonth}`, change: adsX != null ? `${mult(adsX)}` : "—" },
+    { metric: t.p2_rowRoas, before: adsThin ? t.p2_noManagedAds : roasFmt(bRoas), after: roasFmt(aRoas), change: adsThin ? t.p2_newProgram : "—" },
+    { metric: t.p2_rowCoverage, before: tf(t.p2_storesMonthAwal, { n: baseline.stores }), after: tf(t.p2_monthsActive, { n: active.months }), change: "—" },
   ];
 
   return (
     <View>
       <View style={{ flexDirection: "row", gap: 14, marginBottom: 14 }}>
-        <BigStat width={COL3} x={salesX} title="Penjualan Panasonic" before={rp(bSales)} after={rp(aSales)} />
-        <BigStat width={COL3} x={adsX} title="Biaya Iklan (investasi)" before={rp(bAds)} after={rp(aAds)} />
+        <BigStat width={COL3} x={salesX} title={t.p2_bigSales} before={rp(bSales)} after={rp(aSales)} />
+        <BigStat width={COL3} x={adsX} title={t.p2_bigAds} before={rp(bAds)} after={rp(aAds)} />
         <View style={{ width: COL3, height: 116, backgroundColor: NAVY, borderRadius: 7, padding: 13, justifyContent: "center" }}>
-          <Text style={[s.label, { color: GOLD_SOFT }]}>ROAS PROGRAM AKTIF</Text>
+          <Text style={[s.label, { color: GOLD_SOFT }]}>{t.p2_roasActiveLabel}</Text>
           <Text style={{ fontFamily: "Times-Bold", fontSize: 27, color: WHITE, marginTop: 4 }}>{roasFmt(aRoas)}</Text>
           <Text style={{ fontSize: 7.5, color: "#c3cee3", marginTop: 5 }}>
-            {adsThin ? "Sebelumnya tidak ada iklan terkelola" : `Sebelumnya ${roasFmt(bRoas)}`}
+            {adsThin ? t.p2_roasNoAdsBefore : tf(t.p2_roasBefore, { v: roasFmt(bRoas) })}
           </Text>
         </View>
       </View>
 
       <Text style={{ fontSize: 7.5, color: MUTED, fontFamily: "Helvetica-Bold", letterSpacing: 1, marginBottom: 7 }}>
-        RINCIAN SEBELUM — SESUDAH   (total cakupan, rata-rata per bulan)
+        {t.p2_detailLabel}
       </Text>
       <View style={{ flexDirection: "row", paddingBottom: 5, borderBottomWidth: 1, borderBottomColor: NAVY }}>
-        <Text style={[s.th, { flex: 3 }]}>METRIK</Text>
-        <Text style={[s.th, { flex: 2, textAlign: "right" }]}>SEBELUM</Text>
-        <Text style={[s.th, { flex: 2, textAlign: "right" }]}>SESUDAH</Text>
-        <Text style={[s.th, { flex: 1.2, textAlign: "right" }]}>PERUBAHAN</Text>
+        <Text style={[s.th, { flex: 3 }]}>{t.p2_th_metric}</Text>
+        <Text style={[s.th, { flex: 2, textAlign: "right" }]}>{t.p2_th_before}</Text>
+        <Text style={[s.th, { flex: 2, textAlign: "right" }]}>{t.p2_th_after}</Text>
+        <Text style={[s.th, { flex: 1.2, textAlign: "right" }]}>{t.p2_th_change}</Text>
       </View>
       {rows.map((r, i) => (
         <View key={i} style={{ flexDirection: "row", height: 25, alignItems: "center", backgroundColor: i % 2 ? "#eef1f7" : "transparent", paddingHorizontal: 2 }}>
@@ -618,9 +603,7 @@ function ImpactBody({ bva }: { bva: BaselineVsActive | null }) {
         </View>
       ))}
       <Text style={{ fontSize: 7.5, color: MUTED, marginTop: 9, lineHeight: 1.45 }}>
-        Catatan: &quot;Sebelum&quot; adalah total snapshot Month Awal (pra-program) dari {baseline.stores} toko; &quot;Sesudah&quot; adalah total seluruh
-        cakupan dibagi rata-rata per bulan selama {active.months} bulan aktif. Keduanya adalah total cakupan (kota/dealer terpilih), bukan dibagi jumlah toko.
-        {adsThin ? " Sebelum program, belanja iklan hampir nol sehingga ROAS pra-program bukan rasio yang bermakna untuk dibandingkan." : ""}
+        {tf(t.p2_footnote, { stores: baseline.stores, months: active.months, adsThinNote: adsThin ? t.p2_adsThinNote : "" })}
       </Text>
     </View>
   );
@@ -637,44 +620,21 @@ function BigStat({ width, x, title, before, after }: { width: number; x: number 
 }
 
 /* ---------------- 06 body ---------------- */
-function Insights({ k, pk, atcRate, shareFrac, dealers }: {
-  k: Kpis; pk: Kpis | null; atcRate: number; shareFrac: number; dealers: Dealer[];
+function Insights({ k, pk, atcRate, shareFrac, dealers, lang = "id" }: {
+  k: Kpis; pk: Kpis | null; atcRate: number; shareFrac: number; dealers: Dealer[]; lang?: Lang;
 }) {
+  const t = BOD_T[lang];
   const dSales = pctDelta(k.sales, pk?.sales);
   const dAds = pctDelta(k.ad_cost, pk?.ad_cost);
   const dGmv = pctDelta(k.gmv, pk?.gmv);
   const weak = dealers.filter((d) => d.roas != null && d.roas < 1).length;
 
-  const cards: { tone: "win" | "insight" | "watch"; label: string; title: string; body: string }[] = [];
-
-  if (dSales != null && dAds != null && dSales > 0 && dAds < 0) {
-    cards.push({ tone: "win", label: "MENANG", title: "Sales naik, biaya turun", body: `Penjualan naik ${pct(dSales)} sementara biaya iklan turun ${pct(Math.abs(dAds))}. Permintaan makin organik dan anggaran iklan bekerja lebih efisien — ROAS di ${roasFmt(k.roas)}.` });
-  } else if (dSales != null && dSales > 0) {
-    cards.push({ tone: "win", label: "MENANG", title: "Penjualan tumbuh", body: `Penjualan Panasonic naik ${pct(dSales)} menjadi ${rp(k.sales)} dengan ROAS ${roasFmt(k.roas)}.` });
-  } else {
-    cards.push({ tone: "watch", label: "PERHATIAN", title: "Penjualan belum tumbuh", body: `Penjualan Panasonic ${rp(k.sales)}${dSales != null ? ` (${pct(dSales)} vs periode sebelumnya)` : ""}. Perlu penelusuran pemicu di level dealer dan SKU.` });
-  }
-
-  cards.push(atcRate >= 5
-    ? { tone: "insight", label: "INSIGHT", title: "Funnel atas sehat", body: `Rasio tambah-ke-keranjang ${pct(atcRate)} dari ${cnt(k.traffic)} kunjungan. Minat menguat sebelum tahap checkout.` }
-    : { tone: "watch", label: "PERHATIAN", title: "Funnel atas tipis", body: `Rasio tambah-ke-keranjang hanya ${pct(atcRate)} dari ${cnt(k.traffic)} kunjungan — kualitas trafik atau relevansi listing perlu dicek.` });
-
-  cards.push(dGmv != null && dSales != null && dGmv > dSales
-    ? { tone: "watch", label: "PERHATIAN", title: "Pangsa turun meski tumbuh", body: `Total toko dealer tumbuh lebih cepat (${pct(dGmv)}) dari Panasonic (${pct(dSales)}), sehingga pangsa Panasonic di ${pct(shareFrac * 100)}. Brand lain tumbuh lebih besar — perlu dicek pemicunya.` }
-    : { tone: "insight", label: "INSIGHT", title: `Pangsa Panasonic ${pct(shareFrac * 100)}`, body: `Panasonic menyumbang ${pct(shareFrac * 100)} dari total penjualan toko dealer (${rp(k.gmv)}) pada periode ini.` });
-
-  cards.push(weak > 0
-    ? { tone: "watch", label: "PERHATIAN", title: `${weak} dealer dengan ROAS di bawah 1x`, body: `Dari ${dealers.length} dealer, ${weak} membelanjakan iklan lebih besar dari penjualan Panasonic yang dihasilkan. Prioritaskan pendampingan di dealer ini.` }
-    : { tone: "win", label: "MENANG", title: "Semua dealer ROAS di atas 1x", body: `Seluruh ${dealers.length} dealer menghasilkan penjualan Panasonic melebihi belanja iklannya pada periode ini.` });
-
+  const cardData = buildInsightCards(lang, dSales, dAds, dGmv, k, atcRate, shareFrac, dealers.length, weak, { rp, pct, roasFmt, cnt });
+  const toneLabel = { win: t.tone_win, insight: t.tone_insight, watch: t.tone_watch } as const;
   const toneColor = { win: GREEN, insight: GOLD, watch: RED } as const;
+  const cards = cardData.map((c) => ({ ...c, label: toneLabel[c.tone] }));
 
-  const actions = [
-    "Jaga efisiensi — pertahankan / scale anggaran iklan pada dealer & SKU yang terbukti selama ROAS di atas target.",
-    `Tutup jeda keranjang — aktifkan voucher checkout & follow-up chat pada ${cnt(k.in_cart)} keranjang periode ini.`,
-    "Dorong mix premium — tonjolkan model Inverter & seri premium untuk menaikkan nilai pesanan rata-rata.",
-    weak > 0 ? `Dampingi ${weak} dealer ber-ROAS rendah — audit struktur iklan dan harga sebelum menambah anggaran.` : "Replikasi pola dealer terbaik ke dealer lain di kota yang sama.",
-  ];
+  const actions = buildActions(lang, weak, cnt, k.in_cart);
 
   return (
     <View>
@@ -685,7 +645,7 @@ function Insights({ k, pk, atcRate, shareFrac, dealers }: {
         {cards.slice(2, 4).map((c, i) => <InsightCard key={i} {...c} color={toneColor[c.tone]} />)}
       </View>
       <View style={{ backgroundColor: NAVY, borderRadius: 8, padding: 13, height: 112 }}>
-        <Text style={{ fontSize: 7.5, color: GOLD_SOFT, fontFamily: "Helvetica-Bold", letterSpacing: 1, marginBottom: 7 }}>REKOMENDASI AKSI — PERIODE BERIKUTNYA</Text>
+        <Text style={{ fontSize: 7.5, color: GOLD_SOFT, fontFamily: "Helvetica-Bold", letterSpacing: 1, marginBottom: 7 }}>{t.p6_actionsLabel}</Text>
         {actions.map((a, i) => (
           <View key={i} style={{ flexDirection: "row", marginBottom: 4 }}>
             <Text style={{ width: 15, fontSize: 8, color: GOLD, fontFamily: "Helvetica-Bold" }}>{i + 1}.</Text>
