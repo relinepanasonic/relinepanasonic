@@ -194,6 +194,8 @@ export function mapRow(
   let penjualan_langsung: number | null = null;
   let clicks: number | null = null;
   let roas_reported: number | null = null;
+  let views: number | null = null;
+  let units_shipped: number | null = null;
 
   if (source === "spos") {
     // GAS uses "Pesanan Siap Dikirim" (ready-to-ship), NOT "Pesanan Dibuat"
@@ -202,6 +204,12 @@ export function mapRow(
     units = toNum(get("Produk (Pesanan Dibuat)"));
     visitors = visitorsSpos;
     in_cart = toNum(get("Dimasukkan ke Keranjang (Produk)"));
+    // Product Funnel stages (Impression -> Click -> In Cart -> Sales) — not
+    // every SPOS template carries these two; get() returns null when absent,
+    // same graceful-miss behavior as every other optional column here.
+    views = toNum(get("Jumlah Produk Dilihat"));
+    clicks = toNum(get("Produk Diklik"));
+    units_shipped = toNum(get("Produk (Pesanan Siap Dikirim)"));
   } else if (source === "ads") {
     sales_idr = toNum(get("Omzet Penjualan"));
     orders = toNum(get("Konversi"));
@@ -261,6 +269,8 @@ export function mapRow(
     clicks,
     roas_reported,
     penjualan_langsung,
+    views,
+    units_shipped,
     is_parent: isParent,
     // `raw` intentionally NOT stored anymore — the DB column defaults to
     // '{}' so rows stay narrow. Source files remain the system of record

@@ -20,6 +20,7 @@ const HBarChart    = nextDynamic(() => import("./DashboardCharts").then((m) => m
 const Donut        = nextDynamic(() => import("./DashboardCharts").then((m) => m.Donut),        { ssr: false, loading: chartLoading });
 const CostRoas     = nextDynamic(() => import("./DashboardCharts").then((m) => m.CostRoas),     { ssr: false, loading: chartLoading });
 const TrafficTrend = nextDynamic(() => import("./DashboardCharts").then((m) => m.TrafficTrend), { ssr: false, loading: chartLoading });
+const ProductFunnel = nextDynamic(() => import("./DashboardCharts").then((m) => m.ProductFunnel), { ssr: false, loading: chartLoading });
 const BaselineChart = nextDynamic(() => import("./BaselineChart"), { ssr: false, loading: chartLoading });
 
 type Summary = {
@@ -31,6 +32,8 @@ type Summary = {
   by_category: { category: string; sales: number }[];
   cost_roas: { year: number | null; month: string; cost: number; roas: number | null }[];
   traffic_trend: { year: number | null; month: string; traffic: number; in_cart: number }[];
+  // Added by Supabase Migration/40 — older RPC versions omit it.
+  funnel?: { impression: number; click: number; in_cart: number; sales: number };
   dealers: { store_name: string; city: string; sales: number; traffic: number; in_cart: number; ad_cost: number; roas: number | null; trend: { year: number | null; month: string; sales: number }[] }[];
 };
 type DealerOpt = { value: string; city: string | null };
@@ -358,10 +361,13 @@ export default function DashboardPage() {
         </Panel>
       </div>
 
-      {/* Store monthly */}
-      <div className="row">
+      {/* Store monthly + product funnel */}
+      <div className="row c2">
         <Panel title="Store Sales by Month" hint="All brands GMV · Performa">
           <BarsChart data={byMonth(d?.store_monthly || [])} x="label" y="gmv" color="#1e4a7a" />
+        </Panel>
+        <Panel title="Product Funnel" hint="Panasonic · SPOS · Impression → Click → In Cart → Sales">
+          <ProductFunnel data={d?.funnel} />
         </Panel>
       </div>
 

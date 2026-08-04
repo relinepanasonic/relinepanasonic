@@ -213,3 +213,64 @@ export function TrafficTrend({ data }: { data: { label: string; traffic: number;
     </div>
   );
 }
+
+// Hand-drawn SVG trapezoid funnel — no recharts primitive for this shape.
+// Shape only borrowed as a reference from another project's funnel (a
+// wide-to-narrow stack of trapezoids with a % label per stage); colors and
+// data are this app's own, not a copy of that project's chart.
+const FUNNEL_STAGES: { key: "impression" | "click" | "in_cart" | "sales"; label: string }[] = [
+  { key: "impression", label: "Impression" },
+  { key: "click",      label: "Click" },
+  { key: "in_cart",    label: "In Cart" },
+  { key: "sales",      label: "Sales" },
+];
+const FUNNEL_COLORS = ["#3b6ea5", "#2f5a8a", "#24476e", "#c9a227"]; // last stage gold, matches the app's accent
+
+export function ProductFunnel({ data }: { data?: { impression: number; click: number; in_cart: number; sales: number } }) {
+  if (!data || !data.impression) return <Empty />;
+  const values = FUNNEL_STAGES.map((s) => data[s.key] || 0);
+  const top = values[0] || 1;
+  // A stage that's a genuine 0.1% of Impression would render as an
+  // invisible sliver — floor the drawn width (not the displayed %) so
+  // every stage stays legible.
+  const MIN_FRAC = 0.12;
+  const fracs = values.map((v) => Math.max(v / top, v > 0 ? MIN_FRAC : 0));
+
+  const W = 380, ROW_H = 56, GAP = 4, PAD_TOP = 6;
+  const H = FUNNEL_STAGES.length * (ROW_H + GAP) - GAP + PAD_TOP;
+  const cx = W / 2;
+
+  return (
+    <div style={{ width: "100%", height: 280, display: "flex", gap: 18, alignItems: "center" }}>
+      <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} style={{ flexShrink: 0 }}>
+        {FUNNEL_STAGES.map((s, i) => {
+          const y = PAD_TOP + i * (ROW_H + GAP);
+          const wTop = fracs[i] * (W - 20);
+          const wBot = (i < fracs.length - 1 ? fracs[i + 1] : fracs[i]) * (W - 20);
+          const xTopL = cx - wTop / 2, xTopR = cx + wTop / 2;
+          const xBotL = cx - wBot / 2, xBotR = cx + wBot / 2;
+          const pct = top > 0 ? (values[i] / top) * 100 : 0;
+          return (
+            <g key={s.key}>
+              <polygon
+                points={`${xTopL},${y} ${xTopR},${y} ${xBotR},${y + ROW_H} ${xBotL},${y + ROW_H}`}
+                fill={FUNNEL_COLORS[i]} stroke="#0a1628" strokeWidth={1.5}
+              />
+              <text x={cx} y={y + ROW_H / 2 + 5} textAnchor="middle" fontSize={14} fontWeight={700} fill="#fff">
+                {pct.toFixed(1)}%
+              </text>
+            </g>
+          );
+        })}
+      </svg>
+      <div style={{ display: "grid", gap: 14, minWidth: 0 }}>
+        {FUNNEL_STAGES.map((s, i) => (
+          <div key={s.key}>
+            <div style={{ fontSize: 10, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".04em" }}>{s.label}</div>
+            <div style={{ fontSize: 17, fontWeight: 700, color: "#e8edf8" }}>{num(values[i])}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
