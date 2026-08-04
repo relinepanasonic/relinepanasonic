@@ -216,13 +216,13 @@ export default function MarketFeePage() {
           </div>
         </div>
 
-        <div className="tbl-wrap" style={{ marginTop: 14, maxHeight: 640, overflowX: "auto" }}>
+        <div className="tbl-wrap" style={{ marginTop: 14, maxHeight: 640, overflowX: "auto", overflowY: "auto" }}>
           <table className="tbl" style={{ whiteSpace: "nowrap", width: "max-content", minWidth: "100%" }}>
             <thead>
               <tr>
-                <th>Category</th><th>Sub Category</th><th>Jenis Product</th><th>Platform</th><th>Jenis Toko</th>
-                {NUMERIC_FIELDS.map((f) => <th className="num" key={f.key}>{f.label}</th>)}
-                <th>Kategori Kirim</th><th>Last Edited</th>{canEdit && <th></th>}
+                <th style={stickyTh}>Category</th><th style={stickyTh}>Sub Category</th><th style={stickyTh}>Jenis Product</th><th style={stickyTh}>Platform</th><th style={stickyTh}>Jenis Toko</th>
+                {NUMERIC_FIELDS.map((f) => <th className="num" style={stickyTh} key={f.key}>{f.label}</th>)}
+                <th style={stickyTh}>Kategori Kirim</th><th style={stickyTh}>Last Edited</th>{canEdit && <th style={stickyTh}></th>}
               </tr>
             </thead>
             <tbody>
@@ -377,7 +377,7 @@ function HistoryModal({ fee, supabase, onClose }: { fee: Fee; supabase: ReturnTy
           <button className="btn-ghost" onClick={onClose}>✕ Close</button>
         </div>
         {rows === null ? <div style={{ color: "var(--muted)" }}>Loading…</div> : (
-          <div className="tbl-wrap" style={{ maxHeight: 400, overflowX: "auto" }}>
+          <div className="tbl-wrap" style={{ maxHeight: 400, overflowX: "auto", overflowY: "auto" }}>
             <table className="tbl" style={{ whiteSpace: "nowrap", width: "max-content", minWidth: "100%" }}>
               <thead>
                 <tr>
@@ -405,6 +405,7 @@ function HistoryModal({ fee, supabase, onClose }: { fee: Fee; supabase: ReturnTy
   );
 }
 
+const stickyTh: React.CSSProperties = { position: "sticky", top: 0, zIndex: 1 };
 const inputStyle: React.CSSProperties = { background: "rgba(10,22,40,.5)", border: "1px solid rgba(201,162,39,.2)", borderRadius: 8, padding: "8px 10px", color: "#e8edf8", fontSize: 13, width: "100%", boxSizing: "border-box" };
 const linkBtnStyle: React.CSSProperties = { background: "none", border: "none", color: "var(--muted)", cursor: "pointer", fontSize: 11.5, padding: 0, textDecoration: "underline dotted" };
 const saveBtnStyle: React.CSSProperties = { background: "linear-gradient(135deg,var(--gold),var(--gold-soft))", border: "none", color: "var(--navy-deep)", borderRadius: 7, padding: "4px 12px", cursor: "pointer", fontSize: 12, fontWeight: 700 };
