@@ -226,23 +226,53 @@ const FUNNEL_STAGES: { key: "impression" | "click" | "in_cart" | "sales"; label:
 ];
 const FUNNEL_COLORS = ["#3b6ea5", "#2f5a8a", "#24476e", "#c9a227"]; // last stage gold, matches the app's accent
 
+function StageList({ values }: { values: number[] }) {
+  return (
+    <div style={{ display: "grid", gap: 14, minWidth: 0 }}>
+      {FUNNEL_STAGES.map((s, i) => (
+        <div key={s.key}>
+          <div style={{ fontSize: 10, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".04em" }}>{s.label}</div>
+          <div style={{ fontSize: 17, fontWeight: 700, color: values[i] ? "#e8edf8" : "var(--muted)" }}>{num(values[i])}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function ProductFunnel({ data }: { data?: { impression: number; click: number; in_cart: number; sales: number } }) {
   const values = FUNNEL_STAGES.map((s) => (data ? data[s.key] || 0 : 0));
-  // Gate on ANY stage having data, not specifically Impression — Impression
-  // and Click were only added to the parser recently (Supabase Migration/40),
-  // so a store can legitimately have real In Cart/Sales history while those
-  // two are still 0 until its next upload. Hiding the whole chart on that
-  // basis would throw away real data that does exist.
   if (!data || values.every((v) => !v)) return <Empty />;
-  // Denominator is the largest stage present, not assumed to be Impression —
-  // during the same transition, Impression can be 0 while a later stage
-  // (e.g. In Cart) is the only one with real numbers.
-  const top = Math.max(...values, 1);
-  // A stage that's a genuine 0.1% of the top would render as an invisible
-  // sliver — floor the drawn width (not the displayed %) so every stage
-  // that has data stays legible.
+
+  // A funnel is only a funnel if the TOP stage has data. Impression/Click
+  // are newer columns (Supabase Migration/40) than the rest, so a period
+  // can legitimately have In Cart / Sales while Impression is still 0 —
+  // and drawing that produces a bow-tie (a 0-width stage between two wide
+  // ones renders as two opposing triangles), which reads as a real shape
+  // but means nothing. Show the numbers plainly instead, and say why.
+  const partial = values[0] <= 0 || values.some((v) => v <= 0);
+  if (partial) {
+    return (
+      <div style={{ width: "100%", height: 280, display: "flex", flexDirection: "column", justifyContent: "center", gap: 14 }}>
+        <StageList values={values} />
+        <div style={{ fontSize: 11, color: "var(--muted)", lineHeight: 1.5, borderTop: "1px solid rgba(255,255,255,.07)", paddingTop: 10 }}>
+          Funnel shape hidden — some stages have no data yet, so the proportions would be meaningless.
+          Impression &amp; Click are read from the newer SPOS template columns
+          (<em>Jumlah Produk Dilihat</em> / <em>Produk Diklik</em>); they fill in as SPOS files are re-uploaded.
+        </div>
+      </div>
+    );
+  }
+
+  const top = values[0];
+  // Guarantee the shape never widens going down, even if the data isn't
+  // perfectly monotonic — a widening "funnel" would misrepresent the flow.
+  // MIN_FRAC keeps a genuinely tiny last stage visible rather than a sliver.
   const MIN_FRAC = 0.12;
-  const fracs = values.map((v) => Math.max(v / top, v > 0 ? MIN_FRAC : 0));
+  const fracs: number[] = [];
+  for (let i = 0; i < values.length; i++) {
+    const raw = Math.max(values[i] / top, MIN_FRAC);
+    fracs.push(i === 0 ? raw : Math.min(raw, fracs[i - 1]));
+  }
 
   const W = 380, ROW_H = 56, GAP = 4, PAD_TOP = 6;
   const H = FUNNEL_STAGES.length * (ROW_H + GAP) - GAP + PAD_TOP;
@@ -254,10 +284,12 @@ export function ProductFunnel({ data }: { data?: { impression: number; click: nu
         {FUNNEL_STAGES.map((s, i) => {
           const y = PAD_TOP + i * (ROW_H + GAP);
           const wTop = fracs[i] * (W - 20);
-          const wBot = (i < fracs.length - 1 ? fracs[i + 1] : fracs[i]) * (W - 20);
+          const wBot = (i < fracs.length - 1 ? fracs[i + 1] : fracs[i] * 0.82) * (W - 20);
           const xTopL = cx - wTop / 2, xTopR = cx + wTop / 2;
           const xBotL = cx - wBot / 2, xBotR = cx + wBot / 2;
-          const pct = top > 0 ? (values[i] / top) * 100 : 0;
+          // % of the TOP stage — the standard funnel read ("what fraction of
+          // impressions reached this step"), not % of the previous step.
+          const pct = (values[i] / top) * 100;
           return (
             <g key={s.key}>
               <polygon
@@ -265,20 +297,13 @@ export function ProductFunnel({ data }: { data?: { impression: number; click: nu
                 fill={FUNNEL_COLORS[i]} stroke="#0a1628" strokeWidth={1.5}
               />
               <text x={cx} y={y + ROW_H / 2 + 5} textAnchor="middle" fontSize={14} fontWeight={700} fill="#fff">
-                {pct.toFixed(1)}%
+                {pct < 0.1 && pct > 0 ? pct.toFixed(2) : pct.toFixed(1)}%
               </text>
             </g>
           );
         })}
       </svg>
-      <div style={{ display: "grid", gap: 14, minWidth: 0 }}>
-        {FUNNEL_STAGES.map((s, i) => (
-          <div key={s.key}>
-            <div style={{ fontSize: 10, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".04em" }}>{s.label}</div>
-            <div style={{ fontSize: 17, fontWeight: 700, color: "#e8edf8" }}>{num(values[i])}</div>
-          </div>
-        ))}
-      </div>
+      <StageList values={values} />
     </div>
   );
 }
