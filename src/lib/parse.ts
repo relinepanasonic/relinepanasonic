@@ -204,11 +204,23 @@ export function mapRow(
     units = toNum(get("Produk (Pesanan Dibuat)"));
     visitors = visitorsSpos;
     in_cart = toNum(get("Dimasukkan ke Keranjang (Produk)"));
-    // Product Funnel stages (Impression -> Click -> In Cart -> Sales) — not
-    // every SPOS template carries these two; get() returns null when absent,
-    // same graceful-miss behavior as every other optional column here.
-    views = toNum(get("Jumlah Produk Dilihat"));
-    clicks = toNum(get("Produk Diklik"));
+    // Product Funnel stages (Impression -> Click -> In Cart -> Sales).
+    //
+    // Two SPOS template generations are in play and they name the top two
+    // stages differently, so each falls back to the older template's column:
+    //   Impression: "Jumlah Produk Dilihat" (new) / "Halaman Produk Dilihat" (old)
+    //   Click:      "Produk Diklik"         (new) / "Klik Pencarian"         (old)
+    // Matching is by NAME, so the old templates' differing column POSITIONS
+    // (U/X in most, V/Y in the 2026Q2 GreatJakarta variant) don't matter.
+    //
+    // Caveat, deliberate and user-approved: the old pair aren't strict
+    // equivalents — "Halaman Produk Dilihat" is page views and "Klik
+    // Pencarian" is search-only clicks — so the Impression/Click series is
+    // not strictly comparable across the template boundary. The dashboard
+    // surfaces this rather than presenting it as one clean metric.
+    views = toNum(get("Jumlah Produk Dilihat")) ?? toNum(get("Halaman Produk Dilihat"));
+    clicks = toNum(get("Produk Diklik")) ?? toNum(get("Klik Pencarian"));
+    // Same name in every template generation — no fallback needed.
     units_shipped = toNum(get("Produk (Pesanan Siap Dikirim)"));
   } else if (source === "ads") {
     sales_idr = toNum(get("Omzet Penjualan"));

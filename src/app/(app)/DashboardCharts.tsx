@@ -274,36 +274,53 @@ export function ProductFunnel({ data }: { data?: { impression: number; click: nu
     fracs.push(i === 0 ? raw : Math.min(raw, fracs[i - 1]));
   }
 
+  // Older SPOS exports have no true impression/click columns, so those two
+  // stages fall back to "Halaman Produk Dilihat" (page views) and "Klik
+  // Pencarian" (SEARCH clicks only). Search clicks legitimately undercount
+  // add-to-cart, so a period drawn from old files can show In Cart above
+  // Click. The bars are clamped so the shape can't widen, but the numbers
+  // would still read as broken — flag it instead of letting it confuse.
+  const nonMonotonic = values.some((v, i) => i > 0 && v > values[i - 1]);
+
   const W = 380, ROW_H = 56, GAP = 4, PAD_TOP = 6;
   const H = FUNNEL_STAGES.length * (ROW_H + GAP) - GAP + PAD_TOP;
   const cx = W / 2;
 
   return (
-    <div style={{ width: "100%", height: 280, display: "flex", gap: 18, alignItems: "center" }}>
-      <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} style={{ flexShrink: 0 }}>
-        {FUNNEL_STAGES.map((s, i) => {
-          const y = PAD_TOP + i * (ROW_H + GAP);
-          const wTop = fracs[i] * (W - 20);
-          const wBot = (i < fracs.length - 1 ? fracs[i + 1] : fracs[i] * 0.82) * (W - 20);
-          const xTopL = cx - wTop / 2, xTopR = cx + wTop / 2;
-          const xBotL = cx - wBot / 2, xBotR = cx + wBot / 2;
-          // % of the TOP stage — the standard funnel read ("what fraction of
-          // impressions reached this step"), not % of the previous step.
-          const pct = (values[i] / top) * 100;
-          return (
-            <g key={s.key}>
-              <polygon
-                points={`${xTopL},${y} ${xTopR},${y} ${xBotR},${y + ROW_H} ${xBotL},${y + ROW_H}`}
-                fill={FUNNEL_COLORS[i]} stroke="#0a1628" strokeWidth={1.5}
-              />
-              <text x={cx} y={y + ROW_H / 2 + 5} textAnchor="middle" fontSize={14} fontWeight={700} fill="#fff">
-                {pct < 0.1 && pct > 0 ? pct.toFixed(2) : pct.toFixed(1)}%
-              </text>
-            </g>
-          );
-        })}
-      </svg>
-      <StageList values={values} />
+    <div style={{ width: "100%", height: 280, display: "flex", flexDirection: "column", justifyContent: "center" }}>
+      <div style={{ display: "flex", gap: 18, alignItems: "center" }}>
+        <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} style={{ flexShrink: 0 }}>
+          {FUNNEL_STAGES.map((s, i) => {
+            const y = PAD_TOP + i * (ROW_H + GAP);
+            const wTop = fracs[i] * (W - 20);
+            const wBot = (i < fracs.length - 1 ? fracs[i + 1] : fracs[i] * 0.82) * (W - 20);
+            const xTopL = cx - wTop / 2, xTopR = cx + wTop / 2;
+            const xBotL = cx - wBot / 2, xBotR = cx + wBot / 2;
+            // % of the TOP stage — the standard funnel read ("what fraction of
+            // impressions reached this step"), not % of the previous step.
+            const pct = (values[i] / top) * 100;
+            return (
+              <g key={s.key}>
+                <polygon
+                  points={`${xTopL},${y} ${xTopR},${y} ${xBotR},${y + ROW_H} ${xBotL},${y + ROW_H}`}
+                  fill={FUNNEL_COLORS[i]} stroke="#0a1628" strokeWidth={1.5}
+                />
+                <text x={cx} y={y + ROW_H / 2 + 5} textAnchor="middle" fontSize={14} fontWeight={700} fill="#fff">
+                  {pct < 0.1 && pct > 0 ? pct.toFixed(2) : pct.toFixed(1)}%
+                </text>
+              </g>
+            );
+          })}
+        </svg>
+        <StageList values={values} />
+      </div>
+      {nonMonotonic && (
+        <div style={{ fontSize: 10.5, color: "var(--muted)", lineHeight: 1.45, marginTop: 8, paddingTop: 8, borderTop: "1px solid rgba(255,255,255,.07)" }}>
+          A later stage exceeds an earlier one. Periods uploaded with the older SPOS template have no true
+          impression/click columns — those fall back to <em>Halaman Produk Dilihat</em> (page views) and
+          <em> Klik Pencarian</em> (search clicks only), which undercounts real clicks.
+        </div>
+      )}
     </div>
   );
 }
