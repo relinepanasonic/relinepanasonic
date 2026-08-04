@@ -171,7 +171,7 @@ export default function MassiveCalculatorPage() {
           <button className="btn-gold" disabled={adding || !clientId} onClick={addRow}>{adding ? "Adding…" : "+ Add Product"}</button>
         </div>
 
-        <div className="tbl-wrap" style={{ marginTop: 14, maxHeight: 640, overflowX: "auto", overflowY: "auto" }}>
+        <div className="tbl-wrap" style={{ marginTop: 14, height: "calc(100vh - 260px)", minHeight: 320, overflowX: "auto", overflowY: "auto" }}>
           <table className="tbl calc-tbl" style={{ width: "max-content", minWidth: "100%" }}>
             <thead>
               <tr>
