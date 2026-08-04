@@ -62,7 +62,7 @@ body{
   background:linear-gradient(180deg, rgba(15,32,64,.97), rgba(10,22,40,.98));
   border-right:1px solid var(--card-border);backdrop-filter:blur(18px);color:var(--text-2);
 }
-.main{flex:1;margin-left:248px;padding:18px 22px 40px}
+.main{flex:1;min-width:0;margin-left:248px;padding:18px 22px 40px}
 
 .brand{display:flex;align-items:center;gap:11px;padding:6px 4px 16px;border-bottom:1px solid var(--line)}
 .brand .logo{width:46px;height:46px;border-radius:12px;display:flex;align-items:center;justify-content:center;flex-shrink:0;
