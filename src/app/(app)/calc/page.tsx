@@ -286,6 +286,7 @@ export default function MassiveCalculatorPage() {
                 <th style={stickyTh}>Paylater 6 Bln</th>
                 <th className="num" style={stickyTh}>Paylater 6mo Rp</th>
                 <th className="num" style={stickyTh}>Biaya Lain</th>
+                <th className="num" style={stickyTh}>Nett Profit</th>
                 <th style={stickyTh}></th>
               </tr>
             </thead>
@@ -295,10 +296,10 @@ export default function MassiveCalculatorPage() {
                   onSave={saveRow} onDelete={deleteRow} />
               ))}
               {!loading && rows.length === 0 && (
-                <tr><td colSpan={32} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>No product rows yet — click “+ Add Product” to start.</td></tr>
+                <tr><td colSpan={33} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>No product rows yet — click “+ Add Product” to start.</td></tr>
               )}
               {loading && (
-                <tr><td colSpan={32} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>Loading…</td></tr>
+                <tr><td colSpan={33} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>Loading…</td></tr>
               )}
             </tbody>
           </table>
@@ -403,6 +404,14 @@ function CalcRowLine({ no, row, fee, fees, onSave, onDelete }: {
       style={{ width, background: "rgba(10,22,40,.5)", border: "1px solid rgba(201,162,39,.25)", borderRadius: 6, padding: "4px 6px", color: "var(--text)", fontSize: 12.5, textAlign: "right" }} />
   );
 
+  const yesNo = (val: boolean, onChange: (v: boolean) => void) => (
+    <select value={val ? "Yes" : "No"} onChange={(e) => onChange(e.target.value === "Yes")}
+      style={{ width: 62, textAlign: "center", textAlignLast: "center", background: "rgba(10,22,40,.5)", border: "1px solid rgba(201,162,39,.25)", borderRadius: 6, padding: "4px 6px", color: "var(--text)", fontSize: 12.5 }}>
+      <option value="Yes">Yes</option>
+      <option value="No">No</option>
+    </select>
+  );
+
   return (
     <tr style={dirty ? { background: "rgba(201,162,39,.06)" } : undefined}>
       <td>{no}</td>
@@ -436,17 +445,23 @@ function CalcRowLine({ no, row, fee, fees, onSave, onDelete }: {
       <td className="num calc-ro">Rp {formatRp(calc.biayaProsesRp)}</td>
       <td className="num calc-ro">{fee ? `${fee.biaya_layanan_mall_pct}%` : "—"}</td>
       <td className="num calc-ro">Rp {formatRp(calc.biayaLayananRp)}</td>
-      <td><input type="checkbox" checked={v.gratis_ongkir_on} onChange={(e) => setV((s) => ({ ...s, gratis_ongkir_on: e.target.checked }))} /> {calc.isKhusus ? <span className="calc-ro">khusus</span> : <span className="calc-ro">biasa</span>}</td>
+      <td style={{ textAlign: "center" }}>
+        {yesNo(v.gratis_ongkir_on, (val) => setV((s) => ({ ...s, gratis_ongkir_on: val })))}
+        <div>{calc.isKhusus ? <span className="calc-ro">khusus</span> : <span className="calc-ro">biasa</span>}</div>
+      </td>
       <td className="num">{txt(v.berat_kg, (s) => setV((st) => ({ ...st, berat_kg: s.replace(/[^\d.]/g, "") })), 55)}</td>
       <td className="num">{txt(v.ukuran_cm3, (s) => setV((st) => ({ ...st, ukuran_cm3: s.replace(/[^\d.]/g, "") })), 70)}</td>
       <td className="num calc-ro">Rp {formatRp(calc.biayaOngkir)}</td>
-      <td><input type="checkbox" checked={v.promo_xtra_on} onChange={(e) => setV((s) => ({ ...s, promo_xtra_on: e.target.checked }))} /></td>
+      <td style={{ textAlign: "center" }}>{yesNo(v.promo_xtra_on, (val) => setV((s) => ({ ...s, promo_xtra_on: val })))}</td>
       <td className="num calc-ro">Rp {formatRp(calc.promoXtraRp)}</td>
-      <td><input type="checkbox" checked={v.paylater_3mo_on} onChange={(e) => setV((s) => ({ ...s, paylater_3mo_on: e.target.checked }))} /></td>
+      <td style={{ textAlign: "center" }}>{yesNo(v.paylater_3mo_on, (val) => setV((s) => ({ ...s, paylater_3mo_on: val })))}</td>
       <td className="num calc-ro">Rp {formatRp(calc.paylater3moRp)}</td>
-      <td><input type="checkbox" checked={v.paylater_6mo_on} onChange={(e) => setV((s) => ({ ...s, paylater_6mo_on: e.target.checked }))} /></td>
+      <td style={{ textAlign: "center" }}>{yesNo(v.paylater_6mo_on, (val) => setV((s) => ({ ...s, paylater_6mo_on: val })))}</td>
       <td className="num calc-ro">Rp {formatRp(calc.paylater6moRp)}</td>
       <td className="num">Rp {txt(v.biaya_lain_rp, (s) => setV((st) => ({ ...st, biaya_lain_rp: formatRp(parseRp(s)) })), 80)}</td>
+      <td className="num" style={{ fontWeight: 700, color: calc.profit >= 0 ? "#4ade80" : "#ff9a9a" }}>
+        Rp {formatRp(calc.profit)}<div style={{ fontSize: 11, fontWeight: 400 }}>{calc.marginPct === null ? "—" : `${calc.marginPct.toFixed(1)}%`}</div>
+      </td>
       <td>
         <div style={{ display: "flex", gap: 6 }}>
           {dirty && <>
