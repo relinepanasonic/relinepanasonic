@@ -111,11 +111,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
             </li>
           ))}
         </ul>
-        <div className="foot">
-          {role && <div style={{ fontSize: 11.5, fontWeight: 700, color: "var(--gold)", marginBottom: 8 }}>{ROLE_LABEL[role]}</div>}
-          <LangSwitcher />
-          <div style={{ marginTop: 8, opacity: .7 }}>v1.0 · Supabase</div>
-        </div>
+        <div className="foot">v1.0 · Supabase</div>
       </aside>
 
       {/* Main */}
@@ -139,6 +135,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
             <div className="page-sub">Marketplace performance overview — Shopee</div>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <LangSwitcher />
             <div className="user-badge">
               <span>{name}</span>
               {role && <span className="user-role">{ROLE_LABEL[role]}</span>}
