@@ -169,6 +169,42 @@ export default function MarketFeePage() {
     });
   }, [rows, search, platformFilter]);
 
+  // Same header names the CSV importer reads (HEADER_MAP in
+  // /api/marketfee/import) so an exported file can be edited and
+  // re-uploaded directly -- a round trip, not just a one-way dump.
+  function exportCsv() {
+    const headers = [
+      "Category", "Sub Category", "Jenis Product", "Platform", "Jenis Toko",
+      "Platform Fee", "Biaya Proses Pesanan", "Biaya Layanan Mall", "Kategori Kirim",
+      "Min Gratis Ongkir Uk Biasa", "Max Gratis Ongkir Uk Biasa",
+      "Min Gratis Ongkir Uk Khusus", "Max Gratis Ongkir Uk Khusus",
+      "Min Promo Xtra", "Max Promo Xtra",
+      "Spay Later Xtra 3 mo", "Spay Later Xtra 6 mo",
+    ];
+    const cell = (v: string | number | null) => {
+      const s = String(v ?? "");
+      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const lines = [headers.join(",")];
+    for (const r of filtered) {
+      lines.push([
+        r.category, r.sub_category, r.jenis_product, r.platform, r.jenis_toko,
+        `${r.platform_fee_pct}%`, r.biaya_proses_pesanan_rp, `${r.biaya_layanan_mall_pct}%`, r.kategori_kirim,
+        `${r.min_gratis_ongkir_biasa_pct}%`, r.max_gratis_ongkir_biasa_rp,
+        `${r.min_gratis_ongkir_khusus_pct}%`, r.max_gratis_ongkir_khusus_rp,
+        `${r.min_promo_xtra_pct}%`, r.max_promo_xtra_rp,
+        `${r.spaylater_xtra_3mo_pct}%`, `${r.spaylater_xtra_6mo_pct}%`,
+      ].map(cell).join(","));
+    }
+    const blob = new Blob(["﻿" + lines.join("\r\n")], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    const stamp = new Date().toISOString().slice(0, 10);
+    a.href = url; a.download = `market-place-fee_${stamp}.csv`;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+  }
+
   return (
     <>
       <style>{`
@@ -191,16 +227,19 @@ export default function MarketFeePage() {
               {rows.length.toLocaleString("id-ID")} entries · every fee number below is editable{canEdit ? "" : " (admin only)"}.
             </div>
           </div>
-          {canEdit && (
-            <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-              <label className="btn-ghost" style={{ cursor: uploading ? "not-allowed" : "pointer", opacity: uploading ? .6 : 1 }}>
-                {uploading ? "Importing…" : "Upload CSV"}
-                <input type="file" accept=".csv,.xlsx,.xls" style={{ display: "none" }} disabled={uploading}
-                  onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadCsv(f); e.target.value = ""; }} />
-              </label>
-              <button className="btn-gold" onClick={() => setShowAdd(true)}>+ Add Fee</button>
-            </div>
-          )}
+          <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+            <button className="btn-ghost" onClick={exportCsv} disabled={!filtered.length}>Export CSV</button>
+            {canEdit && (
+              <>
+                <label className="btn-ghost" style={{ cursor: uploading ? "not-allowed" : "pointer", opacity: uploading ? .6 : 1 }}>
+                  {uploading ? "Importing…" : "Upload CSV"}
+                  <input type="file" accept=".csv,.xlsx,.xls" style={{ display: "none" }} disabled={uploading}
+                    onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadCsv(f); e.target.value = ""; }} />
+                </label>
+                <button className="btn-gold" onClick={() => setShowAdd(true)}>+ Add Fee</button>
+              </>
+            )}
+          </div>
         </div>
 
         {uploadMsg && (

@@ -90,6 +90,13 @@ export async function POST(req: NextRequest) {
   const editedBy = profile.display_name || profile.email?.split("@")[0] || "Admin";
   const editedMonth = `${MONTH_LIST[new Date().getMonth()]} ${new Date().getFullYear()}`;
 
+  // Text fields normalize blank -> "" (not null). The upsert below matches
+  // existing rows via ON CONFLICT on (category, sub_category, jenis_product,
+  // platform, jenis_toko) -- Postgres treats every NULL as distinct from
+  // every other NULL, so a blank sub_category/jenis_product/jenis_toko would
+  // never match an existing blank row on conflict and would silently INSERT
+  // a duplicate instead of overwriting it. "" is a real, comparable value,
+  // so re-importing the same sheet always updates the same rows in place.
   const mapped = matrix.slice(headerIdx + 1)
     .filter((r) => String(r[colIdx("Category")] ?? "").trim())
     .map((r) => {
@@ -97,7 +104,7 @@ export async function POST(req: NextRequest) {
       for (const h of HEADER_MAP) {
         const idx = colIdx(h.header);
         const raw = idx === -1 ? "" : r[idx];
-        if (h.kind === "text") row[h.field] = String(raw ?? "").trim() || null;
+        if (h.kind === "text") row[h.field] = String(raw ?? "").trim();
         else if (h.kind === "pct") row[h.field] = parsePct(raw);
         else row[h.field] = parseRp(raw);
       }
