@@ -143,6 +143,8 @@ export default function MassiveCalculatorPage() {
   const [rows, setRows] = useState<CalcRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [uploadMsg, setUploadMsg] = useState("");
 
   const feesById = useMemo(() => new Map(fees.map((f) => [f.id, f])), [fees]);
 
@@ -180,6 +182,27 @@ export default function MassiveCalculatorPage() {
     reload(clientId);
   }
 
+  async function uploadBulk(file: File) {
+    setUploading(true);
+    setUploadMsg("");
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch("/api/calc/bulk-import", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${session?.access_token ?? ""}` },
+        body: fd,
+      });
+      const j = await res.json();
+      if (!res.ok) { setUploadMsg(`✗ ${j.error}`); return; }
+      setUploadMsg(`✓ Imported ${j.imported.toLocaleString("id-ID")} rows (${j.matched} linked to a fee, ${j.unmatched} need “Pick Product” manually)`);
+      reload(clientId);
+    } finally {
+      setUploading(false);
+    }
+  }
+
   async function saveRow(id: string, patch: Partial<CalcRow>) {
     const { error } = await supabase.from("massive_calc_rows").update(patch).eq("id", id);
     if (error) { alert(error.message); return; }
@@ -214,8 +237,18 @@ export default function MassiveCalculatorPage() {
             <h3 style={{ margin: 0 }}>Massive Calculator</h3>
             <div className="hint">{rows.length.toLocaleString("id-ID")} product rows · pick Category/Sub Category/Jenis Product/Platform/Jenis Toko to link a fee row, fill in price and weight, Total Biaya / Profit update live.</div>
           </div>
-          <button className="btn-gold" disabled={adding || !clientId} onClick={addRow}>{adding ? "Adding…" : "+ Add Product"}</button>
+          <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+            <label className="btn-ghost" style={{ cursor: uploading || !clientId ? "not-allowed" : "pointer", opacity: uploading || !clientId ? .6 : 1 }}>
+              {uploading ? "Importing…" : "Upload Bulk"}
+              <input type="file" accept=".csv,.xlsx,.xls" style={{ display: "none" }} disabled={uploading || !clientId}
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadBulk(f); e.target.value = ""; }} />
+            </label>
+            <button className="btn-gold" disabled={adding || !clientId} onClick={addRow}>{adding ? "Adding…" : "+ Add Product"}</button>
+          </div>
         </div>
+        {uploadMsg && (
+          <div style={{ marginBottom: 10, fontSize: 13, color: uploadMsg.startsWith("✓") ? "var(--gold)" : "#f87171" }}>{uploadMsg}</div>
+        )}
 
         <div className="tbl-wrap" style={{ marginTop: 14, height: "calc(100vh - 260px)", minHeight: 320, overflowX: "auto", overflowY: "auto" }}>
           <table className="tbl calc-tbl" style={{ width: "max-content", minWidth: "100%" }}>
