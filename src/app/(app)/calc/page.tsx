@@ -406,9 +406,14 @@ function CalcRowLine({ no, row, fee, fees, onSave, onDelete }: {
 
   const yesNo = (val: boolean, onChange: (v: boolean) => void) => (
     <select value={val ? "Yes" : "No"} onChange={(e) => onChange(e.target.value === "Yes")}
-      style={{ width: 62, textAlign: "center", textAlignLast: "center", background: "rgba(10,22,40,.5)", border: "1px solid rgba(201,162,39,.25)", borderRadius: 6, padding: "4px 6px", color: "var(--text)", fontSize: 12.5 }}>
-      <option value="Yes">Yes</option>
-      <option value="No">No</option>
+      style={{
+        width: 62, textAlign: "center", textAlignLast: "center", borderRadius: 6, padding: "4px 6px", fontSize: 12.5, fontWeight: 700,
+        background: val ? "rgba(74,222,128,.12)" : "rgba(255,90,90,.12)",
+        border: `1px solid ${val ? "rgba(74,222,128,.4)" : "rgba(255,90,90,.4)"}`,
+        color: val ? "#4ade80" : "#ff9a9a",
+      }}>
+      <option value="Yes" style={{ color: "#4ade80", background: "var(--navy-deep, #0d1a36)" }}>Yes</option>
+      <option value="No" style={{ color: "#ff9a9a", background: "var(--navy-deep, #0d1a36)" }}>No</option>
     </select>
   );
 
