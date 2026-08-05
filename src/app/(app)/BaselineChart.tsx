@@ -346,10 +346,13 @@ export default function BaselineChart({ data, scopeLabel, monthLabel, lang = "id
           is actually re-fetching for the new filter. */}
       <h3 style={{ margin: "0 0 2px" }}>{t.b_title} — <span style={{ color: GOLD }}>{scopeLabel}</span></h3>
       <div className="hint" style={{ marginBottom: 14 }}>
+        {/* English is the only one of the three languages that pluralizes
+            with a trailing "s" — Indonesian and Japanese nouns don't inflect,
+            so the placeholder resolves to "" for those. */}
         {monthFiltered ? (
-          tf(t.b_scopeMonthHint, { stores, storesPlural: stores === 1 ? "" : "s", month: monthLabel || "" })
+          tf(t.b_scopeMonthHint, { stores, storesPlural: lang === "en" && stores !== 1 ? "s" : "", month: monthLabel || "" })
         ) : (
-          tf(t.b_scopeAvgHint, { stores, storesPlural: stores === 1 ? "" : "s", months, monthsPlural: months === 1 ? "" : "s" })
+          tf(t.b_scopeAvgHint, { stores, storesPlural: lang === "en" && stores !== 1 ? "s" : "", months, monthsPlural: lang === "en" && months !== 1 ? "s" : "" })
         )}
       </div>
 

@@ -3,6 +3,7 @@ import {
   Line as SvgLine, Polyline, Font,
 } from "@react-pdf/renderer";
 import { Fragment } from "react";
+import path from "path";
 import { MONTH_LIST } from "@/lib/parse";
 import type { Lang } from "@/lib/dashLang";
 import { BOD_T, tf, buildNarrative, buildInsightCards, buildActions } from "@/lib/bodLang";
@@ -16,11 +17,25 @@ import { BOD_T, tf, buildNarrative, buildInsightCards, buildActions } from "@/li
 // (wrap={false} would ALSO prevent that, but it makes react-pdf shrink
 // the page down to its content height, silently breaking the 16:9 ratio.)
 //
-// Fonts are the PDF base-14 only (Helvetica / Times-Roman), so nothing
-// is fetched at render time on serverless. That also means the glyph set
-// is WinAnsi: the reference deck's up/down triangles are NOT available
+// Font: Noto Sans JP, bundled locally (src/lib/fonts) so nothing is
+// fetched at render time on serverless. It's used for ALL three
+// languages, not just Japanese — react-pdf's base-14 fonts (Helvetica /
+// Times-Roman) have zero CJK glyph coverage, and registering a custom
+// font under the NAME "Helvetica" does not override the standard font
+// (verified empirically: react-pdf ignores it and keeps using its
+// built-in WinAnsi Helvetica, so Japanese text came out blank/garbled).
+// Noto Sans JP has full Latin coverage too, so ID/EN keep a normal look
+// under one consistent font instead of running two different registries
+// depending on language. The glyph set is otherwise still WinAnsi-ish
+// for symbols: the reference deck's up/down triangles are NOT available
 // and would render as tofu, so deltas use ASCII "+"/"-" instead.
 // =====================================================================
+
+const FONT_DIR = path.join(process.cwd(), "src", "lib", "fonts");
+Font.register({ family: "NotoSansJP", src: path.join(FONT_DIR, "NotoSansJP-Regular.ttf") });
+Font.register({ family: "NotoSansJP-Bold", src: path.join(FONT_DIR, "NotoSansJP-Bold.ttf") });
+const F_REG = "NotoSansJP";
+const F_BOLD = "NotoSansJP-Bold";
 
 // react-pdf hyphenates long words by default, which breaks product codes
 // like "CS/CU-YN18AKJ" mid-token. Return the word unsplit.
@@ -122,17 +137,17 @@ export function lastN<T extends { year: number | null; month: string }>(pts: T[]
 
 /* ---------------- styles ---------------- */
 const s = StyleSheet.create({
-  page: { width: PAGE_W, height: PAGE_H, backgroundColor: BG, paddingTop: PAD, paddingBottom: PAD, paddingHorizontal: PAD, fontFamily: "Helvetica", color: INK },
-  secNo: { fontFamily: "Times-Bold", fontSize: 13, color: GOLD, marginRight: 9 },
-  secTitle: { fontFamily: "Times-Bold", fontSize: 21, color: NAVY },
+  page: { width: PAGE_W, height: PAGE_H, backgroundColor: BG, paddingTop: PAD, paddingBottom: PAD, paddingHorizontal: PAD, fontFamily: F_REG, color: INK },
+  secNo: { fontFamily: F_BOLD, fontSize: 13, color: GOLD, marginRight: 9 },
+  secTitle: { fontFamily: F_BOLD, fontSize: 21, color: NAVY },
   rule: { height: 1, backgroundColor: BORDER, marginTop: 11 },
   card: { backgroundColor: WHITE, borderRadius: 7, borderWidth: 1, borderColor: BORDER, padding: 12 },
-  cardTitle: { fontFamily: "Times-Bold", fontSize: 12.5, color: NAVY },
+  cardTitle: { fontFamily: F_BOLD, fontSize: 12.5, color: NAVY },
   cardSub: { fontSize: 7.5, color: MUTED, marginTop: 2 },
-  label: { fontSize: 7, color: MUTED, fontFamily: "Helvetica-Bold", letterSpacing: 0.5 },
+  label: { fontSize: 7, color: MUTED, fontFamily: F_BOLD, letterSpacing: 0.5 },
   footer: { position: "absolute", left: PAD, right: PAD, bottom: 16, flexDirection: "row", justifyContent: "space-between" },
   footTxt: { fontSize: 7, color: MUTED },
-  th: { fontSize: 7, color: MUTED, fontFamily: "Helvetica-Bold", letterSpacing: 0.4 },
+  th: { fontSize: 7, color: MUTED, fontFamily: F_BOLD, letterSpacing: 0.4 },
   td: { fontSize: 8.5, color: INK },
 });
 
@@ -167,7 +182,7 @@ function BarsSvg({ data, w, h, highlightLast = true, lang = "id" }: { data: { la
         return (
           <Fragment key={i}>
             <Rect x={x} y={y} width={bw} height={bh} fill={on ? GOLD : NAVY} rx={2} />
-            <Text x={x + bw / 2} y={y - 4} style={{ fontSize: 7, fill: on ? GOLD : NAVY, textAnchor: "middle", fontFamily: "Helvetica-Bold" } as never}>
+            <Text x={x + bw / 2} y={y - 4} style={{ fontSize: 7, fill: on ? GOLD : NAVY, textAnchor: "middle", fontFamily: F_BOLD } as never}>
               {rpShort(d.value).replace("Rp", "")}
             </Text>
             <Text x={x + bw / 2} y={padT + ch + 11} style={{ fontSize: 6.5, fill: MUTED, textAnchor: "middle" } as never}>{d.label}</Text>
@@ -230,7 +245,7 @@ function FunnelSvg({ rows, w, h, lang = "id" }: { rows: { label: string; value: 
           <Fragment key={i}>
             <Text x={padL - 6} y={y + barH / 2 + 3} style={{ fontSize: 7, fill: MUTED, textAnchor: "end" } as never}>{r.label}</Text>
             <Rect x={padL} y={y} width={bw} height={barH} fill={i === rows.length - 1 ? GOLD : NAVY} rx={2} />
-            <Text x={padL + bw + 6} y={y + barH / 2 + 3} style={{ fontSize: 7.5, fill: INK, fontFamily: "Helvetica-Bold" } as never}>{cnt(r.value)}</Text>
+            <Text x={padL + bw + 6} y={y + barH / 2 + 3} style={{ fontSize: 7.5, fill: INK, fontFamily: F_BOLD } as never}>{cnt(r.value)}</Text>
             {r.note && (
               <Text x={padL + bw + 6 + String(cnt(r.value)).length * 4.6 + 8} y={y + barH / 2 + 3} style={{ fontSize: 6.5, fill: MUTED } as never}>{r.note}</Text>
             )}
@@ -274,7 +289,7 @@ function DonutSvg({ share, w, h, lang = "id" }: { share: number; w: number; h: n
   return (
     <Svg width={w} height={h}>
       {body}
-      <Text x={cxp} y={cyp + 2} style={{ fontSize: 17, fill: NAVY, textAnchor: "middle", fontFamily: "Times-Bold" } as never}>{pct(frac * 100)}</Text>
+      <Text x={cxp} y={cyp + 2} style={{ fontSize: 17, fill: NAVY, textAnchor: "middle", fontFamily: F_BOLD } as never}>{pct(frac * 100)}</Text>
       <Text x={cxp} y={cyp + 14} style={{ fontSize: 6.5, fill: MUTED, textAnchor: "middle" } as never}>{BOD_T[lang].donutPanasonic}</Text>
     </Svg>
   );
@@ -320,10 +335,10 @@ function KpiCard({ label, value, sub, delta, hero, width, height }: {
     }}>
       <View style={{ width: 42, height: 3.5, backgroundColor: hero ? GOLD_SOFT : GOLD, borderRadius: 2, marginBottom: 9 }} />
       <Text style={[s.label, { color: hero ? GOLD_SOFT : MUTED }]}>{label}</Text>
-      <Text style={{ fontFamily: "Times-Bold", fontSize: 19, color: fg, marginTop: 5 }}>{value}</Text>
+      <Text style={{ fontFamily: F_BOLD, fontSize: 19, color: fg, marginTop: 5 }}>{value}</Text>
       {!!sub && <Text style={{ fontSize: 7.5, color: hero ? "#c3cee3" : MUTED, marginTop: 4 }}>{clip(sub, 42)}</Text>}
       <View style={{ flexGrow: 1 }} />
-      <Text style={{ fontSize: 8, color: dcol, fontFamily: "Helvetica-Bold" }}>{deltaStr(delta ?? null)}</Text>
+      <Text style={{ fontSize: 8, color: dcol, fontFamily: F_BOLD }}>{deltaStr(delta ?? null)}</Text>
     </View>
   );
 }
@@ -360,18 +375,18 @@ export function BodReportDocument(props: {
   return (
     <Document title={`${t.cover_reportLine} — ${scopeLabel} — ${periodLabel}`}>
       {/* ============ COVER ============ */}
-      <Page size={PAGE_SIZE} style={{ width: PAGE_W, height: PAGE_H, fontFamily: "Helvetica", backgroundColor: NAVY }}>
+      <Page size={PAGE_SIZE} style={{ width: PAGE_W, height: PAGE_H, fontFamily: F_REG, backgroundColor: NAVY }}>
         <View style={{ position: "absolute", top: 0, right: 0, width: 190, height: PAGE_H, backgroundColor: NAVY_DEEP }} />
         <View style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: 10, backgroundColor: GOLD }} />
         <View style={{ paddingHorizontal: 64, paddingTop: 54 }}>
-          <Text style={{ fontFamily: "Times-Bold", fontSize: 22, color: WHITE }}>Reline</Text>
-          <Text style={{ fontSize: 7.5, color: GOLD_SOFT, letterSpacing: 2.2, marginTop: 3, fontFamily: "Helvetica-Bold" }}>
+          <Text style={{ fontFamily: F_BOLD, fontSize: 22, color: WHITE }}>Reline</Text>
+          <Text style={{ fontSize: 7.5, color: GOLD_SOFT, letterSpacing: 2.2, marginTop: 3, fontFamily: F_BOLD }}>
             {t.cover_kicker}
           </Text>
         </View>
         <View style={{ paddingHorizontal: 64, marginTop: 108 }}>
-          <Text style={{ fontSize: 10, color: GOLD, letterSpacing: 1.5, fontFamily: "Helvetica-Bold" }}>{t.cover_reportLine}</Text>
-          <Text style={{ fontFamily: "Times-Bold", fontSize: 42, color: WHITE, marginTop: 14 }}>{clip(scopeLabel, 36)}</Text>
+          <Text style={{ fontSize: 10, color: GOLD, letterSpacing: 1.5, fontFamily: F_BOLD }}>{t.cover_reportLine}</Text>
+          <Text style={{ fontFamily: F_BOLD, fontSize: 42, color: WHITE, marginTop: 14 }}>{clip(scopeLabel, 36)}</Text>
           <Text style={{ fontSize: 13, color: "#c3cee3", marginTop: 12 }}>
             {periodLabel}   ·   {t.cover_focusBrand}
           </Text>
@@ -388,7 +403,7 @@ export function BodReportDocument(props: {
       <Page size={PAGE_SIZE} style={s.page}>
         <Header no="01" title={t.sec1_title} />
         <View style={{ height: 82, backgroundColor: NAVY, borderRadius: 8, padding: 13, marginBottom: 13 }}>
-          <Text style={{ fontSize: 7.5, color: GOLD_SOFT, fontFamily: "Helvetica-Bold", letterSpacing: 1 }}>{t.summaryLabel}</Text>
+          <Text style={{ fontSize: 7.5, color: GOLD_SOFT, fontFamily: F_BOLD, letterSpacing: 1 }}>{t.summaryLabel}</Text>
           <Text style={{ fontSize: 9, color: "#e6ebf5", marginTop: 6, lineHeight: 1.5 }}>
             {clip(buildNarrative(lang, k, pk, periodLabel, scopeLabel, { rp, pct, roasFmt, cnt }, pctDelta), 460)}
           </Text>
@@ -473,14 +488,14 @@ export function BodReportDocument(props: {
         </View>
         {dealers.slice(0, 11).map((d, i) => (
           <View key={i} style={{ flexDirection: "row", alignItems: "center", height: 27, backgroundColor: i % 2 ? "#eef1f7" : "transparent", paddingHorizontal: 2 }}>
-            <Text style={{ width: 26, fontFamily: "Times-Bold", fontSize: 10, color: GOLD }}>{i + 1}</Text>
+            <Text style={{ width: 26, fontFamily: F_BOLD, fontSize: 10, color: GOLD }}>{i + 1}</Text>
             <Text style={[s.td, { flex: 3 }]}>{clip(d.store_name, 34)}</Text>
             <Text style={[s.td, { flex: 1.7, color: MUTED }]}>{clip(d.city || "—", 20)}</Text>
-            <Text style={[s.td, { flex: 1.5, textAlign: "right", fontFamily: "Helvetica-Bold", color: NAVY }]}>{rp(d.sales)}</Text>
+            <Text style={[s.td, { flex: 1.5, textAlign: "right", fontFamily: F_BOLD, color: NAVY }]}>{rp(d.sales)}</Text>
             <Text style={[s.td, { flex: 1.2, textAlign: "right", color: MUTED }]}>{cnt(d.traffic)}</Text>
             <Text style={[s.td, { flex: 1.2, textAlign: "right", color: MUTED }]}>{cnt(d.in_cart)}</Text>
             <Text style={[s.td, { flex: 1.3, textAlign: "right", color: MUTED }]}>{rp(d.ad_cost)}</Text>
-            <Text style={[s.td, { flex: 0.9, textAlign: "right", fontFamily: "Helvetica-Bold", color: d.roas != null && d.roas >= 3 ? GREEN : INK }]}>{roasFmt(d.roas)}</Text>
+            <Text style={[s.td, { flex: 0.9, textAlign: "right", fontFamily: F_BOLD, color: d.roas != null && d.roas >= 3 ? GREEN : INK }]}>{roasFmt(d.roas)}</Text>
           </View>
         ))}
         {!dealers.length && <Text style={{ fontSize: 9, color: MUTED, marginTop: 14 }}>{t.p4_empty}</Text>}
@@ -503,9 +518,9 @@ export function BodReportDocument(props: {
         </View>
         {products.map((p, i) => (
           <View key={i} style={{ flexDirection: "row", alignItems: "center", height: 29, backgroundColor: i % 2 ? "#eef1f7" : "transparent", paddingHorizontal: 2 }}>
-            <Text style={{ width: 30, fontFamily: "Times-Bold", fontSize: 11, color: GOLD }}>{i + 1}</Text>
+            <Text style={{ width: 30, fontFamily: F_BOLD, fontSize: 11, color: GOLD }}>{i + 1}</Text>
             <Text style={[s.td, { flex: 6 }]}>{clip(p.name, 78)}</Text>
-            <Text style={[s.td, { flex: 1.6, textAlign: "right", fontFamily: "Helvetica-Bold", color: NAVY }]}>{rp(p.sales)}</Text>
+            <Text style={[s.td, { flex: 1.6, textAlign: "right", fontFamily: F_BOLD, color: NAVY }]}>{rp(p.sales)}</Text>
             <Text style={[s.td, { flex: 1, textAlign: "right", color: MUTED }]}>{pct((p.sales / prodTotal) * 100)}</Text>
           </View>
         ))}
@@ -538,7 +553,7 @@ function ImpactBody({ bva, lang = "id" }: { bva: BaselineVsActive | null; lang?:
   if (!bva || !bva.baseline.stores) {
     return (
       <View style={[s.card, { height: 160, justifyContent: "center", alignItems: "center" }]}>
-        <Text style={{ fontSize: 11, color: NAVY, fontFamily: "Times-Bold" }}>{t.p2_noBaselineTitle}</Text>
+        <Text style={{ fontSize: 11, color: NAVY, fontFamily: F_BOLD }}>{t.p2_noBaselineTitle}</Text>
         <Text style={{ fontSize: 8.5, color: MUTED, marginTop: 6, textAlign: "center" }}>
           {t.p2_noBaselineNote}
         </Text>
@@ -578,14 +593,14 @@ function ImpactBody({ bva, lang = "id" }: { bva: BaselineVsActive | null; lang?:
         <BigStat width={COL3} x={adsX} title={t.p2_bigAds} before={rp(bAds)} after={rp(aAds)} />
         <View style={{ width: COL3, height: 116, backgroundColor: NAVY, borderRadius: 7, padding: 13, justifyContent: "center" }}>
           <Text style={[s.label, { color: GOLD_SOFT }]}>{t.p2_roasActiveLabel}</Text>
-          <Text style={{ fontFamily: "Times-Bold", fontSize: 27, color: WHITE, marginTop: 4 }}>{roasFmt(aRoas)}</Text>
+          <Text style={{ fontFamily: F_BOLD, fontSize: 27, color: WHITE, marginTop: 4 }}>{roasFmt(aRoas)}</Text>
           <Text style={{ fontSize: 7.5, color: "#c3cee3", marginTop: 5 }}>
             {adsThin ? t.p2_roasNoAdsBefore : tf(t.p2_roasBefore, { v: roasFmt(bRoas) })}
           </Text>
         </View>
       </View>
 
-      <Text style={{ fontSize: 7.5, color: MUTED, fontFamily: "Helvetica-Bold", letterSpacing: 1, marginBottom: 7 }}>
+      <Text style={{ fontSize: 7.5, color: MUTED, fontFamily: F_BOLD, letterSpacing: 1, marginBottom: 7 }}>
         {t.p2_detailLabel}
       </Text>
       <View style={{ flexDirection: "row", paddingBottom: 5, borderBottomWidth: 1, borderBottomColor: NAVY }}>
@@ -598,8 +613,8 @@ function ImpactBody({ bva, lang = "id" }: { bva: BaselineVsActive | null; lang?:
         <View key={i} style={{ flexDirection: "row", height: 25, alignItems: "center", backgroundColor: i % 2 ? "#eef1f7" : "transparent", paddingHorizontal: 2 }}>
           <Text style={[s.td, { flex: 3 }]}>{r.metric}</Text>
           <Text style={[s.td, { flex: 2, textAlign: "right", color: MUTED }]}>{r.before}</Text>
-          <Text style={[s.td, { flex: 2, textAlign: "right", fontFamily: "Helvetica-Bold", color: NAVY }]}>{r.after}</Text>
-          <Text style={[s.td, { flex: 1.2, textAlign: "right", fontFamily: "Helvetica-Bold", color: GREEN }]}>{r.change}</Text>
+          <Text style={[s.td, { flex: 2, textAlign: "right", fontFamily: F_BOLD, color: NAVY }]}>{r.after}</Text>
+          <Text style={[s.td, { flex: 1.2, textAlign: "right", fontFamily: F_BOLD, color: GREEN }]}>{r.change}</Text>
         </View>
       ))}
       <Text style={{ fontSize: 7.5, color: MUTED, marginTop: 9, lineHeight: 1.45 }}>
@@ -612,8 +627,8 @@ function ImpactBody({ bva, lang = "id" }: { bva: BaselineVsActive | null; lang?:
 function BigStat({ width, x, title, before, after }: { width: number; x: number | null; title: string; before: string; after: string }) {
   return (
     <View style={[s.card, { width, height: 116, justifyContent: "center" }]}>
-      <Text style={{ fontFamily: "Times-Bold", fontSize: 27, color: x != null && x >= 1 ? GREEN : NAVY }}>{x != null ? mult(x) : "—"}</Text>
-      <Text style={{ fontSize: 9, color: NAVY, fontFamily: "Helvetica-Bold", marginTop: 4 }}>{title}</Text>
+      <Text style={{ fontFamily: F_BOLD, fontSize: 27, color: x != null && x >= 1 ? GREEN : NAVY }}>{x != null ? mult(x) : "—"}</Text>
+      <Text style={{ fontSize: 9, color: NAVY, fontFamily: F_BOLD, marginTop: 4 }}>{title}</Text>
       <Text style={{ fontSize: 8, color: MUTED, marginTop: 4 }}>{clip(before, 18)}  →  {clip(after, 18)}</Text>
     </View>
   );
@@ -645,10 +660,10 @@ function Insights({ k, pk, atcRate, shareFrac, dealers, lang = "id" }: {
         {cards.slice(2, 4).map((c, i) => <InsightCard key={i} {...c} color={toneColor[c.tone]} />)}
       </View>
       <View style={{ backgroundColor: NAVY, borderRadius: 8, padding: 13, height: 112 }}>
-        <Text style={{ fontSize: 7.5, color: GOLD_SOFT, fontFamily: "Helvetica-Bold", letterSpacing: 1, marginBottom: 7 }}>{t.p6_actionsLabel}</Text>
+        <Text style={{ fontSize: 7.5, color: GOLD_SOFT, fontFamily: F_BOLD, letterSpacing: 1, marginBottom: 7 }}>{t.p6_actionsLabel}</Text>
         {actions.map((a, i) => (
           <View key={i} style={{ flexDirection: "row", marginBottom: 4 }}>
-            <Text style={{ width: 15, fontSize: 8, color: GOLD, fontFamily: "Helvetica-Bold" }}>{i + 1}.</Text>
+            <Text style={{ width: 15, fontSize: 8, color: GOLD, fontFamily: F_BOLD }}>{i + 1}.</Text>
             <Text style={{ flex: 1, fontSize: 8, color: "#e6ebf5", lineHeight: 1.35 }}>{clip(a, 150)}</Text>
           </View>
         ))}
@@ -660,8 +675,8 @@ function Insights({ k, pk, atcRate, shareFrac, dealers, lang = "id" }: {
 function InsightCard({ label, title, body, color }: { label: string; title: string; body: string; color: string }) {
   return (
     <View style={{ width: COL2, height: 104, backgroundColor: WHITE, borderRadius: 7, borderWidth: 1, borderColor: BORDER, borderLeftWidth: 4, borderLeftColor: color, padding: 11 }}>
-      <Text style={{ fontSize: 7, color, fontFamily: "Helvetica-Bold", letterSpacing: 0.8 }}>{label}</Text>
-      <Text style={{ fontFamily: "Times-Bold", fontSize: 12.5, color: NAVY, marginTop: 5 }}>{clip(title, 40)}</Text>
+      <Text style={{ fontSize: 7, color, fontFamily: F_BOLD, letterSpacing: 0.8 }}>{label}</Text>
+      <Text style={{ fontFamily: F_BOLD, fontSize: 12.5, color: NAVY, marginTop: 5 }}>{clip(title, 40)}</Text>
       <Text style={{ fontSize: 8, color: MUTED, marginTop: 5, lineHeight: 1.4 }}>{clip(body, 190)}</Text>
     </View>
   );
