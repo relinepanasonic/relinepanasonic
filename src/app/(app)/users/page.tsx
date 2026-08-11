@@ -100,6 +100,16 @@ export default function UsersPage() {
   const [busy, setBusy] = useState(false);
   const [msg,  setMsg]  = useState("");
   const [copied, setCopied] = useState(false);
+  const [myRole, setMyRole] = useState<string | null>(null);
+  const [editing, setEditing] = useState<Profile | null>(null);
+
+  // client_admin (e.g. "Vani") may only create/edit/delete Dealer Owner
+  // (branch_manager) accounts -- everything else on this page stays
+  // superadmin-only. Enforced server-side too (API routes + RLS); this
+  // just keeps the UI from offering actions that would be rejected anyway.
+  const isClientAdmin = myRole === "client_admin";
+  const availableRoles = isClientAdmin ? INVITE_ROLES.filter((r) => r.v === "branch_manager") : INVITE_ROLES;
+  const canManage = (p: Profile) => !isClientAdmin || p.role === "branch_manager";
 
   const getAuthHeader = useCallback(async () => {
     const { data: { session } } = await supabase.auth.getSession();
@@ -118,6 +128,11 @@ export default function UsersPage() {
 
   useEffect(() => {
     (async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { data: me } = await supabase.from("profiles").select("role").eq("id", user.id).single();
+        setMyRole(me?.role ?? null);
+      }
       const { data: cl } = await supabase.from("clients").select("id,name").order("name");
       const clientList = (cl as Client[]) || [];
       setClients(clientList);
@@ -196,6 +211,22 @@ export default function UsersPage() {
     reload();
   }
 
+  // Role is deliberately never sent here — editing never reassigns a
+  // user to a different role (that's what re-inviting is for), which
+  // also means the API's client_admin guard never has to see a role
+  // change coming from this form.
+  async function saveUser(id: string, patch: { display_name: string; scope_store?: string | null; password?: string }) {
+    const h = await getAuthHeader();
+    const res = await fetch("/api/users", {
+      method: "PATCH", headers: { ...h, "Content-Type": "application/json" },
+      body: JSON.stringify({ id, display_name: patch.display_name, scope_store: patch.scope_store, password: patch.password || undefined }),
+    });
+    const j = await res.json();
+    if (!res.ok) { alert(j.error); return; }
+    setEditing(null);
+    reload();
+  }
+
   const inviteUrl = token && typeof window !== "undefined" ? `${window.location.origin}/join/${token}` : "";
   const pending = invites.filter((i) => !i.used_at && new Date(i.expires_at) > new Date());
 
@@ -231,10 +262,18 @@ export default function UsersPage() {
                 <td><RolePill role={r.role} /></td>
                 <td style={{ fontSize: 12, color: "var(--muted)" }}>{scopeOf(r)}</td>
                 <td>
-                  <button onClick={() => deleteUser(r)}
-                    style={{ padding: "4px 10px", borderRadius: 7, border: "1px solid rgba(239,68,68,0.35)", background: "rgba(239,68,68,0.1)", color: "#f87171", fontSize: 12, cursor: "pointer" }}>
-                    Delete
-                  </button>
+                  {canManage(r) && (
+                    <div style={{ display: "flex", gap: 6 }}>
+                      <button onClick={() => setEditing(r)}
+                        style={{ padding: "4px 10px", borderRadius: 7, border: "1px solid rgba(201,162,39,0.35)", background: "rgba(201,162,39,0.1)", color: "#c9a227", fontSize: 12, cursor: "pointer" }}>
+                        Edit
+                      </button>
+                      <button onClick={() => deleteUser(r)}
+                        style={{ padding: "4px 10px", borderRadius: 7, border: "1px solid rgba(239,68,68,0.35)", background: "rgba(239,68,68,0.1)", color: "#f87171", fontSize: 12, cursor: "pointer" }}>
+                        Delete
+                      </button>
+                    </div>
+                  )}
                 </td>
               </tr>
             ))}
@@ -336,10 +375,13 @@ export default function UsersPage() {
                 </Fld>
 
                 <Fld label="Role">
-                  <select style={inp} value={form.role}
+                  <select style={inp} value={form.role} disabled={isClientAdmin}
                     onChange={(e) => setForm({ ...form, role: e.target.value, scope: "", scope_stores: [] })}>
-                    {INVITE_ROLES.map((r) => <option key={r.v} value={r.v}>{r.l}</option>)}
+                    {availableRoles.map((r) => <option key={r.v} value={r.v}>{r.l}</option>)}
                   </select>
+                  {isClientAdmin && (
+                    <span style={{ fontSize: 11, color: "var(--muted)" }}>Admins can only create Dealer Owner accounts.</span>
+                  )}
                 </Fld>
 
                 {/* Scope field — only shown when role needs it; sourced from Core List
@@ -431,6 +473,68 @@ export default function UsersPage() {
         </div>,
         document.body
       )}
+
+      {editing && (
+        <EditUserModal user={editing} dealers={dealers} onSave={saveUser} onClose={() => setEditing(null)} />
+      )}
     </div>
+  );
+}
+
+function EditUserModal({ user, dealers, onSave, onClose }: {
+  user: Profile; dealers: { value: string; city: string | null }[];
+  onSave: (id: string, patch: { display_name: string; scope_store?: string | null; password?: string }) => void;
+  onClose: () => void;
+}) {
+  const [displayName, setDisplayName] = useState(user.display_name || "");
+  const [scopeStore, setScopeStore] = useState(user.scope_store || "");
+  const [password, setPassword] = useState("");
+  const showStoreScope = user.role === "branch_manager" || user.role === "store_user";
+
+  return typeof document === "undefined" ? null : createPortal(
+    <div onClick={onClose} style={overlay}>
+      <div onClick={(e) => e.stopPropagation()} style={modal}>
+        <div style={{ display: "grid", gap: 16 }}>
+          <h3 style={{ margin: 0, color: "#e8edf8" }}>Edit User</h3>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <RolePill role={user.role} />
+            <span style={{ fontSize: 12, color: "var(--muted)" }}>{user.email}</span>
+          </div>
+
+          <Fld label="Full Name">
+            <input style={inp} value={displayName} onChange={(e) => setDisplayName(e.target.value)} />
+          </Fld>
+
+          {showStoreScope && (
+            <Fld label="Store / Dealer (scope)">
+              <select style={inp} value={scopeStore} onChange={(e) => setScopeStore(e.target.value)}>
+                <option value="">— select dealer —</option>
+                {dealers.map((d) => <option key={d.value} value={d.value}>{d.value}</option>)}
+              </select>
+            </Fld>
+          )}
+
+          <Fld label="New Password (leave blank to keep current)">
+            <input style={inp} type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
+          </Fld>
+
+          <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
+            <button className="btn-gold" style={{ flex: 1 }}
+              onClick={() => onSave(user.id, {
+                display_name: displayName.trim(),
+                ...(showStoreScope ? { scope_store: scopeStore || null } : {}),
+                password,
+              })}>
+              Save Changes
+            </button>
+            <button onClick={onClose}
+              style={{ flex: 1, padding: "9px 0", borderRadius: 10, border: "1px solid rgba(255,255,255,0.1)", background: "transparent", color: "var(--muted)", cursor: "pointer", fontSize: 14 }}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>,
+    document.body
   );
 }

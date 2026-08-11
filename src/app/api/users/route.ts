@@ -43,7 +43,13 @@ export async function POST(req: NextRequest) {
   if (!email || !password || !role)
     return NextResponse.json({ error: "Missing email, password or role" }, { status: 400 });
 
-  const clientId = resolveClient(mgr, b.client_id, role);
+  // client_admin (e.g. "Vani") may only create Dealer Owner (branch_manager)
+  // accounts, scoped to their own client -- not superadmin, pic_panasonic,
+  // sales, another client_admin, or advertiser.
+  if (mgr.role === "client_admin" && role !== "branch_manager")
+    return NextResponse.json({ error: "Not allowed" }, { status: 403 });
+
+  const clientId = mgr.role === "client_admin" ? mgr.client_id : resolveClient(mgr, b.client_id, role);
   if (clientId === "ERR") return NextResponse.json({ error: "Not allowed" }, { status: 403 });
   if (isScopedRole(role) && !clientId)
     return NextResponse.json({ error: "client_id required" }, { status: 400 });
@@ -82,20 +88,31 @@ export async function PATCH(req: NextRequest) {
 
   const admin = createAdminClient();
 
-  // client_admin is global but may never touch superadmins (neither target nor target role)
+  // client_admin may only edit Dealer Owner (branch_manager) accounts within
+  // their own client, and may not change a user's role to anything else.
   if (mgr.role === "client_admin") {
-    const { data: target } = await admin.from("profiles").select("role").eq("id", id).single();
-    if (!target || target.role === "superadmin" || role === "superadmin")
+    const { data: target } = await admin.from("profiles").select("role,client_id").eq("id", id).single();
+    if (!target || target.role !== "branch_manager" || target.client_id !== mgr.client_id
+      || (role !== undefined && role !== "branch_manager"))
       return NextResponse.json({ error: "Not allowed" }, { status: 403 });
   }
 
   const patch: Record<string, unknown> = {};
   if (display_name !== undefined) patch.display_name = display_name;
   if (role !== undefined) {
+    // Role is changing -- scope fields are re-derived from the new role,
+    // same as at creation time, so a leftover scope from the old role
+    // can't survive a role change.
     patch.role = role;
     patch.scope_city = (role === "pic_panasonic" || role === "sales") ? scope_city || null : null;
     patch.scope_store = (role === "branch_manager" || role === "store_user") ? scope_store || null : null;
     patch.scope_stores = role === "sales" ? (scope_stores?.length ? scope_stores : null) : null;
+  } else {
+    // Role unchanged -- still allow editing an existing scope value
+    // directly (e.g. moving a Dealer Owner to a different store).
+    if (scope_city !== undefined) patch.scope_city = scope_city || null;
+    if (scope_store !== undefined) patch.scope_store = scope_store || null;
+    if (scope_stores !== undefined) patch.scope_stores = scope_stores?.length ? scope_stores : null;
   }
   if (Object.keys(patch).length) {
     const { error } = await admin.from("profiles").update(patch).eq("id", id);
@@ -117,8 +134,8 @@ export async function DELETE(req: NextRequest) {
 
   const admin = createAdminClient();
   if (mgr.role === "client_admin") {
-    const { data: target } = await admin.from("profiles").select("role").eq("id", id).single();
-    if (!target || target.role === "superadmin")
+    const { data: target } = await admin.from("profiles").select("role,client_id").eq("id", id).single();
+    if (!target || target.role !== "branch_manager" || target.client_id !== mgr.client_id)
       return NextResponse.json({ error: "Not allowed" }, { status: 403 });
   }
   const { error } = await admin.auth.admin.deleteUser(id); // cascades profile
