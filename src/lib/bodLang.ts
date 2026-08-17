@@ -11,7 +11,7 @@ export function tf(str: string, vars: Record<string, string | number>): string {
 
 const id = {
   cover_kicker: "PANASONIC E-COMMERCE PERFORMANCE",
-  cover_reportLine: "LAPORAN PERFORMA — BOARD OF DIRECTORS",
+  cover_reportLine: "LAPORAN PERFORMA BULANAN",
   cover_focusBrand: "Fokus Brand: Panasonic",
   cover_preparedFor: "Disiapkan untuk:  Panasonic — Board of Directors",
   cover_channel: "Kanal:  Shopee   ·   Program Dealer E-Commerce",
@@ -73,7 +73,7 @@ const id = {
 
 const en = {
   cover_kicker: "PANASONIC E-COMMERCE PERFORMANCE",
-  cover_reportLine: "PERFORMANCE REPORT — BOARD OF DIRECTORS",
+  cover_reportLine: "MONTHLY PERFORMANCE REPORT",
   cover_focusBrand: "Brand Focus: Panasonic",
   cover_preparedFor: "Prepared for:  Panasonic — Board of Directors",
   cover_channel: "Channel:  Shopee   ·   E-Commerce Dealer Program",
@@ -135,7 +135,7 @@ const en = {
 
 const jp = {
   cover_kicker: "パナソニック Eコマース実績",
-  cover_reportLine: "実績報告書 — 取締役会向け",
+  cover_reportLine: "月次実績報告書",
   cover_focusBrand: "対象ブランド：パナソニック",
   cover_preparedFor: "提出先：パナソニック — 取締役会",
   cover_channel: "チャネル：Shopee　・　Eコマース販売店プログラム",
