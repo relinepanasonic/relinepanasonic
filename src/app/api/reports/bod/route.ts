@@ -90,9 +90,15 @@ export async function POST(req: NextRequest) {
     })
   );
 
-  const safe = (v: string) => v.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "");
-  const filenamePrefix = lang === "en" ? "BOD-Report-Panasonic" : lang === "jp" ? "BOD-Report-Panasonic-JP" : "Laporan-BOD-Panasonic";
-  const filename = `${filenamePrefix}_${safe(scopeLabel)}_${safe(periodLabel) || "semua"}.pdf`;
+  // "year.month.dealer.RelineProject.Panasonic.pdf" — dots are the requested
+  // separator, so each segment is stripped of characters that would break a
+  // filename (or read as another dot-separated field) rather than the old
+  // dash-collapsing sanitizer.
+  const safeSeg = (v: string) => v.replace(/[\\/:*?"<>|.]/g, "").trim();
+  const yearPart = safeSeg(f.year || "AllYears");
+  const monthPart = safeSeg(month || "AllMonths");
+  const dealerPart = safeSeg(dealer || city || "AllDealers");
+  const filename = `${yearPart}.${monthPart}.${dealerPart}.RelineProject.Panasonic.pdf`;
 
   return new NextResponse(new Uint8Array(buffer), {
     status: 200,
