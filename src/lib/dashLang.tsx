@@ -62,8 +62,8 @@ const id = {
   f_allCities: "Semua Kota", f_allDealers: "Semua Dealer",
   f_reset: "Reset", f_loading: "Memuat data…",
   f_report: "Laporan", f_buildingReport: "Membuat Laporan",
-  f_reportTooltip: "Unduh laporan PDF 16:9 sesuai filter yang dipilih",
-  f_buildingNote: "Menyusun 7 halaman PDF (16:9) dari filter yang dipilih — mohon tunggu sebentar.",
+  f_reportTooltip: "Unduh laporan PDF A4 landscape sesuai filter yang dipilih",
+  f_buildingNote: "Menyusun 7 halaman PDF (A4 landscape) dari filter yang dipilih — mohon tunggu sebentar.",
   f_reportFailed: "Gagal membuat laporan.",
 
   // KPIs
@@ -123,8 +123,8 @@ const en = {
   f_allCities: "All Cities", f_allDealers: "All Dealers",
   f_reset: "Reset", f_loading: "Loading data…",
   f_report: "Report", f_buildingReport: "Building Report",
-  f_reportTooltip: "Download a 16:9 PDF report for the selected filters",
-  f_buildingNote: "Building a 7-page 16:9 PDF from the selected filters — please wait a moment.",
+  f_reportTooltip: "Download an A4 landscape PDF report for the selected filters",
+  f_buildingNote: "Building a 7-page A4 landscape PDF from the selected filters — please wait a moment.",
   f_reportFailed: "Failed to build the report.",
 
   k_panasonicSales: "Panasonic Sales", k_panasonicSalesSub: "SPOS · Ready to Ship",
@@ -179,8 +179,8 @@ const jp = {
   f_allCities: "すべての都市", f_allDealers: "すべての販売店",
   f_reset: "リセット", f_loading: "データを読み込み中…",
   f_report: "レポート", f_buildingReport: "レポート作成中",
-  f_reportTooltip: "選択したフィルターでPDFレポート（16:9）をダウンロード",
-  f_buildingNote: "選択したフィルターから7ページのPDF（16:9）を作成しています。しばらくお待ちください。",
+  f_reportTooltip: "選択したフィルターでPDFレポート（A4横向き）をダウンロード",
+  f_buildingNote: "選択したフィルターから7ページのPDF（A4横向き）を作成しています。しばらくお待ちください。",
   f_reportFailed: "レポートの作成に失敗しました。",
 
   k_panasonicSales: "パナソニック売上", k_panasonicSalesSub: "SPOS・出荷準備完了",

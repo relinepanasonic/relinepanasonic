@@ -9,10 +9,10 @@ import type { Lang } from "@/lib/dashLang";
 import { BOD_T, tf, buildNarrative, buildInsightCards, buildActions } from "@/lib/bodLang";
 
 // =====================================================================
-// Panasonic BOD report — landscape 16:9 slide deck.
+// Panasonic BOD report — landscape A4 slide deck.
 //
-// Page is a fixed 960x540pt (exactly 16:9, the PowerPoint widescreen
-// size). Every block has an explicit height out of the BODY_H budget so
+// Page is a fixed 842x595pt (standard A4 landscape). Every block has an
+// explicit height out of the BODY_H budget so
 // content can never reflow past the margin onto a phantom second page.
 // (wrap={false} would ALSO prevent that, but it makes react-pdf shrink
 // the page down to its content height, silently breaking the 16:9 ratio.)
@@ -56,17 +56,18 @@ const RED = "#c0392b";
 const GREY = "#94a3b8";
 
 /* ---------------- page geometry ---------------- */
-const PAGE_W = 960;
-const PAGE_H = 540;
+const PAGE_W = 842; // A4 landscape, pt (297mm x 210mm)
+const PAGE_H = 595;
 // Object form + an explicit height in the page style: with the array form
 // react-pdf auto-shrinks each page down to its content height, which
-// silently breaks the 16:9 ratio (pages came out 960x296, 960x499, ...).
+// silently breaks the fixed A4 ratio (pages came out a different height
+// than requested once content overflowed).
 const PAGE_SIZE = { width: PAGE_W, height: PAGE_H };
 const PAD = 38;
-const CONTENT_W = PAGE_W - PAD * 2;          // 884
+const CONTENT_W = PAGE_W - PAD * 2;          // 766
 const HEADER_H = 52;                          // section no. + title + rule
 const FOOTER_H = 18;
-const BODY_H = PAGE_H - PAD * 2 - HEADER_H - FOOTER_H; // 394
+const BODY_H = PAGE_H - PAD * 2 - HEADER_H - FOOTER_H; // 449
 const COL2 = (CONTENT_W - 14) / 2;            // 435
 const COL3 = (CONTENT_W - 28) / 3;            // 285.33
 
