@@ -66,7 +66,7 @@ function MiniBarPanel({ title, hint, points, formatter }: {
               {/* `fill` as a direct prop, not style={{fill:...}} — recharts' Text
                   component defaults to a dark fill and doesn't reliably pick up
                   color from a style object, which is why this rendered black. */}
-              <LabelList dataKey="value" position="top" formatter={(v: unknown) => formatter(Number(v))} fill="#ffffff" fontSize={10.5} fontWeight={700} />
+              <LabelList dataKey="value" position="top" formatter={(v: unknown) => formatter(Number(v))} fill="#94a3b8" fontSize={10.5} fontWeight={700} />
             </Bar>
           </BarChart>
         </ResponsiveContainer>
@@ -105,7 +105,7 @@ function AdsRoasCombo({ title, hint, points, lang = "id" }: {
               cursor={{ fill: "rgba(201,162,39,.05)" }} />
             <Bar yAxisId="l" dataKey="spend" radius={[6, 6, 2, 2]} maxBarSize={70}>
               {points.map((p, i) => <Cell key={i} fill={p.color} />)}
-              <LabelList dataKey="spend" position="top" formatter={(v: unknown) => idr(Number(v))} fill="#ffffff" fontSize={10.5} fontWeight={700} />
+              <LabelList dataKey="spend" position="top" formatter={(v: unknown) => idr(Number(v))} fill="#94a3b8" fontSize={10.5} fontWeight={700} />
             </Bar>
             <Line yAxisId="r" type="monotone" dataKey="roas" stroke={GOLD} strokeWidth={2.5}
               dot={{ r: 4, fill: GOLD, stroke: "#0a1628", strokeWidth: 1 }}
