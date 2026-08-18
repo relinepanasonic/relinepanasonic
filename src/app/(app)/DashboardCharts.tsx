@@ -55,7 +55,7 @@ export function BarsChart({ data, x, y, color, lang = "id" }: { data: Record<str
           <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,.05)" vertical={false} />
           <XAxis dataKey={x} tick={axis} interval={0} angle={-25} textAnchor="end" height={50} axisLine={false} tickLine={false} />
           <YAxis tick={axis} tickFormatter={(v) => idr(Number(v))} axisLine={false} tickLine={false} width={52} />
-          <Tooltip contentStyle={tooltip} formatter={(v) => [idr(Number(v)), t.c_sales]} cursor={{ fill: "rgba(201,162,39,.05)" }} />
+          <Tooltip contentStyle={tooltip} itemStyle={{ color: "#94a3b8" }} formatter={(v) => [idr(Number(v)), t.c_sales]} cursor={{ fill: "rgba(201,162,39,.05)" }} />
           <Bar dataKey={y} fill={`url(#${gid})`} style={{ filter: `url(#${gid}-shadow)` }} radius={[6, 6, 2, 2]} maxBarSize={46} />
         </BarChart>
       </ResponsiveContainer>
@@ -131,7 +131,7 @@ export function HBarChart({ data, lang = "id" }: { data: { name: string; sales: 
             <XAxis type="number" tick={axis} tickFormatter={(v) => idr(Number(v))} axisLine={false} tickLine={false} />
             <YAxis type="category" dataKey="name" width={gutter} axisLine={false} tickLine={false}
               interval={0} tick={<WrappedTick width={gutter} />} />
-            <Tooltip contentStyle={tooltip} formatter={(v) => [idr(Number(v)), t.c_sales]} cursor={{ fill: "rgba(201,162,39,.05)" }} />
+            <Tooltip contentStyle={tooltip} itemStyle={{ color: "#94a3b8" }} formatter={(v) => [idr(Number(v)), t.c_sales]} cursor={{ fill: "rgba(201,162,39,.05)" }} />
             <Bar dataKey="sales" fill={`url(#${gid})`} style={{ filter: `url(#${gid}-shadow)` }} radius={[2, 6, 6, 2]} maxBarSize={20} />
           </BarChart>
         </ResponsiveContainer>
@@ -171,7 +171,7 @@ export function Donut({ data, colors, lang = "id", centerPct }: { data: { name: 
                paddingAngle={2} style={{ filter: "url(#donut-shadow)" }}>
             {filtered.map((_, i) => <Cell key={i} fill={`url(#donutGrad-${i % palette.length})`} stroke="#0a1628" strokeWidth={2} />)}
           </Pie>
-          <Tooltip contentStyle={tooltip} formatter={(v) => idr(Number(v))} />
+          <Tooltip contentStyle={tooltip} itemStyle={{ color: "#94a3b8" }} formatter={(v) => idr(Number(v))} />
           <Legend wrapperStyle={{ fontSize: 11, color: "#bcd0ee" }} />
         </PieChart>
       </ResponsiveContainer>
@@ -196,7 +196,7 @@ export function CostRoas({ data, lang = "id" }: { data: { label: string; cost: n
           <XAxis dataKey="label" tick={axis} interval={0} angle={-25} textAnchor="end" height={50} axisLine={false} tickLine={false} />
           <YAxis yAxisId="l" tick={axis} tickFormatter={(v) => idr(Number(v))} axisLine={false} tickLine={false} width={52} />
           <YAxis yAxisId="r" orientation="right" tick={axis} axisLine={false} tickLine={false} width={32} />
-          <Tooltip contentStyle={tooltip} formatter={(v, n) => n === "roas" ? [(Number(v) || 0).toFixed(2) + "×", t.c_roas] : [idr(Number(v)), t.c_cost]} cursor={{ fill: "rgba(201,162,39,.05)" }} />
+          <Tooltip contentStyle={tooltip} itemStyle={{ color: "#94a3b8" }} formatter={(v, n) => n === "roas" ? [(Number(v) || 0).toFixed(2) + "×", t.c_roas] : [idr(Number(v)), t.c_cost]} cursor={{ fill: "rgba(201,162,39,.05)" }} />
           <Bar yAxisId="l" dataKey="cost" fill="url(#costRoasBar)" style={{ filter: "url(#costRoasBar-shadow)" }} radius={[6, 6, 2, 2]} maxBarSize={40} />
           <Line yAxisId="r" type="monotone" dataKey="roas" stroke="#c9a227" strokeWidth={2.5}
                 dot={{ r: 3.5, fill: "#c9a227", stroke: "#0a1628", strokeWidth: 1 }}
@@ -217,7 +217,7 @@ export function TrafficTrend({ data, lang = "id" }: { data: { label: string; tra
           <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,.05)" vertical={false} />
           <XAxis dataKey="label" tick={axis} interval={0} angle={-25} textAnchor="end" height={50} axisLine={false} tickLine={false} />
           <YAxis tick={axis} tickFormatter={(v) => num(Number(v))} axisLine={false} tickLine={false} width={48} />
-          <Tooltip contentStyle={tooltip} formatter={(v, n) => [num(Number(v)), n === "in_cart" ? t.c_inCart : t.c_traffic]} />
+          <Tooltip contentStyle={tooltip} itemStyle={{ color: "#94a3b8" }} formatter={(v, n) => [num(Number(v)), n === "in_cart" ? t.c_inCart : t.c_traffic]} />
           <Legend wrapperStyle={{ fontSize: 11 }} />
           <Line type="monotone" dataKey="traffic" stroke="#94a3b8" strokeWidth={2.5} dot={{ r: 3 }} />
           <Line type="monotone" dataKey="in_cart" stroke="#c9a227" strokeWidth={2.5} dot={{ r: 3 }} />

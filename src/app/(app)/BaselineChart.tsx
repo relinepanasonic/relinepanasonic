@@ -55,8 +55,10 @@ function MiniBarPanel({ title, hint, points, formatter }: {
             <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,.05)" vertical={false} />
             <XAxis dataKey="name" tick={axis} axisLine={false} tickLine={false} />
             <YAxis tick={axis} tickFormatter={(v) => formatter(Number(v))} axisLine={false} tickLine={false} width={56} />
-            {/* Bold gold label text so the hovered bar's category (Baseline/Active) is legible against the dark tooltip */}
-            <Tooltip contentStyle={tooltip} labelStyle={{ color: GOLD, fontWeight: 700 }} formatter={(v) => [formatter(Number(v)), ""]} cursor={{ fill: "rgba(201,162,39,.05)" }} />
+            {/* Bold gold label text so the hovered bar's category (Baseline/Active) is legible against the dark tooltip.
+                itemStyle overrides recharts' own default (black) for the value line — contentStyle.color only
+                styles the box, not the item text, which recharts sets separately. */}
+            <Tooltip contentStyle={tooltip} labelStyle={{ color: GOLD, fontWeight: 700 }} itemStyle={{ color: "#94a3b8" }} formatter={(v) => [formatter(Number(v)), ""]} cursor={{ fill: "rgba(201,162,39,.05)" }} />
             {/* The Y axis auto-rescales to each render's own data, so bar HEIGHTS
                 look similar across different filter selections even when the
                 underlying numbers differ — printing the value on top of every
@@ -100,7 +102,7 @@ function AdsRoasCombo({ title, hint, points, lang = "id" }: {
             <XAxis dataKey="name" tick={axis} axisLine={false} tickLine={false} />
             <YAxis yAxisId="l" tick={axis} tickFormatter={(v) => idr(Number(v))} axisLine={false} tickLine={false} width={56} />
             <YAxis yAxisId="r" orientation="right" tick={axis} tickFormatter={(v) => Number(v).toFixed(0) + "×"} axisLine={false} tickLine={false} width={40} />
-            <Tooltip contentStyle={tooltip} labelStyle={{ color: GOLD, fontWeight: 700 }}
+            <Tooltip contentStyle={tooltip} labelStyle={{ color: GOLD, fontWeight: 700 }} itemStyle={{ color: "#94a3b8" }}
               formatter={(v, n) => n === "roas" ? [(Number(v) || 0).toFixed(1) + "×", t.c_roas] : [idr(Number(v)), t.c_adsSpend]}
               cursor={{ fill: "rgba(201,162,39,.05)" }} />
             <Bar yAxisId="l" dataKey="spend" radius={[6, 6, 2, 2]} maxBarSize={70}>
@@ -141,7 +143,7 @@ function ShareDonut({ label, pana, all, color, lang = "id" }: { label: string; p
                 <Cell fill={color} stroke="#0a1628" strokeWidth={2} />
                 <Cell fill="#2a3a5c" stroke="#0a1628" strokeWidth={2} />
               </Pie>
-              <Tooltip contentStyle={tooltip} formatter={(v) => idrFull(Number(v))} />
+              <Tooltip contentStyle={tooltip} itemStyle={{ color: "#94a3b8" }} formatter={(v) => idrFull(Number(v))} />
             </PieChart>
           </ResponsiveContainer>
         ) : (
@@ -174,7 +176,7 @@ function CategoryDonut({ label, rows, lang = "id" }: { label: string; rows: { ca
               <Pie data={rows} dataKey="sales" nameKey="category" cx="50%" cy="50%" innerRadius={30} outerRadius={62} paddingAngle={1.5}>
                 {rows.map((r, i) => <Cell key={i} fill={r.color} stroke="#0a1628" strokeWidth={1.5} />)}
               </Pie>
-              <Tooltip contentStyle={tooltip} formatter={(v, n) => [idrFull(Number(v)), n as string]} />
+              <Tooltip contentStyle={tooltip} itemStyle={{ color: "#94a3b8" }} formatter={(v, n) => [idrFull(Number(v)), n as string]} />
             </PieChart>
           </ResponsiveContainer>
         ) : (
