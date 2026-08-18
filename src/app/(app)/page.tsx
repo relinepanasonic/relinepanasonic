@@ -352,7 +352,12 @@ export default function DashboardPage() {
           <HBarChart data={d?.top_products || []} lang={lang} />
         </Panel>
         <Panel title={s.p_brandShareTitle} hint={s.p_brandShareHint}>
-          <Donut data={panasonicVsOther(d?.brand_share || [], s.b_otherBrands)} colors={["#c9a227", "#3b6ea5"]} lang={lang} />
+          {(() => {
+            const brandData = panasonicVsOther(d?.brand_share || [], s.b_otherBrands);
+            const total = brandData.reduce((a, x) => a + x.value, 0);
+            const panaPct = total > 0 ? (brandData[0].value / total) * 100 : undefined;
+            return <Donut data={brandData} colors={["#c9a227", "#3b6ea5"]} lang={lang} centerPct={panaPct} />;
+          })()}
         </Panel>
       </div>
 

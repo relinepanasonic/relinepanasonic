@@ -140,12 +140,20 @@ export function HBarChart({ data, lang = "id" }: { data: { name: string; sales: 
   );
 }
 
-export function Donut({ data, colors, lang = "id" }: { data: { name: string; value: number }[]; colors?: string[]; lang?: Lang }) {
+export function Donut({ data, colors, lang = "id", centerPct }: { data: { name: string; value: number }[]; colors?: string[]; lang?: Lang; centerPct?: number }) {
   const filtered = data.filter((x) => x.value > 0);
   if (!filtered.length) return <Empty lang={lang} />;
   const palette = colors || PALETTE;
   return (
-    <div style={{ width: "100%", height: 300 }}>
+    <div style={{ width: "100%", height: 300, position: "relative" }}>
+      {centerPct != null && (
+        // bottom offset accounts for the Legend strip recharts reserves
+        // below the pie — inset:0 would center within the full div
+        // (pie + legend) and sit visibly above the ring's true middle.
+        <div style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 28, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
+          <span style={{ fontSize: 26, fontWeight: 800, color: "#c9a227" }}>{centerPct.toFixed(0)}%</span>
+        </div>
+      )}
       <ResponsiveContainer>
         <PieChart>
           <defs>
