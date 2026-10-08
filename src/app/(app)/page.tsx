@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
 import nextDynamic from "next/dynamic";
 import { ArrowUp, ArrowDown, ArrowUpDown, Download } from "lucide-react";
@@ -111,6 +111,7 @@ export default function DashboardPage() {
   const [d, setD] = useState<Summary | null>(null);
   const [loading, setLoading] = useState(true);
   const [baseline, setBaseline] = useState<BaselineVsActive | null>(null);
+  const loadSeq = useRef(0);
   const [etalase, setEtalase] = useState<Etalase | null>(null);
   const [allBrandMonthly, setAllBrandMonthly] = useState<{ year: number | null; month: string; sales: number }[]>([]);
   const [dealerSort, setDealerSort] = useState<{ key: DealerSortKey; dir: SortDir } | null>(null);
@@ -178,51 +179,38 @@ export default function DashboardPage() {
     // anything for it) — fetched in parallel, not chained after the summary.
     // Etalase (products listed in the store) honours every filter — it takes
     // each dealer's latest week inside the filter, so it's a third parallel call.
-    const [{ data }, { data: bva }, { data: eta }, { data: allM }] = await Promise.all([
-      noFilters
-        ? supabase.rpc("get_dashboard_snapshot")
-        : supabase.rpc("dashboard_summary", {
-            p_year:    sel.year    ? Number(sel.year) : null,
-            p_quarter: sel.quarter || null,
-            p_month:   sel.month   || null,
-            p_week:    sel.week    || null,
-            p_city:    sel.city    || null,
-            p_store:   sel.dealer  || null,
-          }),
-      supabase.rpc("dashboard_baseline_vs_active", {
-        p_city:  sel.city   || null,
-        p_store: sel.dealer || null,
-        // A specific Month picked -> Active shows exactly that month, not
-        // the multi-month average (Supabase Migration/36). "All Months"
-        // keeps averaging each store's completed months (migration 34).
-        p_year:  sel.month && sel.year ? Number(sel.year) : null,
-        p_month: sel.month || null,
-      }),
-      supabase.rpc("dashboard_etalase", {
-        p_year:    sel.year    ? Number(sel.year) : null,
-        p_quarter: sel.quarter || null,
-        p_month:   sel.month   || null,
-        p_week:    sel.week    || null,
-        p_city:    sel.city    || null,
-        p_store:   sel.dealer  || null,
-      }),
-      // All-brand SPOS sales per month (the faint blue bars behind Panasonic's).
-      supabase.rpc("dashboard_monthly_all", {
-        p_year:    sel.year    ? Number(sel.year) : null,
-        p_quarter: sel.quarter || null,
-        p_month:   sel.month   || null,
-        p_week:    sel.week    || null,
-        p_city:    sel.city    || null,
-        p_store:   sel.dealer  || null,
-      }),
-    ]);
+    // Each panel paints as soon as ITS query returns — the slow ones (baseline,
+    // live summary) no longer hold back the rest. A newer filter change bumps
+    // loadSeq so a late answer from an older selection is dropped.
+    const seq = ++loadSeq.current;
+    const fresh = () => seq === loadSeq.current;
+    const filterArgs = {
+      p_year:    sel.year    ? Number(sel.year) : null,
+      p_quarter: sel.quarter || null,
+      p_month:   sel.month   || null,
+      p_week:    sel.week    || null,
+      p_city:    sel.city    || null,
+      p_store:   sel.dealer  || null,
+    };
+    supabase.rpc("dashboard_baseline_vs_active", {
+      p_city:  sel.city   || null,
+      p_store: sel.dealer || null,
+      // A specific Month picked -> Active shows exactly that month, not
+      // the multi-month average (Supabase Migration/36). "All Months"
+      // keeps averaging each store's completed months (migration 34).
+      p_year:  sel.month && sel.year ? Number(sel.year) : null,
+      p_month: sel.month || null,
+    }).then(({ data: bva }) => { if (fresh()) setBaseline((bva as BaselineVsActive) || null); });
+    // Null until migration 45 is applied — the panel just shows "no data".
+    supabase.rpc("dashboard_etalase", filterArgs)
+      .then(({ data: eta }) => { if (fresh()) setEtalase((eta as Etalase) || null); });
+    // All-brand SPOS sales per month (faint blue bars behind Panasonic's);
+    // empty until migration 47 is applied — the chart then shows Panasonic only.
+    supabase.rpc("dashboard_monthly_all", filterArgs)
+      .then(({ data: allM }) => { if (fresh()) setAllBrandMonthly((allM as typeof allBrandMonthly) || []); });
+    const { data } = await (noFilters ? supabase.rpc("get_dashboard_snapshot") : supabase.rpc("dashboard_summary", filterArgs));
+    if (!fresh()) return;
     setD(data as Summary);
-    setBaseline((bva as BaselineVsActive) || null);
-    // Null until migration 45 is applied (the RPC doesn't exist yet) — the
-    // panel just shows "no data" rather than breaking the page.
-    setEtalase((eta as Etalase) || null);
-    // Empty until migration 47 is applied — the chart then shows Panasonic only.
-    setAllBrandMonthly((allM as typeof allBrandMonthly) || []);
     setLoading(false);
   }, [supabase, sel]);
   useEffect(() => { load(); }, [load]);
