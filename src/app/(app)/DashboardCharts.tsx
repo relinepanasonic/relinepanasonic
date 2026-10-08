@@ -140,10 +140,12 @@ export function HBarChart({ data, lang = "id" }: { data: { name: string; sales: 
   );
 }
 
-export function Donut({ data, colors, lang = "id", centerPct }: { data: { name: string; value: number }[]; colors?: string[]; lang?: Lang; centerPct?: number }) {
+export function Donut({ data, colors, lang = "id", centerPct, unit = "idr" }: { data: { name: string; value: number }[]; colors?: string[]; lang?: Lang; centerPct?: number; unit?: "idr" | "count" }) {
   const filtered = data.filter((x) => x.value > 0);
   if (!filtered.length) return <Empty lang={lang} />;
   const palette = colors || PALETTE;
+  // "count" is for slices that are item counts (e.g. products listed), not Rupiah.
+  const fmtValue = (v: number) => unit === "count" ? `${num(v)} ${DASH_T[lang].c_products}` : idr(v);
   return (
     <div style={{ width: "100%", height: 300, position: "relative" }}>
       {centerPct != null && (
@@ -171,7 +173,7 @@ export function Donut({ data, colors, lang = "id", centerPct }: { data: { name: 
                paddingAngle={2} style={{ filter: "url(#donut-shadow)" }}>
             {filtered.map((_, i) => <Cell key={i} fill={`url(#donutGrad-${i % palette.length})`} stroke="#0a1628" strokeWidth={2} />)}
           </Pie>
-          <Tooltip contentStyle={tooltip} itemStyle={{ color: "#94a3b8" }} formatter={(v) => idr(Number(v))} />
+          <Tooltip contentStyle={tooltip} itemStyle={{ color: "#94a3b8" }} formatter={(v) => fmtValue(Number(v))} />
           <Legend wrapperStyle={{ fontSize: 11, color: "#bcd0ee" }} />
         </PieChart>
       </ResponsiveContainer>

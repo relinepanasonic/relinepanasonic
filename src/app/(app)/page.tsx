@@ -43,6 +43,9 @@ type BaselineVsActive = {
   baseline: { stores: number; sales: number; ad_cost: number };
   active: { months: number; sales: number; ad_cost: number };
 };
+// Products listed in the dealers' stores (SPOS), Panasonic vs all brands —
+// from dashboard_etalase (Supabase Migration/45). One snapshot per dealer.
+type Etalase = { panasonic: number; total: number; stores: number };
 
 // Sortable columns on the "Detail Data per Dealer" table. cartRate isn't a
 // stored field (computed client-side as in_cart/traffic), so it's added to
@@ -108,6 +111,7 @@ export default function DashboardPage() {
   const [d, setD] = useState<Summary | null>(null);
   const [loading, setLoading] = useState(true);
   const [baseline, setBaseline] = useState<BaselineVsActive | null>(null);
+  const [etalase, setEtalase] = useState<Etalase | null>(null);
   const [dealerSort, setDealerSort] = useState<{ key: DealerSortKey; dir: SortDir } | null>(null);
   const [reporting, setReporting] = useState(false);
   const { lang } = useLangContext();
@@ -171,7 +175,9 @@ export default function DashboardPage() {
     // Baseline-vs-active only respects City/Dealer (it compares Month Awal
     // vs every real month, so a Year/Month/Week filter wouldn't mean
     // anything for it) — fetched in parallel, not chained after the summary.
-    const [{ data }, { data: bva }] = await Promise.all([
+    // Etalase (products listed in the store) honours every filter — it takes
+    // each dealer's latest week inside the filter, so it's a third parallel call.
+    const [{ data }, { data: bva }, { data: eta }] = await Promise.all([
       noFilters
         ? supabase.rpc("get_dashboard_snapshot")
         : supabase.rpc("dashboard_summary", {
@@ -191,9 +197,20 @@ export default function DashboardPage() {
         p_year:  sel.month && sel.year ? Number(sel.year) : null,
         p_month: sel.month || null,
       }),
+      supabase.rpc("dashboard_etalase", {
+        p_year:    sel.year    ? Number(sel.year) : null,
+        p_quarter: sel.quarter || null,
+        p_month:   sel.month   || null,
+        p_week:    sel.week    || null,
+        p_city:    sel.city    || null,
+        p_store:   sel.dealer  || null,
+      }),
     ]);
     setD(data as Summary);
     setBaseline((bva as BaselineVsActive) || null);
+    // Null until migration 45 is applied (the RPC doesn't exist yet) — the
+    // panel just shows "no data" rather than breaking the page.
+    setEtalase((eta as Etalase) || null);
     setLoading(false);
   }, [supabase, sel]);
   useEffect(() => { load(); }, [load]);
@@ -346,17 +363,26 @@ export default function DashboardPage() {
         </Panel>
       </div>
 
-      {/* Top products + brand share */}
+      {/* Brand share of sales + Panasonic etalase (products listed in the store) */}
       <div className="row c2">
-        <Panel title={s.p_topProductsTitle} hint={s.p_topProductsHint}>
-          <HBarChart data={d?.top_products || []} lang={lang} />
-        </Panel>
         <Panel title={s.p_brandShareTitle} hint={s.p_brandShareHint}>
           {(() => {
             const brandData = panasonicVsOther(d?.brand_share || [], s.b_otherBrands);
             const total = brandData.reduce((a, x) => a + x.value, 0);
             const panaPct = total > 0 ? (brandData[0].value / total) * 100 : undefined;
             return <Donut data={brandData} colors={["#c9a227", "#3b6ea5"]} lang={lang} centerPct={panaPct} />;
+          })()}
+        </Panel>
+        <Panel title={s.p_etalaseTitle} hint={s.p_etalaseHint}>
+          {(() => {
+            const pana = etalase?.panasonic ?? 0;
+            const total = etalase?.total ?? 0;
+            const etalaseData = [
+              { name: "Panasonic", value: pana },
+              { name: s.b_otherBrands, value: Math.max(total - pana, 0) },
+            ];
+            const panaPct = total > 0 ? (pana / total) * 100 : undefined;
+            return <Donut data={etalaseData} colors={["#c9a227", "#3b6ea5"]} lang={lang} centerPct={panaPct} unit="count" />;
           })()}
         </Panel>
       </div>
@@ -381,10 +407,10 @@ export default function DashboardPage() {
         </Panel>
       </div>
 
-      {/* Category + category share */}
+      {/* Top products + category share */}
       <div className="row c2">
-        <Panel title={s.p_salesByCategoryTitle} hint={s.p_salesByCategoryHint}>
-          <BarsChart data={d?.by_category || []} x="category" y="sales" color="#e8c84a" lang={lang} />
+        <Panel title={s.p_topProductsTitle} hint={s.p_topProductsHint}>
+          <HBarChart data={d?.top_products || []} lang={lang} />
         </Panel>
         <Panel title={s.p_categoryShareTitle} hint={s.p_categoryShareHint}>
           <Donut data={(d?.by_category || []).map((c) => ({ name: c.category, value: c.sales }))} lang={lang} />
