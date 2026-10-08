@@ -80,7 +80,7 @@ const id = {
   p_trafficTrendTitle: "Trafik vs Tambah ke Keranjang", p_trafficTrendHint: "Tren funnel per bulan",
   p_storeMonthlyTitle: "Penjualan Toko per Bulan", p_storeMonthlyHint: "GMV semua brand · Performa",
   p_productFunnelTitle: "Funnel Produk", p_productFunnelHint: "Panasonic · SPOS · Tayang → Klik → Masuk Keranjang → Penjualan",
-  p_etalaseTitle: "Panasonic Etalase vs Total Etalase", p_etalaseHint: "Jumlah produk Panasonic vs seluruh produk di etalase dealer · SPOS · minggu terbaru per dealer",
+  p_etalaseTitle: "Panasonic Etalase vs Total Etalase", p_etalaseHint: "Jumlah produk Panasonic vs seluruh produk di etalase dealer · SPOS · rata-rata per minggu",
   p_categoryShareTitle: "Pangsa Kategori (%)", p_categoryShareHint: "Komposisi penjualan per kategori",
 
   // Dealer table
@@ -139,7 +139,7 @@ const en = {
   p_trafficTrendTitle: "Traffic vs Add-to-Cart", p_trafficTrendHint: "Funnel trend per month",
   p_storeMonthlyTitle: "Store Sales by Month", p_storeMonthlyHint: "All brands GMV · Store Performance",
   p_productFunnelTitle: "Product Funnel", p_productFunnelHint: "Panasonic · SPOS · Impression → Click → In Cart → Sales",
-  p_etalaseTitle: "Panasonic Showcase vs Total Showcase", p_etalaseHint: "Panasonic products vs all products listed in the dealer's store · SPOS · latest week per dealer",
+  p_etalaseTitle: "Panasonic Showcase vs Total Showcase", p_etalaseHint: "Panasonic products vs all products listed in the dealer's store · SPOS · average per week",
   p_categoryShareTitle: "Category Share (%)", p_categoryShareHint: "Sales mix by category",
 
   t_title: "Dealer Detail",
@@ -195,7 +195,7 @@ const jp = {
   p_trafficTrendTitle: "トラフィックとカート追加", p_trafficTrendHint: "月ごとのファネル推移",
   p_storeMonthlyTitle: "店舗別月間売上", p_storeMonthlyHint: "全ブランドGMV・店舗実績",
   p_productFunnelTitle: "商品ファネル", p_productFunnelHint: "パナソニック・SPOS・表示 → クリック → カート追加 → 購入",
-  p_etalaseTitle: "パナソニック陳列数 vs 全体陳列数", p_etalaseHint: "販売店ストアに掲載されたパナソニック商品数 vs 全商品数・SPOS・販売店ごとの最新週",
+  p_etalaseTitle: "パナソニック陳列数 vs 全体陳列数", p_etalaseHint: "販売店ストアに掲載されたパナソニック商品数 vs 全商品数・SPOS・週平均",
   p_categoryShareTitle: "カテゴリーシェア（%）", p_categoryShareHint: "カテゴリー別売上構成",
 
   t_title: "販売店別詳細データ",
