@@ -43,7 +43,10 @@ function BarDefs({ id, color }: { id: string; color: string }) {
   );
 }
 
-export function BarsChart({ data, x, y, color, lang = "id" }: { data: Record<string, unknown>[]; x: string; y: string; color: string; lang?: Lang }) {
+// backY: optional second series drawn BEHIND the main bars — wider, faint
+// blue — for "this brand vs the whole store". A bar on its own (hidden)
+// x-axis overlays the main bar instead of sitting beside it.
+export function BarsChart({ data, x, y, color, lang = "id", backY }: { data: Record<string, unknown>[]; x: string; y: string; color: string; lang?: Lang; backY?: string }) {
   if (!data.length) return <Empty lang={lang} />;
   const t = DASH_T[lang];
   const gid = `barGrad-${y}`;
@@ -54,8 +57,12 @@ export function BarsChart({ data, x, y, color, lang = "id" }: { data: Record<str
           <BarDefs id={gid} color={color} />
           <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,.05)" vertical={false} />
           <XAxis dataKey={x} tick={axis} interval={0} angle={-25} textAnchor="end" height={50} axisLine={false} tickLine={false} />
+          {backY && <XAxis xAxisId="back" dataKey={x} hide />}
           <YAxis tick={axis} tickFormatter={(v) => idr(Number(v))} axisLine={false} tickLine={false} width={52} />
-          <Tooltip contentStyle={tooltip} itemStyle={{ color: "#94a3b8" }} formatter={(v) => [idr(Number(v)), t.c_sales]} cursor={{ fill: "rgba(201,162,39,.05)" }} />
+          <Tooltip contentStyle={tooltip} itemStyle={{ color: "#94a3b8" }}
+            formatter={(v, n) => [idr(Number(v)), backY && n === backY ? t.c_allBrands : backY ? "Panasonic" : t.c_sales]}
+            cursor={{ fill: "rgba(201,162,39,.05)" }} />
+          {backY && <Bar xAxisId="back" dataKey={backY} fill="#3b6ea5" fillOpacity={0.28} radius={[6, 6, 2, 2]} maxBarSize={76} />}
           <Bar dataKey={y} fill={`url(#${gid})`} style={{ filter: `url(#${gid}-shadow)` }} radius={[6, 6, 2, 2]} maxBarSize={46} />
         </BarChart>
       </ResponsiveContainer>

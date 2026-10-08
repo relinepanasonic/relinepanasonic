@@ -73,7 +73,7 @@ const id = {
   k_adsCost: "Biaya Iklan", k_roas: "ROAS",
 
   // Panels
-  p_monthlySalesTitle: "Penjualan Bulanan Panasonic", p_monthlySalesHint: "Penjualan Siap Dikirim per bulan · SPOS",
+  p_monthlySalesTitle: "Penjualan Bulanan Panasonic", p_monthlySalesHint: "Penjualan Siap Dikirim per bulan · SPOS (biru = semua brand)",
   p_topProductsTitle: "10 Produk Terlaris", p_topProductsHint: "Penjualan · hanya baris induk",
   p_brandShareTitle: "Pangsa Penjualan per Brand", p_brandShareHint: "Panasonic vs Lainnya · SPOS",
   p_costRoasTitle: "Biaya Iklan Bulanan vs ROAS", p_costRoasHint: "Batang = biaya · garis = ROAS",
@@ -90,7 +90,7 @@ const id = {
   t_inCart: "Keranjang", t_cartRate: "Rasio Keranjang", t_adsCost: "Biaya Iklan", t_roas: "ROAS", t_noData: "Belum ada data",
 
   // Charts (DashboardCharts.tsx)
-  c_noData: "Belum ada data", c_sales: "Penjualan", c_cost: "Biaya", c_roas: "ROAS", c_traffic: "Trafik", c_inCart: "Keranjang", c_adsSpend: "Belanja Iklan", c_products: "produk",
+  c_noData: "Belum ada data", c_sales: "Penjualan", c_cost: "Biaya", c_roas: "ROAS", c_traffic: "Trafik", c_inCart: "Keranjang", c_adsSpend: "Belanja Iklan", c_products: "produk", c_allBrands: "Semua Brand",
   c_funnelImpression: "Tayang", c_funnelClick: "Klik", c_funnelInCart: "Masuk Keranjang", c_funnelSales: "Penjualan",
   c_funnelPartialNote: "Bentuk funnel disembunyikan — sebagian tahap belum punya data, sehingga proporsinya tidak bermakna. Tayang & Klik dibaca dari kolom template SPOS terbaru (Jumlah Produk Dilihat / Produk Diklik); akan terisi seiring file SPOS diunggah ulang.",
   c_funnelNonMonotonicNote: "Tahap berikutnya lebih besar dari tahap sebelumnya. Periode yang diunggah dengan template SPOS lama tidak punya kolom tayang/klik asli — kolom itu memakai Halaman Produk Dilihat (page view) dan Klik Pencarian (klik pencarian saja), yang menghitung klik lebih rendah dari sebenarnya.",
@@ -132,7 +132,7 @@ const en = {
   k_panaTraffic: "Pana Traffic", k_panaInCart: "Pana In-Cart", k_cartRate: "cart rate",
   k_adsCost: "Ads Cost", k_roas: "ROAS",
 
-  p_monthlySalesTitle: "Panasonic Monthly Sales", p_monthlySalesHint: "Ready-to-ship sales per month · SPOS",
+  p_monthlySalesTitle: "Panasonic Monthly Sales", p_monthlySalesHint: "Ready-to-ship sales per month · SPOS (blue = all brands)",
   p_topProductsTitle: "Top 10 Best-Selling Products", p_topProductsHint: "Sales · parent rows only",
   p_brandShareTitle: "Brand Share of Sales", p_brandShareHint: "Panasonic vs Other · SPOS",
   p_costRoasTitle: "Monthly Ads Cost vs ROAS", p_costRoasHint: "Columns = cost · line = ROAS",
@@ -147,7 +147,7 @@ const en = {
   t_dealer: "Dealer", t_trend: "Trend", t_city: "City", t_sales: "Sales", t_traffic: "Traffic",
   t_inCart: "In-Cart", t_cartRate: "Cart Rate", t_adsCost: "Ads Cost", t_roas: "ROAS", t_noData: "No data yet",
 
-  c_noData: "No data yet", c_sales: "Sales", c_cost: "Cost", c_roas: "ROAS", c_traffic: "Traffic", c_inCart: "In-Cart", c_adsSpend: "Ads Spend", c_products: "products",
+  c_noData: "No data yet", c_sales: "Sales", c_cost: "Cost", c_roas: "ROAS", c_traffic: "Traffic", c_inCart: "In-Cart", c_adsSpend: "Ads Spend", c_products: "products", c_allBrands: "All Brands",
   c_funnelImpression: "Impression", c_funnelClick: "Click", c_funnelInCart: "In Cart", c_funnelSales: "Sales",
   c_funnelPartialNote: "Funnel shape hidden — some stages have no data yet, so the proportions would be meaningless. Impression & Click are read from the newer SPOS template columns (Product Page Views / Product Clicks); they fill in as SPOS files are re-uploaded.",
   c_funnelNonMonotonicNote: "A later stage exceeds an earlier one. Periods uploaded with the older SPOS template have no true impression/click columns — those fall back to page views and search-only clicks, which undercounts real clicks.",
@@ -188,7 +188,7 @@ const jp = {
   k_panaTraffic: "パナソニック トラフィック", k_panaInCart: "パナソニック カート追加", k_cartRate: "カート率",
   k_adsCost: "広告費", k_roas: "ROAS",
 
-  p_monthlySalesTitle: "パナソニック月間売上", p_monthlySalesHint: "月ごとの出荷準備完了売上・SPOS",
+  p_monthlySalesTitle: "パナソニック月間売上", p_monthlySalesHint: "月ごとの出荷準備完了売上・SPOS（青＝全ブランド）",
   p_topProductsTitle: "売上トップ10製品", p_topProductsHint: "売上・親行のみ",
   p_brandShareTitle: "ブランド別売上シェア", p_brandShareHint: "パナソニック vs その他・SPOS",
   p_costRoasTitle: "月間広告費とROAS", p_costRoasHint: "棒グラフ＝費用・折れ線＝ROAS",
@@ -203,7 +203,7 @@ const jp = {
   t_dealer: "販売店", t_trend: "推移", t_city: "都市", t_sales: "売上", t_traffic: "トラフィック",
   t_inCart: "カート追加", t_cartRate: "カート率", t_adsCost: "広告費", t_roas: "ROAS", t_noData: "データがありません",
 
-  c_noData: "データがありません", c_sales: "売上", c_cost: "費用", c_roas: "ROAS", c_traffic: "トラフィック", c_inCart: "カート追加", c_adsSpend: "広告費", c_products: "商品",
+  c_noData: "データがありません", c_sales: "売上", c_cost: "費用", c_roas: "ROAS", c_traffic: "トラフィック", c_inCart: "カート追加", c_adsSpend: "広告費", c_products: "商品", c_allBrands: "全ブランド",
   c_funnelImpression: "表示回数", c_funnelClick: "クリック", c_funnelInCart: "カート追加", c_funnelSales: "購入",
   c_funnelPartialNote: "一部の段階にまだデータがなく、割合が意味を持たないためファネル図を非表示にしています。表示回数とクリックは新しいSPOSテンプレートの列（商品閲覧数／商品クリック数）から取得しており、SPOSファイルが再アップロードされるたびに反映されます。",
   c_funnelNonMonotonicNote: "後の段階の数値が前の段階を上回っています。旧SPOSテンプレートでアップロードされた期間には正式な表示回数／クリック列がなく、ページ閲覧数と検索クリックのみで代用しているため、実際のクリック数より少なく計上されます。",

@@ -112,6 +112,7 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [baseline, setBaseline] = useState<BaselineVsActive | null>(null);
   const [etalase, setEtalase] = useState<Etalase | null>(null);
+  const [allBrandMonthly, setAllBrandMonthly] = useState<{ year: number | null; month: string; sales: number }[]>([]);
   const [dealerSort, setDealerSort] = useState<{ key: DealerSortKey; dir: SortDir } | null>(null);
   const [reporting, setReporting] = useState(false);
   const { lang } = useLangContext();
@@ -177,7 +178,7 @@ export default function DashboardPage() {
     // anything for it) — fetched in parallel, not chained after the summary.
     // Etalase (products listed in the store) honours every filter — it takes
     // each dealer's latest week inside the filter, so it's a third parallel call.
-    const [{ data }, { data: bva }, { data: eta }] = await Promise.all([
+    const [{ data }, { data: bva }, { data: eta }, { data: allM }] = await Promise.all([
       noFilters
         ? supabase.rpc("get_dashboard_snapshot")
         : supabase.rpc("dashboard_summary", {
@@ -205,12 +206,23 @@ export default function DashboardPage() {
         p_city:    sel.city    || null,
         p_store:   sel.dealer  || null,
       }),
+      // All-brand SPOS sales per month (the faint blue bars behind Panasonic's).
+      supabase.rpc("dashboard_monthly_all", {
+        p_year:    sel.year    ? Number(sel.year) : null,
+        p_quarter: sel.quarter || null,
+        p_month:   sel.month   || null,
+        p_week:    sel.week    || null,
+        p_city:    sel.city    || null,
+        p_store:   sel.dealer  || null,
+      }),
     ]);
     setD(data as Summary);
     setBaseline((bva as BaselineVsActive) || null);
     // Null until migration 45 is applied (the RPC doesn't exist yet) — the
     // panel just shows "no data" rather than breaking the page.
     setEtalase((eta as Etalase) || null);
+    // Empty until migration 47 is applied — the chart then shows Panasonic only.
+    setAllBrandMonthly((allM as typeof allBrandMonthly) || []);
     setLoading(false);
   }, [supabase, sel]);
   useEffect(() => { load(); }, [load]);
@@ -225,6 +237,11 @@ export default function DashboardPage() {
       return null;
     });
   }
+  // Panasonic monthly rows + the same month's all-brand total as `all`.
+  const monthlyWithAll = useMemo(() => {
+    const allBy = new Map(allBrandMonthly.map((r) => [`${r.year}|${r.month}`, Number(r.sales) || 0]));
+    return byMonth(d?.monthly_sales || []).map((r) => ({ ...r, all: allBy.get(`${r.year}|${r.month}`) ?? 0 }));
+  }, [d, allBrandMonthly]);
   const sortedDealers = useMemo(() => {
     const rows = (d?.dealers || []).map((r) => ({ ...r, cartRate: r.traffic ? (r.in_cart / r.traffic) * 100 : 0 }));
     if (!dealerSort) return rows;
@@ -359,7 +376,7 @@ export default function DashboardPage() {
       {/* Monthly sales */}
       <div className="row">
         <Panel title={s.p_monthlySalesTitle} hint={s.p_monthlySalesHint}>
-          <BarsChart data={byMonth(d?.monthly_sales || [])} x="label" y="sales" color="#c9a227" lang={lang} />
+          <BarsChart data={monthlyWithAll} x="label" y="sales" color="#c9a227" lang={lang} backY={allBrandMonthly.length ? "all" : undefined} />
         </Panel>
       </div>
 
