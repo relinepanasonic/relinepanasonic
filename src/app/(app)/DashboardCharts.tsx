@@ -44,8 +44,10 @@ function BarDefs({ id, color }: { id: string; color: string }) {
 }
 
 // backY: optional second series drawn BEHIND the main bars — wider, faint
-// blue — for "this brand vs the whole store". A bar on its own (hidden)
-// x-axis overlays the main bar instead of sitting beside it.
+// blue — for "this brand vs the whole store". It sits on its OWN hidden
+// Y-axis (own scale) so the main bars stay tall and the blue is read only
+// for its up/down trend; a bar on its own hidden x-axis overlays the main
+// bar instead of sitting beside it.
 export function BarsChart({ data, x, y, color, lang = "id", backY }: { data: Record<string, unknown>[]; x: string; y: string; color: string; lang?: Lang; backY?: string }) {
   if (!data.length) return <Empty lang={lang} />;
   const t = DASH_T[lang];
@@ -58,11 +60,13 @@ export function BarsChart({ data, x, y, color, lang = "id", backY }: { data: Rec
           <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,.05)" vertical={false} />
           <XAxis dataKey={x} tick={axis} interval={0} angle={-25} textAnchor="end" height={50} axisLine={false} tickLine={false} />
           {backY && <XAxis xAxisId="back" dataKey={x} hide />}
+          {backY && <YAxis yAxisId="back" hide domain={[0, "auto"]} />}
           <YAxis tick={axis} tickFormatter={(v) => idr(Number(v))} axisLine={false} tickLine={false} width={52} />
           <Tooltip contentStyle={tooltip} itemStyle={{ color: "#94a3b8" }}
-            formatter={(v, n) => [idr(Number(v)), backY && n === backY ? t.c_allBrands : backY ? "Panasonic" : t.c_sales]}
+            itemSorter={(i) => (i.dataKey === y ? 0 : 1)}
+            formatter={(v, n) => [idr(Number(v)), backY && n === backY ? t.c_allBrands : backY ? t.c_panaSales : t.c_sales]}
             cursor={{ fill: "rgba(201,162,39,.05)" }} />
-          {backY && <Bar xAxisId="back" dataKey={backY} fill="#3b6ea5" fillOpacity={0.28} radius={[6, 6, 2, 2]} maxBarSize={76} />}
+          {backY && <Bar xAxisId="back" yAxisId="back" dataKey={backY} fill="#3b6ea5" fillOpacity={0.28} radius={[6, 6, 2, 2]} maxBarSize={76} />}
           <Bar dataKey={y} fill={`url(#${gid})`} style={{ filter: `url(#${gid}-shadow)` }} radius={[6, 6, 2, 2]} maxBarSize={46} />
         </BarChart>
       </ResponsiveContainer>
