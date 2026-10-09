@@ -1,0 +1,276 @@
+"use client";
+
+import { useCallback } from "react";
+import { useLangContext } from "@/lib/dashLang";
+
+
+// Canonical key = the English string as written in the UI. ID dictionary
+// gives its translation; EN mode returns the key unchanged. Missing keys
+// just fall back to the key itself, so an untranslated string never breaks.
+const ID_DICT: Record<string, string> = {
+  // nav / shell
+  "Dashboard": "Dasbor",
+  "Ads Performance": "Performa Iklan",
+  "Finance Detail": "Detail Keuangan",
+  "Upload the Data First in Upload Page to open the Features": "Unggah Data Terlebih Dahulu di Halaman Upload untuk membuka Fitur ini",
+  "Go to Upload Page": "Ke Halaman Upload",
+  "Operational Performance": "Performa Operasional",
+  "Price Calculator": "Kalkulator Harga",
+  "Market Place Fee": "Biaya Marketplace",
+  "Upload Data": "Unggah Data",
+  "Core List": "Daftar Inti",
+  "Accounting": "Akuntansi",
+  "Users": "Pengguna",
+  "Invoice": "Faktur",
+  "Logout": "Keluar",
+  "Marketplace performance overview — Shopee": "Ringkasan performa marketplace — Shopee",
+
+  // filters
+  "Year": "Tahun", "Month": "Bulan", "City": "Kota", "Owner": "Pemilik", "Brand": "Merek",
+  "Store": "Toko", "Week": "Minggu", "Reset": "Atur Ulang", "All": "Semua",
+  "All Years": "Semua Tahun", "All Months": "Semua Bulan", "All Cities": "Semua Kota",
+  "All Owners": "Semua Pemilik", "All Brands": "Semua Merek", "All Weeks": "Semua Minggu",
+  "All Stores": "Semua Store",
+  "Pick a store…": "Pilih toko…",
+
+  // KPIs
+  "Total Sales": "Total Penjualan", "Total Transaction": "Total Transaksi", "Traffic": "Kunjungan",
+  "In-Cart": "Masuk Keranjang", "Ads Cost": "Biaya Iklan", "ROAS": "ROAS",
+  "cart rate": "tingkat keranjang",
+
+  // panels
+  "Monthly Sales": "Penjualan Bulanan", "Penjualan per bulan · SPOS": "Penjualan per bulan · SPOS",
+  "Top 10 Best-Selling Products": "10 Produk Terlaris",
+  "Sales · SPOS parent rows": "Penjualan · baris induk SPOS",
+  "Monthly Performance": "Performa Bulanan",
+  "Weekly Performance": "Performa Mingguan",
+  "Weekly": "Mingguan",
+  "Daily Gross Sales vs Gross Profit": "Penjualan Kotor vs Laba Kotor Harian",
+  "Daily Marketplace Fee": "Biaya Marketplace Harian",
+  "Daily Promotion Cost": "Biaya Promosi Harian",
+  "Traffic vs In-Cart vs Sales · SPOS": "Kunjungan vs Masuk Keranjang vs Penjualan · SPOS",
+  "Brand Share of Sales": "Pangsa Penjualan per Merek",
+  "Sales mix by brand · SPOS": "Komposisi penjualan per merek · SPOS",
+  "Monthly Ads Cost vs ROAS": "Biaya Iklan vs ROAS Bulanan",
+  "Bars = cost · line = ROAS": "Batang = biaya · garis = ROAS",
+  "Traffic vs Add-to-Cart": "Kunjungan vs Masuk Keranjang",
+  "Funnel trend per month": "Tren funnel per bulan",
+  "AVG Store Sales Performa": "Rata-rata Performa Sales Toko",
+  "Average monthly sales per store · SPOS": "Rata-rata penjualan bulanan per toko · SPOS",
+  "All Brand Avg Monthly Sales": "Rata-rata Penjualan Bulanan Semua Brand",
+  "Every brand · SPOS · Active = avg / month": "Semua brand · SPOS · Active = rata-rata / bulan",
+  "All Brand Avg Ads Spend & ROAS": "Rata-rata Biaya Iklan & ROAS Semua Brand",
+  "Every brand · Ads · Active = avg / month": "Semua brand · Iklan · Active = rata-rata / bulan",
+  "Baseline": "Baseline",
+  "Active (avg)": "Active (rata-rata)",
+  "Baseline vs Active Performance": "Performa Baseline vs Aktif",
+  "Pre-project snapshot (\"Month Awal\") vs the average across active months — totals for the selected scope, not per store. Pick a specific Month in the filter above to see that month's exact numbers.":
+    "Snapshot pra-proyek (\"Month Awal\") vs rata-rata dari bulan-bulan aktif — total untuk cakupan yang dipilih, bukan per toko. Pilih Bulan tertentu di filter atas untuk melihat angka spesifik bulan itu.",
+  "Avg Monthly Sales": "Rata-rata Penjualan Bulanan",
+  "Avg Ads Spend & ROAS": "Rata-rata Biaya Iklan & ROAS",
+  "Active = avg / month": "Active = rata-rata / bulan",
+  "Detail Data per": "Detail Data per",
+  "Sorted by sales · Baseline excluded · line shows SPOS sales trend": "Diurutkan berdasarkan penjualan · Baseline dikecualikan · garis menunjukkan tren penjualan SPOS",
+
+  // table
+  "Trend": "Tren", "Sales": "Penjualan", "Cart Rate": "Tingkat Keranjang",
+  "ROAS Trend": "Tren ROAS", "No data yet": "Belum ada data",
+  "Click row for details": "Klik baris untuk detail",
+  "Store Data per": "Detail Data per",
+  "Baseline Dealer": "Baseline Dealer",
+  "Month Awal snapshot per": "Snapshot Month Awal per",
+  "No Baseline data yet": "Belum ada data Baseline",
+  "Detail Store Data": "Detail Data Toko",
+
+  // funnel / campaigns
+  "Shopping Funnel": "Funnel Belanja",
+  "Product Funnel": "Funnel Produk",
+  "Impression → Click → In Cart → Sales · Product Performance (SPOS) — Click partly 0 until new SPOS upload":
+    "Dilihat → Diklik → Masuk Keranjang → Terjual · Performa Produk (SPOS) — Diklik sebagian 0 sampai unggah SPOS baru",
+  "Impression": "Dilihat", "In Cart": "Masuk Keranjang",
+  "Product Views": "Produk Dilihat", "Visitors": "Pengunjung",
+  "Orders Created": "Transaksi Dibuat", "Transactions": "Transaksi Dikirim",
+  "Product Views → Visitors → Orders Created → Transactions — older months partly 0 until new SPOS upload":
+    "Produk Dilihat → Pengunjung → Transaksi Dibuat → Transaksi — bulan lama sebagian 0 sampai upload SPOS baru",
+  "Best Ads Performance": "Performa Iklan Terbaik",
+  "Top 8 · Views → Clicks → Add to Cart → Sales · from Ads": "Top 8 · Dilihat → Klik → Add to Cart → Omzet · sumber Ads",
+  "Views": "Dilihat", "Clicks": "Klik", "Cart": "Keranjang",
+
+  // subscription plans
+  "days left": "hari lagi", "Expired": "Kedaluwarsa", "Unlimited": "Tanpa Batas",
+  "Your subscription has ended — read-only mode. Contact us to renew.":
+    "Langganan Anda telah berakhir — mode baca-saja. Hubungi kami untuk memperpanjang.",
+
+  // misc
+  "GMV": "GMV",
+
+  // Ads Performance
+  "View": "Dilihat", "Click": "Klik", "Order": "Pesanan", "Item Sold": "Produk Terjual",
+  "Add to Cart": "Masuk Keranjang",
+  "Group Ads": "Iklan Grup", "Independent Ads": "Iklan Independen",
+  "Sales by Ads Type": "Penjualan per Jenis Iklan",
+  "Ads Funnel": "Funnel Iklan",
+  "Item Sold vs Sales": "Produk Terjual vs Penjualan",
+  "Ads Group Performance": "Performa Grup Iklan",
+  "Campaign / group-level rows (GMV Max, Grup Hero, Grup Regular, etc.) — everything without a Kode Produk":
+    "Baris tingkat kampanye/grup (GMV Max, Grup Hero, Grup Reguler, dll.) — semua yang tanpa Kode Produk",
+  "Ads Product Performance": "Performa Produk Iklan",
+  "Merged from Total Ads, GMV Max, and Group Ads · joined on Kode Produk":
+    "Gabungan dari Total Ads, GMV Max, dan Iklan Grup · digabung berdasarkan Kode Produk",
+  "Campaign Name": "Nama Kampanye",
+  "Product Code": "Kode Produk", "Product Name": "Nama Produk",
+  "No campaign/group ads data yet": "Belum ada data iklan kampanye/grup",
+  "No product-level ads data yet": "Belum ada data iklan tingkat produk",
+  "No ads funnel data yet": "Belum ada data funnel iklan",
+  "Loading data…": "Memuat data…",
+
+  // Finance Detail
+  "Upload Data Keuangan First": "Unggah Data Keuangan Dulu",
+  "No Shopee Income (Laporan Penghasilan) data has been uploaded yet. Go to the \"Upload Keuangan\" tab to import one.":
+    "Belum ada data Income (Laporan Penghasilan) Shopee yang diunggah. Buka tab \"Upload Keuangan\" untuk mengimpornya.",
+  "Choose Store": "Pilih Store",
+  "Finance Detail is shown per store — pick a Store above to view its dashboard.":
+    "Detail Keuangan ditampilkan per store — pilih satu Store di atas untuk melihat dashboard-nya.",
+  "Gross Sales": "Penjualan Kotor", "Gross Profit": "Laba Kotor",
+  "Ads Spent": "Belanja Iklan", "Nett Profit": "Laba Bersih",
+  "Promotion Cost": "Biaya Promosi", "Refund": "Pengembalian Dana",
+  "Delivery Cost": "Biaya Pengiriman", "Affiliate Cost": "Biaya Afiliasi",
+  "Marketplace Fee": "Biaya Marketplace",
+  "Monthly Gross Sales vs Nett Profit": "Penjualan Kotor vs Laba Bersih Bulanan",
+  "Monthly Marketplace Fee": "Biaya Marketplace Bulanan",
+  "Monthly Promotion Cost": "Biaya Promosi Bulanan",
+  "Payment Method": "Metode Bayar", "Shipping Service": "Jasa Kirim",
+  "Daily Transaction Detail": "Detail Transaksi per Hari",
+  "Click a row to see that day's transaction detail · date based on release date":
+    "Klik baris untuk melihat detail transaksi hari itu · tanggal berdasarkan dana dilepaskan",
+  "Date": "Tanggal", "Orders": "Pesanan", "Net Income": "Laba Bersih",
+  "No data for these filters": "Tidak ada data untuk filter ini",
+  "Search": "Cari",
+  "Product Code / Product Name / Variant Name": "Kode Produk / Nama Produk / Nama Variasi",
+  "Variant Name": "Nama Variasi", "Variant Code": "Kode Variasi",
+  "Product Sold": "Produk Terjual", "Promotional Cost": "Biaya Promosi",
+  "Transaction": "Transaksi", "Close": "Tutup",
+  "Order No.": "No. Pesanan", "Buyer": "Pembeli", "Affiliate": "Afiliasi",
+  "No transactions": "Tidak ada transaksi",
+  "Nett Profit ÷ Sales × 100%": "Laba Bersih ÷ Penjualan × 100%",
+  "Modal and Ads Cost are real per-product numbers. Promotional, Refund, Delivery, Affiliate and Market Place Fee are not in the CSV per product, so each is the store total spread across products by their share of Sales (estimates per product, exact in total).":
+    "Modal dan Biaya Iklan adalah angka asli per produk. Biaya Promosi, Refund, Ongkir, Affiliate dan Market Place Fee tidak ada di CSV per produk, jadi masing-masing adalah total toko yang dibagi ke produk sesuai porsi Penjualannya (estimasi per produk, tepat secara total).",
+  "orders": "pesanan",
+  "Finance Dashboard": "Dashboard Keuangan",
+
+  // Operational Performance
+  "Upload Data Operational Performance First": "Unggah Data Operational Performance Dulu",
+  "No Shopee Order.completed data has been uploaded yet. Go to the \"Upload Operational Performance\" tab to import one.":
+    "Belum ada data Order.completed Shopee yang diunggah. Buka tab \"Upload Operational Performance\" untuk mengimpornya.",
+  "Operational Performance is shown per store — pick a Store above to view its dashboard.":
+    "Operational Performance ditampilkan per store — pilih satu Store di atas untuk melihat dashboard-nya.",
+  "Unique orders": "Pesanan unik",
+  "Total Product Ordered": "Total Produk Dipesan",
+  "Ready to ship": "Siap dikirim",
+  "Pay → Ship Deadline": "Bayar → Batas Kirim",
+  "Ship Deadline → Completed": "Batas Kirim → Selesai",
+  "Pay → Completed": "Bayar → Selesai",
+  "Total Cancellations": "Total Pembatalan",
+  "Orders cancelled": "Pesanan dibatalkan",
+  "Total Product Return": "Total Product Return",
+  "Units returned": "Unit dikembalikan",
+  "GMV Map by Province": "Peta GMV per Provinsi",
+  "Darker color = higher GMV in that province — hover for detail":
+    "Semakin gelap warna, semakin tinggi GMV di provinsi tersebut — arahkan kursor untuk detail",
+  "SLA (Pay → Completed)": "SLA (Bayar → Selesai)",
+  "Order distribution by time from payment to completion": "Distribusi pesanan berdasarkan lama waktu bayar sampai selesai",
+  "Number of orders per payment method": "Jumlah pesanan per metode pembayaran",
+  "Shipping Type / Option": "Jenis Kurir / Opsi Kirim",
+  "Number of orders per shipping option — top 10, rest merged into Others":
+    "Jumlah pesanan per opsi pengiriman — top 10, sisanya digabung jadi Lainnya",
+  "Click a row to see that day's transaction detail · date based on order completed time":
+    "Klik baris untuk melihat detail transaksi hari itu · tanggal berdasarkan waktu pesanan selesai",
+  "Product": "Produk", "Variant": "Variasi", "Paid At": "Pesanan Dibayar",
+  "Ship Deadline": "Pesanan di Kirim", "Completed At": "Pesanan Selesai",
+  "Courier": "Kurir", "Province": "Provinsi", "Status": "Status",
+  "Others": "Lainnya",
+  "Failed to load data. Filter is too large or connection is slow.": "Gagal memuat data. Filter terlalu besar atau koneksi lambat.",
+  "Loading map…": "Memuat peta…",
+  "City / Regency": "Kota / Kabupaten",
+  "Total Product Sold": "Total Produk Terjual",
+  "Total Returned Products": "Total Produk Retur",
+  "Province Detail": "Detail Provinsi",
+  "Click a province to see its city/regency breakdown": "Klik provinsi untuk melihat rincian per kota/kabupaten",
+  "No data for this province": "Tidak ada data untuk provinsi ini",
+
+  // Upload
+  "Upload Shopee Data": "Unggah Data Shopee",
+  "Attach one or more Shopee exports — Brand comes from your Owner → Brand → Store selection above.":
+    "Lampirkan satu atau lebih file ekspor Shopee — Merek mengikuti pilihan Pemilik → Merek → Toko di atas.",
+  "Pick the month, confirm your store, and drop your Shopee exports — the week is filled in automatically.":
+    "Pilih bulan, konfirmasi toko Anda, dan letakkan file ekspor Shopee — minggu akan terisi otomatis.",
+  "Select owner…": "Pilih pemilik…", "Select brand…": "Pilih merek…", "Select store…": "Pilih toko…",
+  "Type or select brand…": "Ketik atau pilih merek…", "Type or select store…": "Ketik atau pilih toko…",
+  "New Brand": "Merek Baru", "New Store": "Toko Baru", "Cancel": "Batal",
+  "Type new brand…": "Ketik merek baru…", "Type new store…": "Ketik toko baru…",
+  "Please select or create a Brand first.": "Pilih Brand terlebih dahulu.",
+  "Owner first": "Pilih pemilik dulu", "Brand first": "Pilih merek dulu", "Pick owner first": "Pilih pemilik dulu",
+  "Pick brand first": "Pilih merek dulu",
+  "Store Performance": "Performa Toko", "Order Complete": "Order Selesai",
+  "Uploading…": "Mengunggah…", "Upload": "Unggah",
+  "Year and Bulan are required.": "Tahun dan Bulan wajib diisi.",
+  "Select Owner → Brand → Store.": "Pilih Pemilik → Merek → Toko.",
+  "Pick at least one file.": "Pilih minimal satu file.",
+  "Workspace not ready.": "Workspace belum siap.",
+  "Auto-snaps to Monday": "Otomatis ke hari Senin",
+  "1 week after start": "1 minggu setelah mulai",
+  "Recorded automatically": "Tercatat otomatis",
+  "Store Name": "Nama Toko", "Upload by Admin": "Unggah oleh Admin", "Upload Here": "Unggah Di Sini",
+
+  // ── Client PDF report (/report) ──
+  "Report": "Laporan",
+  "Building Report": "Menyusun Laporan",
+  "Building PDF": "Membuat PDF",
+  "Download PDF": "Unduh PDF",
+  "Back to Dashboard": "Kembali ke Dasbor",
+  "Marketplace Performance Report": "Laporan Performa Marketplace",
+  "Generated": "Dibuat",
+  "All Periods": "Semua Periode",
+  "Performance Scorecard": "Ringkasan Performa",
+  "Compared with": "Dibandingkan dengan",
+  "Compared with the starting baseline": "Dibandingkan dengan baseline awal",
+  "Conversion Rate": "Tingkat Konversi",
+  "Sales Trend": "Tren Penjualan",
+  "Weekly within the selected month": "Mingguan dalam bulan terpilih",
+  "Monthly across the selected period": "Bulanan sepanjang periode terpilih",
+  "No sales data for this selection": "Tidak ada data penjualan untuk pilihan ini",
+  "Customer Funnel": "Funnel Pelanggan",
+  "Where visitors are gained and lost": "Di mana pengunjung didapat dan hilang",
+  // "Product Views" / "In-Cart" / "Transactions" / "Cart Rate" / "Product"
+  // are already defined above and reused here on purpose, so the report's
+  // wording matches the Dashboard exactly.
+  "Cart → Order": "Keranjang → Pesanan",
+  "visitors who add to cart": "pengunjung yang masuk keranjang",
+  "carts that become orders": "keranjang yang jadi pesanan",
+  "visitors who complete an order": "pengunjung yang menyelesaikan pesanan",
+  "Advertising Efficiency": "Efisiensi Iklan",
+  "Return by ad type": "Hasil per tipe iklan",
+  "Ad Type": "Tipe Iklan",
+  "Share of Spend": "Porsi Belanja",
+  "No ads data for this selection": "Tidak ada data iklan untuk pilihan ini",
+  "Product Performance": "Performa Produk",
+  "Top sellers and top advertised products": "Produk terlaris dan produk teriklan teratas",
+  "Top Products by Sales": "Produk Teratas berdasarkan Penjualan",
+  "Top Advertised Products": "Produk Teriklan Teratas",
+  "No product data": "Tidak ada data produk",
+  "No advertised product data": "Tidak ada data produk teriklan",
+  "Store Comparison": "Perbandingan Toko",
+  "Relative contribution and efficiency": "Kontribusi dan efisiensi relatif",
+  "Findings & Recommendations": "Temuan & Rekomendasi",
+  "Prioritised — most urgent first": "Diprioritaskan — paling mendesak dulu",
+  "Not enough data to generate findings for this selection": "Data belum cukup untuk membuat temuan pada pilihan ini",
+};
+
+// Reline adapter: the language switch lives in dashLang (id / en / jp). These
+// pages were written with English strings as keys, so: Indonesian -> dictionary,
+// English and Japanese -> the English key itself.
+export function useLang() {
+  const { lang } = useLangContext();
+  const t = useCallback((key: string) => (lang === "id" ? (ID_DICT[key] ?? key) : key), [lang]);
+  return { lang, t };
+}

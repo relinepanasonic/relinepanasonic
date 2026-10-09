@@ -1,0 +1,667 @@
+"use client";
+
+import { useEffect, useState, useCallback, useMemo, useId } from "react";
+import {
+  BarChart, Bar, ComposedChart, Line, PieChart, Pie, Cell,
+  XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend,
+} from "recharts";
+import { createClient } from "@/lib/supabase/client";
+import Loader from "@/components/Loader";
+import { useLang } from "@/lib/financeI18n";
+import { useTableSort } from "@/hooks/useTableSort";
+import SortableHeader from "@/components/SortableHeader";
+import { sortByBucket, bucketAxisLabel } from "@/lib/timeBuckets";
+
+const MONTH_ORDER = ["Baseline","Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"];
+const WEEKS = ["Week 1","Week 2","Week 3","Week 4","Week 5"];
+// Brand palette — same gold/blue-only set as Dashboard/Ads Performance
+// (no green/red/purple/pink chart colors anywhere in this app).
+const GOLD = "#c9a227", GOLD_L = "#f0d870", GOLD_D = "#8a6f1c";
+const BLUE = "#3b82f6", BLUE_L = "#60a5fa", BLUE_PALE = "#93c5fd", BLUE_D = "#1d4ed8";
+const PALETTE = [GOLD, BLUE, GOLD_L, BLUE_L, BLUE_PALE, GOLD_D, BLUE_D, "#f5e6a8"];
+
+const rpC = (n: number) => {
+  const v = n || 0, a = Math.abs(v);
+  if (a >= 1e9) return "Rp " + (v / 1e9).toFixed(1) + "M";
+  if (a >= 1e6) return "Rp " + (v / 1e6).toFixed(1) + "jt";
+  if (a >= 1e3) return "Rp " + Math.round(v / 1e3) + "rb";
+  return "Rp " + Math.round(v);
+};
+const rpFull = (n: number) => "Rp " + Math.round(n || 0).toLocaleString("id-ID");
+const fmtDate = (iso: string) => new Date(iso + "T00:00:00").toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" });
+
+type Kpis = {
+  sales: number; promotion_cost: number; refund: number; delivery_cost: number;
+  affiliate_cost: number; marketplace_fee: number; misc: number; gross_profit: number; ads_cost: number;
+};
+type DailyRow = { tx_date: string; orders: number; sales: number; promotion_cost: number; marketplace_fee: number; net_income: number; refund: number };
+type Summary = {
+  kpis: Kpis;
+  monthly: { month: string; sales: number; profit: number }[];
+  // Per-day Gross Sales + Gross Profit — populated only when a month is
+  // selected (Nett Profit has no honest daily form; see migration 0091).
+  daily_gross: { day: string; gross_sales: number; gross_profit: number }[];
+  // month value doubles as an ISO date string when a month is selected.
+  monthly_fee: { month: string; fee: number }[];
+  monthly_discount: { month: string; discount: number }[];
+  monthly_ads_cost: { month: string; ad_cost: number }[];
+  monthly_costs: { month: string; promotion_cost: number; refund: number; delivery_cost: number; affiliate_cost: number; marketplace_fee: number; misc: number }[];
+  payment_method: { method: string; cnt: number }[];
+  jasa_kirim: { service: string; cnt: number }[];
+  daily: DailyRow[];
+};
+type ProductRow = {
+  kode_produk: string; nama_produk: string | null; kode_variasi: string; nama_variasi: string | null;
+  units_sold: number; total_sales: number; total_modal: number;
+  promotion_cost: number; refund: number; delivery_cost: number; affiliate_cost: number;
+  marketplace_fee: number; ads_cost: number; nett_profit: number;
+};
+type ProductDetail = {
+  rows: ProductRow[]; total_modal: number; monthly_modal: { month: string; modal: number }[];
+};
+type Link = { city: string | null; store_name: string | null };
+type FinanceFilters = { years: number[]; months: string[]; stores?: { store_name: string; city: string | null }[] };
+
+export default function FinanceDashboard({ clientId, refreshKey }: { clientId: string; refreshKey: number }) {
+  const { t } = useLang();
+  const [supabase] = useState(() => createClient());
+  const [hasAnyData, setHasAnyData] = useState<boolean | null>(null); // null = checking
+  const [filters, setFilters] = useState<FinanceFilters>({ years: [], months: [] });
+  const [links, setLinks] = useState<Link[]>([]);
+  const [sel, setSel] = useState({ year: "", month: "", week: "", city: "", store: "" });
+  const [d, setD] = useState<Summary | null>(null);
+  const [pd, setPd] = useState<ProductDetail | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [drill, setDrill] = useState<string | null>(null);
+  const [activeTable, setActiveTable] = useState<"transaksi" | "profit">("transaksi");
+
+  const checkData = useCallback(async () => {
+    if (!clientId) return;
+    const { count } = await supabase.from("finance_rows").select("id", { count: "exact", head: true }).eq("client_id", clientId);
+    setHasAnyData((count ?? 0) > 0);
+    // server-side DISTINCT — never ships every row to the browser just to
+    // build a dropdown (a plain select() truncates at 1000 rows, which
+    // silently dropped later months once total uploads grew past that)
+    const { data: f } = await supabase.rpc("finance_filters");
+    setFilters((f as FinanceFilters) || { years: [], months: [] });
+    setLinks(((f as FinanceFilters)?.stores || []).map((x) => ({ city: x.city, store_name: x.store_name })));
+  }, [supabase, clientId]);
+
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => { checkData(); }, [checkData, refreshKey]);
+
+  const load = useCallback(async () => {
+    if (!clientId || !hasAnyData || !sel.store) { setD(null); setPd(null); return; }
+    setLoading(true);
+    const params = {
+      p_year: sel.year ? Number(sel.year) : null,
+      p_month: sel.month || null,
+      p_week: sel.week || null,
+      p_city: sel.city || null,
+      p_store: sel.store,
+    };
+    const [{ data }, { data: pdata }] = await Promise.all([
+      supabase.rpc("finance_summary", params),
+      supabase.rpc("product_profit_detail", params),
+    ]);
+    setD(data as Summary);
+    setPd(pdata as ProductDetail);
+    setLoading(false);
+  }, [supabase, clientId, hasAnyData, sel]);
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => { load(); }, [load]);
+
+  const years = useMemo(() => [...filters.years].sort((a, b) => b - a), [filters.years]);
+  const months = useMemo(() => [...filters.months].sort((a, b) => MONTH_ORDER.indexOf(a) - MONTH_ORDER.indexOf(b)), [filters.months]);
+  const cities = useMemo(() => Array.from(new Set(links.map((l) => l.city).filter(Boolean) as string[])).sort(), [links]);
+  const storesForCity = useMemo(() => sel.city
+    ? Array.from(new Set(links.filter((l) => l.city === sel.city).map((l) => l.store_name).filter(Boolean) as string[]))
+    : Array.from(new Set(links.map((l) => l.store_name).filter(Boolean) as string[])), [links, sel.city]);
+
+  function pickCity(city: string) { setSel((s) => ({ ...s, city, store: "" })); }
+  // A dealer owner (or a one-dealer city) has exactly one option: pick it for them.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (!sel.store && storesForCity.length === 1) setSel((s) => ({ ...s, store: storesForCity[0] }));
+  }, [storesForCity, sel.store]);
+
+  if (hasAnyData === null) return <Loader center />;
+
+  if (!hasAnyData) {
+    return (
+      <div className="panel">
+        <div className="coming">
+          <div className="big">💹</div>
+          <h3 style={{ fontSize: 18, color: "#fff", margin: 0 }}>{t("Upload Data Keuangan First")}</h3>
+          <p style={{ maxWidth: 420, margin: 0 }}>{t("No Shopee Income (Laporan Penghasilan) data has been uploaded yet. Go to the \"Upload Keuangan\" tab to import one.")}</p>
+        </div>
+      </div>
+    );
+  }
+
+  const k = d?.kpis;
+  const totalModal = pd?.total_modal ?? 0;
+  const nettProfit = (k?.gross_profit ?? 0) - (k?.ads_cost ?? 0) - totalModal;
+  const grossNettData = buildGrossNettData(d, pd);
+  const salesSeries = seriesFrom(d?.monthly, "sales");
+  const profitSeries = seriesFrom(d?.monthly, "profit");
+  const adsSeries = seriesFrom(d?.monthly_ads_cost, "ad_cost");
+  const modalSeries = seriesFrom(pd?.monthly_modal, "modal");
+  const nettSeries = grossNettData.map((x) => x.nett_profit);
+  const promoSeries = seriesFrom(d?.monthly_costs, "promotion_cost");
+  const refundSeries = seriesFrom(d?.monthly_costs, "refund");
+  const deliverySeries = seriesFrom(d?.monthly_costs, "delivery_cost");
+  const affiliateSeries = seriesFrom(d?.monthly_costs, "affiliate_cost");
+  const feeSeries = seriesFrom(d?.monthly_costs, "marketplace_fee");
+
+  return (
+    <div className="fin-compact">
+      {/* filters — City + Dealer only at first; Year/Month/Week auto-reveal once a store is picked */}
+      <div className="filterbar">
+        <Sel label={t("City")} value={sel.city} onChange={pickCity} opts={cities} all={t("All Cities")} />
+        <Sel label={t("Store")} value={sel.store} onChange={(v) => setSel((s) => ({ ...s, store: v }))} opts={storesForCity} all={t("Pick a store…")} />
+        {sel.store && (
+          <>
+            <Sel label={t("Year")}  value={sel.year}  onChange={(v) => setSel((s) => ({ ...s, year: v }))}  opts={years.map(String)} all={t("All Years")} />
+            <Sel label={t("Month")} value={sel.month} onChange={(v) => setSel((s) => ({ ...s, month: v }))} opts={months} all={t("All Months")} />
+            <Sel label={t("Week")}  value={sel.week}  onChange={(v) => setSel((s) => ({ ...s, week: v }))}  opts={WEEKS} all={t("All Weeks")} />
+          </>
+        )}
+        <button className="btn-ghost" onClick={() => setSel({ year: "", month: "", week: "", city: "", store: "" })}>{t("Reset")}</button>
+        {loading && <Loader />}
+      </div>
+
+      {!sel.store ? (
+        <div className="panel">
+          <div className="coming">
+            <div className="big">🏬</div>
+            <h3 style={{ fontSize: 18, color: "#fff", margin: 0 }}>{t("Choose Store")}</h3>
+            <p style={{ maxWidth: 420, margin: 0 }}>{t("Finance Detail is shown per store — pick a Store above to view its dashboard.")}</p>
+          </div>
+        </div>
+      ) : (
+      <>
+      {/* Row 1: Gross Sales -> Nett Profit (the P&L walk). Row 2: the 5 cost
+          lines that get subtracted along the way. Was briefly one row of 10
+          (kpi-grid-10) to save height, split back to 2x5 per request. */}
+      <div className="kpi-grid kpi-grid-5">
+        <div className="kpi kpi-hero"><div className="kpi-icon">💰</div><div className="lbl">{t("Gross Sales")}</div><div className="val">{k ? rpC(k.sales) : "—"}</div><MiniSparkline data={salesSeries} color={GOLD} /></div>
+        <div className="kpi kpi-roas"><div className="kpi-icon">📈</div><div className="lbl">{t("Gross Profit")}</div><div className="val">{k ? rpC(k.gross_profit) : "—"}</div><MiniSparkline data={profitSeries} color={GOLD} /></div>
+        <div className="kpi"><div className="kpi-icon">📣</div><div className="lbl">{t("Ads Spent")}</div><div className="val">{k ? rpC(k.ads_cost) : "—"}</div><MiniSparkline data={adsSeries} color={BLUE} /></div>
+        <div className="kpi"><div className="kpi-icon">🏷️</div><div className="lbl">Total Modal Product</div><div className="val">{rpC(totalModal)}</div><MiniSparkline data={modalSeries} color={GOLD_L} /></div>
+        <div className="kpi kpi-roas"><div className="kpi-icon">✅</div><div className="lbl">{t("Nett Profit")}</div><div className="val" style={{ color: nettProfit >= 0 ? undefined : "#f87171" }}>{rpC(nettProfit)}</div><MiniSparkline data={nettSeries} color={GOLD} /></div>
+      </div>
+      <div className="kpi-grid kpi-grid-5">
+        <div className="kpi kpi-cost"><div className="kpi-icon">🎟️</div><div className="lbl">{t("Promotion Cost")}</div><div className="val">{k ? rpC(k.promotion_cost) : "—"}</div><MiniSparkline data={promoSeries} color={BLUE} /></div>
+        <div className="kpi kpi-cost"><div className="kpi-icon">↩️</div><div className="lbl">{t("Refund")}</div><div className="val">{k ? rpC(k.refund) : "—"}</div><MiniSparkline data={refundSeries} color={BLUE} /></div>
+        <div className="kpi kpi-cost"><div className="kpi-icon">🚚</div><div className="lbl">{t("Delivery Cost")}</div><div className="val">{k ? rpC(k.delivery_cost) : "—"}</div><MiniSparkline data={deliverySeries} color={BLUE} /></div>
+        <div className="kpi kpi-cost"><div className="kpi-icon">🤝</div><div className="lbl">{t("Affiliate Cost")}</div><div className="val">{k ? rpC(k.affiliate_cost) : "—"}</div><MiniSparkline data={affiliateSeries} color={BLUE} /></div>
+        <div className="kpi kpi-cost"><div className="kpi-icon">🏪</div><div className="lbl">{t("Marketplace Fee")}</div><div className="val">{k ? rpC(k.marketplace_fee) : "—"}</div><MiniSparkline data={feeSeries} color={BLUE} /></div>
+      </div>
+
+      {/* Gross Sales vs Nett Profit — monthly by default, or daily Gross
+          Sales vs Gross Profit when a single month is selected (Nett has
+          no honest daily form; see migration 0091). */}
+      <div className="row">
+        {(() => {
+          // Daily mode only when a month is selected AND the RPC returned a
+          // daily series (guards the window before migration 0091 runs).
+          const showDaily = !!sel.month && (d?.daily_gross?.length ?? 0) > 0;
+          return (
+            <Panel title={showDaily ? t("Daily Gross Sales vs Gross Profit") : t("Monthly Gross Sales vs Nett Profit")} hint="Gross Sales (bar) vs Nett Profit setelah Ads Spent dan Total Modal Product (garis)">
+              {showDaily
+                ? <DailyGrossChart data={sortByBucket(d?.daily_gross || [], "day")} t={t} />
+                : <GrossVsNettChart data={grossNettData} t={t} />}
+            </Panel>
+          );
+        })()}
+      </div>
+
+      {/* Fee + Discount + Pies — one row, 4 across, so 4 breakdown charts
+          only cost one stacked row's height instead of two. */}
+      <div className="row c4">
+        <Panel title={sel.month ? t("Daily Marketplace Fee") : t("Monthly Marketplace Fee")} hint="Total Admin & Layanan fee per bulan">
+          <SimpleBarChart data={sortByBucket(d?.monthly_fee || [], "month")} dataKey="fee" top={BLUE_L} bottom={BLUE} />
+        </Panel>
+        <Panel title={sel.month ? t("Daily Promotion Cost") : t("Monthly Promotion Cost")} hint="Total diskon produk + voucher (I, K, L, M, N, O) per bulan">
+          <SimpleBarChart data={sortByBucket(d?.monthly_discount || [], "month")} dataKey="discount" top={GOLD_L} bottom={GOLD} />
+        </Panel>
+        <Panel title={t("Payment Method")} hint="Jumlah pesanan per metode pembayaran">
+          <DonutChart data={(d?.payment_method || []).map((p) => ({ name: p.method, value: p.cnt }))} t={t} />
+        </Panel>
+        <Panel title={t("Shipping Service")} hint="Jumlah pesanan per jasa kirim">
+          <DonutChart data={(d?.jasa_kirim || []).map((p) => ({ name: p.service, value: p.cnt }))} t={t} />
+        </Panel>
+      </div>
+
+      {/* Two big tables were stacking vertically (~400px+ each) even with
+          their own maxHeight — tabbed instead of stacked so only one is
+          ever on screen at a time. */}
+      <div className="tbl-tabs">
+        <button onClick={() => setActiveTable("transaksi")} style={tableTabBtn(activeTable === "transaksi")}>{t("Daily Transaction Detail")}</button>
+        <button onClick={() => setActiveTable("profit")} style={tableTabBtn(activeTable === "profit")}>Detail Product Profit</button>
+      </div>
+
+      {activeTable === "transaksi" ? (
+        <DailyTransactionTable rows={d?.daily || []} onRowClick={setDrill} t={t} />
+      ) : (
+        <ProductProfitTable rows={pd?.rows || []} t={t} />
+      )}
+
+      {drill && (
+        <DayDrillDown day={drill} clientId={clientId} sel={sel} supabase={supabase} onClose={() => setDrill(null)} />
+      )}
+      </>
+      )}
+    </div>
+  );
+}
+
+/* ── Daily Transaction Detail: universal sortable header ── */
+function DailyTransactionTable({ rows, onRowClick, t }: { rows: DailyRow[]; onRowClick: (day: string) => void; t: (k: string) => string }) {
+  const { sortedData, sortConfig, requestSort } = useTableSort<DailyRow>(rows);
+  return (
+    <div className="panel">
+      <h3>{t("Daily Transaction Detail")}</h3>
+      <div className="hint">{t("Click a row to see that day's transaction detail · date based on release date")}</div>
+      <div className="tbl-wrap" style={{ maxHeight: 350 }}>
+        <table className="tbl">
+          <thead><tr>
+            <SortableHeader label={t("Date")} sortKey="tx_date" currentSort={sortConfig} onRequestSort={requestSort} />
+            <SortableHeader label={t("Orders")} sortKey="orders" currentSort={sortConfig} onRequestSort={requestSort} className="num" />
+            <SortableHeader label={t("Sales")} sortKey="sales" currentSort={sortConfig} onRequestSort={requestSort} className="num" />
+            <SortableHeader label={t("Promotion Cost")} sortKey="promotion_cost" currentSort={sortConfig} onRequestSort={requestSort} className="num" />
+            <SortableHeader label={t("Marketplace Fee")} sortKey="marketplace_fee" currentSort={sortConfig} onRequestSort={requestSort} className="num" />
+            <SortableHeader label={t("Net Income")} sortKey="net_income" currentSort={sortConfig} onRequestSort={requestSort} className="num" />
+            <SortableHeader label={t("Refund")} sortKey="refund" currentSort={sortConfig} onRequestSort={requestSort} className="num" />
+          </tr></thead>
+          <tbody>
+            {sortedData.map((r) => (
+              <tr key={r.tx_date} style={{ cursor: "pointer" }} onClick={() => onRowClick(r.tx_date)}>
+                <td style={{ fontWeight: 600 }}>{fmtDate(r.tx_date)}</td>
+                <td className="num">{r.orders}</td>
+                <td className="num">{rpFull(r.sales)}</td>
+                <td className="num">{rpFull(r.promotion_cost)}</td>
+                <td className="num">{rpFull(r.marketplace_fee)}</td>
+                <td className="num" style={{ color: r.net_income >= 0 ? "#86efac" : "#f87171", fontWeight: 700 }}>{rpFull(r.net_income)}</td>
+                <td className="num">{rpFull(r.refund)}</td>
+              </tr>
+            ))}
+            {sortedData.length === 0 && (
+              <tr><td colSpan={7} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>{t("No data for these filters")}</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+/* ── Detail Product Profit: 13-column variant-level P&L, search + sortable ── */
+function ProductProfitTable({ rows, t }: { rows: ProductRow[]; t: (k: string) => string }) {
+  const [search, setSearch] = useState("");
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return rows;
+    return rows.filter((r) =>
+      (r.kode_produk || "").toLowerCase().includes(q) ||
+      (r.nama_produk || "").toLowerCase().includes(q) ||
+      (r.nama_variasi || "").toLowerCase().includes(q));
+  }, [rows, search]);
+
+  const { sortedData, sortConfig, requestSort } = useTableSort<ProductRow>(filtered, "total_sales");
+
+  return (
+    <div className="panel">
+      <h3>Detail Product Profit</h3>
+      <div className="hint">
+        {t("Modal and Ads Cost are real per-product numbers. Promotional, Refund, Delivery, Affiliate and Market Place Fee are not in the CSV per product, so each is the store total spread across products by their share of Sales (estimates per product, exact in total).")}
+      </div>
+
+      <div className="filterbar" style={{ marginTop: 4, marginBottom: 10 }}>
+        <div className="fld" style={{ minWidth: 260 }}>
+          <label>{t("Search")}</label>
+          <input type="text" placeholder={t("Product Code / Product Name / Variant Name")}
+            value={search} onChange={(e) => setSearch(e.target.value)}
+            style={{ background: "rgba(10,22,40,.5)", border: "1px solid rgba(201,162,39,.2)", borderRadius: 8, padding: "8px 10px", color: "#e8edf8", fontSize: 13, width: "100%" }} />
+        </div>
+      </div>
+      <div className="tbl-wrap" style={{ maxHeight: 450 }}>
+        <table className="tbl tbl-sticky2">
+          <thead><tr>
+            <th className="sticky-col sticky-col-1"><span className="sticky-inner">{t("Product Name")}</span></th>
+            <th className="sticky-col sticky-col-2"><span className="sticky-inner">{t("Variant Name")}</span></th>
+            <th>{t("Product Code")}</th><th>{t("Variant Code")}</th>
+            <SortableHeader label={t("Product Sold")} sortKey="units_sold" currentSort={sortConfig} onRequestSort={requestSort} className="num" />
+            <SortableHeader label={t("Sales")} sortKey="total_sales" currentSort={sortConfig} onRequestSort={requestSort} className="num" />
+            <SortableHeader label="Total Modal Product" sortKey="total_modal" currentSort={sortConfig} onRequestSort={requestSort} className="num" />
+            <SortableHeader label={t("Promotional Cost")} sortKey="promotion_cost" currentSort={sortConfig} onRequestSort={requestSort} className="num" />
+            <SortableHeader label={t("Refund")} sortKey="refund" currentSort={sortConfig} onRequestSort={requestSort} className="num" />
+            <SortableHeader label={t("Delivery Cost")} sortKey="delivery_cost" currentSort={sortConfig} onRequestSort={requestSort} className="num" />
+            <SortableHeader label={t("Affiliate Cost")} sortKey="affiliate_cost" currentSort={sortConfig} onRequestSort={requestSort} className="num" />
+            <SortableHeader label={t("Market Place Fee")} sortKey="marketplace_fee" currentSort={sortConfig} onRequestSort={requestSort} className="num" />
+            <SortableHeader label={t("Ads Cost")} sortKey="ads_cost" currentSort={sortConfig} onRequestSort={requestSort} className="num" />
+            <SortableHeader label={t("Nett Profit")} sortKey="nett_profit" currentSort={sortConfig} onRequestSort={requestSort} className="num" />
+            <th className="num" style={{ whiteSpace: "nowrap" }} title={t("Nett Profit ÷ Sales × 100%")}>%</th>
+          </tr></thead>
+          <tbody>
+            {sortedData.map((r) => (
+              <tr key={`${r.kode_produk}::${r.kode_variasi}`}>
+                <td className="sticky-col sticky-col-1" title={r.nama_produk || undefined}><span className="sticky-inner">{r.nama_produk || "—"}</span></td>
+                <td className="sticky-col sticky-col-2" title={r.nama_variasi || undefined}><span className="sticky-inner">{r.nama_variasi || "—"}</span></td>
+                <td style={{ fontFamily: "monospace", fontSize: 12, whiteSpace: "nowrap" }}>{r.kode_produk}</td>
+                <td style={{ fontFamily: "monospace", fontSize: 12, whiteSpace: "nowrap" }}>{r.kode_variasi}</td>
+                <td className="num" style={{ whiteSpace: "nowrap" }}>{r.units_sold.toLocaleString("id-ID")}</td>
+                <td className="num" style={{ whiteSpace: "nowrap" }}>{rpFull(r.total_sales)}</td>
+                <td className="num" style={{ whiteSpace: "nowrap" }}>{rpFull(r.total_modal)}</td>
+                <td className="num" style={{ whiteSpace: "nowrap" }}>{rpFull(r.promotion_cost)}</td>
+                <td className="num" style={{ whiteSpace: "nowrap" }}>{rpFull(r.refund)}</td>
+                <td className="num" style={{ whiteSpace: "nowrap" }}>{rpFull(r.delivery_cost)}</td>
+                <td className="num" style={{ whiteSpace: "nowrap" }}>{rpFull(r.affiliate_cost)}</td>
+                <td className="num" style={{ whiteSpace: "nowrap" }}>{rpFull(r.marketplace_fee)}</td>
+                <td className="num" style={{ whiteSpace: "nowrap" }}>{rpFull(r.ads_cost)}</td>
+                <td className="num" style={{ whiteSpace: "nowrap", color: r.nett_profit >= 0 ? "#86efac" : "#f87171", fontWeight: 700 }}>{rpFull(r.nett_profit)}</td>
+                <td className="num" style={{ whiteSpace: "nowrap", color: r.nett_profit >= 0 ? "#86efac" : "#f87171", fontWeight: 700 }}>{r.total_sales > 0 ? `${(r.nett_profit / r.total_sales * 100).toFixed(1)}%` : "—"}</td>
+              </tr>
+            ))}
+            {sortedData.length === 0 && (
+              <tr><td colSpan={15} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>{t("No data for these filters")}</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+/* ── day drill-down overlay ── */
+type DetailRow = {
+  order_no: string | null; buyer_username: string | null;
+  sales: number | null; promotion_cost: number | null; refund: number | null;
+  delivery_cost: number | null; affiliate_cost: number | null; marketplace_fee: number | null;
+  net_income: number | null;
+};
+function DayDrillDown({ day, clientId, sel, supabase, onClose }: {
+  day: string; clientId: string;
+  sel: { year: string; month: string; week: string; city: string; store: string };
+  supabase: ReturnType<typeof createClient>; onClose: () => void;
+}) {
+  const { t } = useLang();
+  const [rows, setRows] = useState<DetailRow[] | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      let q = supabase.from("finance_rows")
+        .select("order_no,buyer_username,sales,promotion_cost,refund,delivery_cost,affiliate_cost,marketplace_fee,net_income")
+        .eq("client_id", clientId).eq("release_date", day);
+      if (sel.year) q = q.eq("year", Number(sel.year));
+      if (sel.month) q = q.eq("month", sel.month);
+      if (sel.week) q = q.eq("week", sel.week);
+      if (sel.city) q = q.eq("dealer_city", sel.city);
+      if (sel.store) q = q.eq("store_name", sel.store);
+      const { data } = await q.order("order_no");
+      setRows((data as DetailRow[]) || []);
+    })();
+  }, [day, clientId, sel, supabase]);
+
+  return (
+    <div style={overlay} onClick={onClose}>
+      <div style={drawer} onClick={(e) => e.stopPropagation()}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+          <div style={{ fontSize: 22, fontWeight: 800, color: "#fff" }}>{t("Transaction")} — {fmtDate(day)}</div>
+          <button className="btn-ghost" onClick={onClose}>✕ {t("Close")}</button>
+        </div>
+        {rows === null ? <Loader center /> : (
+          <div className="tbl-wrap" style={{ maxHeight: "70vh" }}>
+            <table className="tbl" style={{ color: "#e8edf8", fontSize: 14.5 }}>
+              <thead><tr>
+                <th>{t("Order No.")}</th><th>{t("Buyer")}</th>
+                <th className="num">{t("Sales")}</th><th className="num">{t("Promotional Cost")}</th>
+                <th className="num">{t("Refund")}</th><th className="num">{t("Delivery Cost")}</th>
+                <th className="num">{t("Affiliate")}</th><th className="num">{t("Market Place Fee")}</th>
+                <th className="num">{t("Gross Profit")}</th>
+              </tr></thead>
+              <tbody>
+                {rows.map((r, i) => (
+                  <tr key={i} style={{ height: 48 }}>
+                    <td style={{ fontFamily: "monospace", fontSize: 13 }}>{r.order_no || "—"}</td>
+                    <td>{r.buyer_username || "—"}</td>
+                    <td className="num">{rpFull(r.sales || 0)}</td>
+                    <td className="num">{rpFull(Math.abs(r.promotion_cost || 0))}</td>
+                    <td className="num">{rpFull(Math.abs(r.refund || 0))}</td>
+                    <td className="num">{rpFull(Math.abs(r.delivery_cost || 0))}</td>
+                    <td className="num">{rpFull(Math.abs(r.affiliate_cost || 0))}</td>
+                    <td className="num">{rpFull(Math.abs(r.marketplace_fee || 0))}</td>
+                    <td className="num" style={{ color: (r.net_income || 0) >= 0 ? "#86efac" : "#f87171", fontWeight: 700 }}>{rpFull(r.net_income || 0)}</td>
+                  </tr>
+                ))}
+                {rows.length === 0 && <tr><td colSpan={9} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>{t("No transactions")}</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ── building blocks ── */
+const byMonth = <T extends { month: string }>(a: T[]) => [...(a || [])].sort((x, y) => MONTH_ORDER.indexOf(x.month) - MONTH_ORDER.indexOf(y.month));
+function seriesFrom<T extends { month: string }>(arr: T[] | undefined, key: keyof T): number[] {
+  return byMonth(arr || []).map((x) => Number(x[key]) || 0);
+}
+// Tiny inline trend line for a KPI card — replaces the old text sub-label.
+// Catmull-Rom -> cubic-bezier smoothing (tension 1/6, the standard
+// conversion) — turns the sharp polyline into a smooth curve without
+// pulling in a charting library for an inline KPI-card sparkline.
+function smoothPath(coords: (readonly [number, number])[]): string {
+  if (coords.length < 2) return "";
+  let d = `M${coords[0][0].toFixed(2)},${coords[0][1].toFixed(2)}`;
+  for (let i = 0; i < coords.length - 1; i++) {
+    const p0 = coords[i === 0 ? i : i - 1];
+    const p1 = coords[i];
+    const p2 = coords[i + 1];
+    const p3 = coords[i + 2 < coords.length ? i + 2 : i + 1];
+    const c1x = p1[0] + (p2[0] - p0[0]) / 6, c1y = p1[1] + (p2[1] - p0[1]) / 6;
+    const c2x = p2[0] - (p3[0] - p1[0]) / 6, c2y = p2[1] - (p3[1] - p1[1]) / 6;
+    d += ` C${c1x.toFixed(2)},${c1y.toFixed(2)} ${c2x.toFixed(2)},${c2y.toFixed(2)} ${p2[0].toFixed(2)},${p2[1].toFixed(2)}`;
+  }
+  return d;
+}
+function MiniSparkline({ data, color }: { data: number[]; color: string }) {
+  const gid = "fin-spk-" + useId().replace(/[^a-zA-Z0-9]/g, "");
+  if (data.length < 2) return <div style={{ height: 26 }} />;
+  const w = 100, h = 26, pad = 2;
+  const min = Math.min(...data), max = Math.max(...data);
+  const range = max - min || 1;
+  const stepX = (w - 2 * pad) / (data.length - 1);
+  const y = (v: number) => h - pad - ((v - min) / range) * (h - 2 * pad);
+  const coords = data.map((v, i) => [pad + i * stepX, y(v)] as const);
+  const line = smoothPath(coords);
+  const [lastX, lastY] = coords[coords.length - 1];
+  const area = `${line} L${lastX.toFixed(2)},${h} L${coords[0][0].toFixed(2)},${h} Z`;
+  return (
+    <svg viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" style={{ width: "100%", height: 26, marginTop: 6, display: "block" }}>
+      <defs>
+        <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={color} stopOpacity="0.45" />
+          <stop offset="100%" stopColor={color} stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      <path d={area} fill={`url(#${gid})`} stroke="none" />
+      <path d={line} fill="none" stroke={color} strokeWidth={1.6} strokeLinejoin="round" strokeLinecap="round" opacity={0.75} />
+      <circle cx={lastX} cy={lastY} r={2.3} fill={color} />
+    </svg>
+  );
+}
+const axis = { fontSize: 10, fill: "#7089aa" };
+const TIP_STYLE: React.CSSProperties = { background: "rgba(6,14,33,0.97)", border: "1px solid rgba(201,162,39,0.35)", borderRadius: 10, color: "#e8edf8", fontSize: 12, padding: "8px 14px" };
+
+function Sel({ label, value, onChange, opts, all }: { label: string; value: string; onChange: (v: string) => void; opts: string[]; all: string }) {
+  return (
+    <div className="fld"><label>{label}</label>
+      <select value={value} onChange={(e) => onChange(e.target.value)}>
+        <option value="">{all}</option>
+        {opts.map((o) => <option key={o} value={o}>{o}</option>)}
+      </select>
+    </div>
+  );
+}
+function Panel({ title, children }: { title: string; hint: string; children: React.ReactNode }) {
+  return (
+    <div className="panel">
+      <h3 style={{ margin: "0 0 14px" }}>{title}</h3>
+      {children}
+    </div>
+  );
+}
+function Empty() {
+  const { t } = useLang();
+  return <div style={{ height: 280, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--muted)", fontSize: 13 }}>{t("No data yet")}</div>;
+}
+function tableTabBtn(active: boolean): React.CSSProperties {
+  return {
+    padding: "9px 20px", borderRadius: 10, fontSize: 13.5, fontWeight: 700, cursor: "pointer",
+    border: `1px solid ${active ? "var(--gold)" : "rgba(201,162,39,.2)"}`,
+    background: active ? "linear-gradient(135deg,var(--gold),var(--gold-soft))" : "rgba(10,22,40,.5)",
+    color: active ? "var(--navy-deep)" : "#cdd9f0",
+  };
+}
+type GrossNettMonth = { month: string; sales: number; nett_profit: number };
+function buildGrossNettData(d: Summary | null, pd: ProductDetail | null): GrossNettMonth[] {
+  const byMonth2 = <T extends { month: string }>(a: T[]) => Object.fromEntries((a || []).map((x) => [x.month, x]));
+  const sales = byMonth2(d?.monthly || []);
+  const ads = byMonth2(d?.monthly_ads_cost || []);
+  const modal = byMonth2(pd?.monthly_modal || []);
+  return byMonth(d?.monthly || []).map(({ month }) => {
+    const row = sales[month] as { sales?: number; profit?: number } | undefined;
+    const adCost = (ads[month] as { ad_cost?: number } | undefined)?.ad_cost ?? 0;
+    const modalCost = (modal[month] as { modal?: number } | undefined)?.modal ?? 0;
+    return {
+      month,
+      sales: row?.sales ?? 0,
+      nett_profit: (row?.profit ?? 0) - adCost - modalCost,
+    };
+  });
+}
+function GrossVsNettChart({ data, t }: { data: GrossNettMonth[]; t: (k: string) => string }) {
+  if (!data.length) return <Empty />;
+  return (
+    <div style={{ width: "100%", height: 300 }}>
+      <ResponsiveContainer>
+        <ComposedChart data={data} margin={{ left: 4, right: 20, top: 18, bottom: 8 }}>
+          <defs>
+            <linearGradient id="gng-sales" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={GOLD_L} />
+              <stop offset="100%" stopColor={GOLD} />
+            </linearGradient>
+          </defs>
+          <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
+          <XAxis dataKey="month" tick={axis} axisLine={false} tickLine={false} />
+          <YAxis tick={axis} tickFormatter={(v) => rpC(Number(v))} axisLine={false} tickLine={false} width={58} />
+          <Tooltip contentStyle={TIP_STYLE} formatter={(v, n) => [rpFull(Number(v)), n === "sales" ? t("Gross Sales") : t("Nett Profit")]} />
+          <Legend wrapperStyle={{ fontSize: 11 }} iconType="circle" iconSize={8}
+            formatter={(v) => (v === "sales" ? t("Gross Sales") : t("Nett Profit"))} />
+          <Bar dataKey="sales" name="sales" fill="url(#gng-sales)" radius={[6, 6, 0, 0]} maxBarSize={72} />
+          <Line type="monotone" dataKey="nett_profit" name="nett_profit" stroke={BLUE} strokeWidth={2.5}
+            dot={{ r: 4, fill: BLUE, strokeWidth: 0 }} activeDot={{ r: 6 }} />
+        </ComposedChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+// Daily variant shown when a single month is selected: Gross Sales (bar) +
+// Gross Profit (line) — both real per-transaction finance_rows fields, so
+// unlike Nett Profit they have an honest daily form.
+type DailyGrossRow = { day: string; gross_sales: number; gross_profit: number };
+function DailyGrossChart({ data, t }: { data: DailyGrossRow[]; t: (k: string) => string }) {
+  if (!data.length) return <Empty />;
+  return (
+    <div style={{ width: "100%", height: 300 }}>
+      <ResponsiveContainer>
+        <ComposedChart data={data} margin={{ left: 4, right: 20, top: 18, bottom: 8 }}>
+          <defs>
+            <linearGradient id="dgc-sales" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={GOLD_L} />
+              <stop offset="100%" stopColor={GOLD} />
+            </linearGradient>
+          </defs>
+          <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
+          <XAxis dataKey="day" tickFormatter={bucketAxisLabel} tick={axis} axisLine={false} tickLine={false} />
+          <YAxis tick={axis} tickFormatter={(v) => rpC(Number(v))} axisLine={false} tickLine={false} width={58} />
+          <Tooltip contentStyle={TIP_STYLE} labelFormatter={(l) => bucketAxisLabel(String(l))}
+            formatter={(v, n) => [rpFull(Number(v)), n === "gross_sales" ? t("Gross Sales") : t("Gross Profit")]} />
+          <Legend wrapperStyle={{ fontSize: 11 }} iconType="circle" iconSize={8}
+            formatter={(v) => (v === "gross_sales" ? t("Gross Sales") : t("Gross Profit"))} />
+          <Bar dataKey="gross_sales" name="gross_sales" fill="url(#dgc-sales)" radius={[6, 6, 0, 0]} maxBarSize={40} />
+          <Line type="monotone" dataKey="gross_profit" name="gross_profit" stroke={BLUE} strokeWidth={2.5}
+            dot={{ r: 3, fill: BLUE, strokeWidth: 0 }} activeDot={{ r: 5 }} />
+        </ComposedChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+function SimpleBarChart({ data, dataKey, top, bottom }: { data: Record<string, unknown>[]; dataKey: string; top: string; bottom: string }) {
+  if (!data.length) return <Empty />;
+  const gid = `sbg-${dataKey}`;
+  return (
+    <div style={{ width: "100%", height: 260 }}>
+      <ResponsiveContainer>
+        <BarChart data={data} margin={{ left: 4, right: 20, top: 18, bottom: 8 }}>
+          <defs>
+            <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={top} />
+              <stop offset="100%" stopColor={bottom} />
+            </linearGradient>
+          </defs>
+          <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
+          <XAxis dataKey="month" tickFormatter={bucketAxisLabel} tick={axis} axisLine={false} tickLine={false} />
+          <YAxis tick={axis} tickFormatter={(v) => rpC(Number(v))} axisLine={false} tickLine={false} width={58} />
+          <Tooltip contentStyle={TIP_STYLE} labelFormatter={(l) => bucketAxisLabel(String(l))} formatter={(v) => [rpFull(Number(v)), ""]} cursor={{ fill: "rgba(201,162,39,0.04)" }} />
+          <Bar dataKey={dataKey} radius={[6, 6, 0, 0]} maxBarSize={104} fill={`url(#${gid})`} />
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+function DonutChart({ data, t }: { data: { name: string; value: number }[]; t: (k: string) => string }) {
+  const filtered = data.filter((x) => x.value > 0);
+  if (!filtered.length) return <Empty />;
+  const total = filtered.reduce((s, x) => s + x.value, 0);
+  // A long tail (Shipping Service routinely has 15-20 distinct couriers) was
+  // rendering one outside label per slice — a pile of overlapping "0%"s —
+  // and a legend taller than the chart itself. Keep the top slices by
+  // volume and fold the rest into one "Others" wedge; that alone fixes both
+  // problems, since there are now at most MAX_SLICES+1 labels/legend rows
+  // regardless of how many raw categories exist.
+  const MAX_SLICES = 6;
+  const sorted = [...filtered].sort((a, b) => b.value - a.value);
+  const top = sorted.slice(0, MAX_SLICES);
+  const restTotal = sorted.slice(MAX_SLICES).reduce((s, x) => s + x.value, 0);
+  const chartData = restTotal > 0 ? [...top, { name: t("Others"), value: restTotal }] : top;
+  return (
+    <div style={{ width: "100%", height: 240, position: "relative" }}>
+      <ResponsiveContainer>
+        <PieChart>
+          <Pie data={chartData} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={52} outerRadius={80} paddingAngle={2} strokeWidth={0}
+            // Skip the label on slivers too thin to fit a number legibly —
+            // that overlap is what made the chart look messy in the first
+            // place. Tiny slices are still fully visible in the legend/tooltip.
+            label={({ percent }) => percent && percent >= 0.06 ? `${(percent * 100).toFixed(0)}%` : ""} labelLine={false}>
+            {chartData.map((_, i) => <Cell key={i} fill={PALETTE[i % PALETTE.length]} stroke="rgba(6,14,33,0.6)" strokeWidth={2} />)}
+          </Pie>
+          <Tooltip contentStyle={TIP_STYLE} formatter={(v, n) => [`${v} ${t("orders")}`, n as string]} />
+          <Legend iconType="circle" iconSize={7} wrapperStyle={{ fontSize: 9.5, color: "#9ab0cc", paddingTop: 6, lineHeight: "16px" }} />
+        </PieChart>
+      </ResponsiveContainer>
+      <div style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%,-60%)", textAlign: "center", pointerEvents: "none" }}>
+        <div style={{ fontSize: 9, color: "#7089aa", marginBottom: 2 }}>TOTAL</div>
+        <div style={{ fontSize: 12, fontWeight: 700, color: GOLD }}>{total} {t("orders")}</div>
+      </div>
+    </div>
+  );
+}
+
+const overlay: React.CSSProperties = { position: "fixed", inset: 0, background: "rgba(2,6,16,.82)", backdropFilter: "blur(4px)", zIndex: 9000, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "30px 20px", overflowY: "auto" };
+const drawer: React.CSSProperties = { width: "min(98vw,1600px)", background: "var(--card,#0d1a36)", border: "1px solid var(--card-border,rgba(201,162,39,.2))", borderRadius: 18, padding: 28, boxShadow: "0 30px 80px rgba(0,0,0,.7)" };

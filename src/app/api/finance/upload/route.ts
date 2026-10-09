@@ -1,0 +1,111 @@
+import { NextRequest, NextResponse } from "next/server";
+import * as XLSX from "xlsx";
+import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { currentSchema } from "@/lib/workspace-server";
+import { parseFinanceMatrix, weekOfMonth } from "@/lib/parseFinance";
+
+export const runtime = "nodejs";
+export const maxDuration = 60;
+
+// Same manual fields the Upload page already sends to /api/upload.
+interface FinanceManual {
+  year?: number; bulan?: string; city?: string;
+  pic_client?: string; store_name?: string;
+}
+
+// Upload a Shopee "Laporan Penghasilan" (Income) export -> finance_rows of the
+// ACTIVE workspace. Super Admin and Admin only (same as the other uploads).
+export async function POST(req: NextRequest) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: "AUTH_REQUIRED" }, { status: 401 });
+
+  const { data: profile } = await supabase.from("profiles").select("client_id, role").eq("id", user.id).single();
+  if (!profile) return NextResponse.json({ error: "NO_PROFILE" }, { status: 403 });
+  if (!["superadmin", "client_admin"].includes(profile.role)) {
+    return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
+  }
+
+  const form = await req.formData();
+  const file = form.get("file") as File | null;
+  const manual: FinanceManual = JSON.parse(String(form.get("manual") || "{}"));
+  const clientId = String(form.get("client_id") || "");
+
+  if (!file) return NextResponse.json({ error: "NO_FILE" }, { status: 400 });
+  if (!clientId) return NextResponse.json({ error: "NO_CLIENT" }, { status: 400 });
+  if (!manual.store_name) return NextResponse.json({ error: "Pick a Dealer first." }, { status: 400 });
+  if (!manual.year || !manual.bulan) return NextResponse.json({ error: "Pick Year and Month first." }, { status: 400 });
+
+  const buf = Buffer.from(await file.arrayBuffer());
+  const wb = XLSX.read(buf, { type: "buffer" });
+  const sheetName = wb.SheetNames.find((n) => n.toLowerCase() === "income") || wb.SheetNames[0];
+  const ws = wb.Sheets[sheetName];
+  const matrix = XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, raw: false });
+  if (!matrix.length) return NextResponse.json({ error: "EMPTY_FILE" }, { status: 400 });
+
+  const parsed = parseFinanceMatrix(matrix);
+  if (!parsed.rows.length) {
+    return NextResponse.json({ error: "No order rows found in the Income sheet — is this a Shopee Laporan Penghasilan export?" }, { status: 400 });
+  }
+
+  const admin = createAdminClient(await currentSchema());
+
+  const { data: upload, error: upErr } = await admin
+    .from("uploads")
+    .insert({
+      client_id: clientId,
+      source: "finance",
+      filename: file.name,
+      uploaded_by: user.id,
+      meta: { ...manual, username: parsed.username, periode_start: parsed.periodeStart, periode_end: parsed.periodeEnd },
+    })
+    .select("id")
+    .single();
+  if (upErr || !upload) {
+    return NextResponse.json({ error: upErr?.message || "UPLOAD_FAIL" }, { status: 500 });
+  }
+
+  // Week is derived per transaction from its own release_date, anchored to the
+  // chosen month's 5-week grid (Week 5 spills a few days into the next month).
+  const records = parsed.rows.map((r) => ({
+    client_id: clientId,
+    upload_id: upload.id,
+    year: manual.year ?? null,
+    month: manual.bulan ?? null,
+    week: manual.year && manual.bulan ? weekOfMonth(r.release_date, manual.year, manual.bulan) : null,
+    dealer_city: manual.city ?? null,
+    store_name: manual.store_name ?? null,
+    pic_client: manual.pic_client ?? null,
+    order_no: r.order_no,
+    buyer_username: r.buyer_username,
+    payment_method: r.payment_method,
+    order_date: r.order_date,
+    release_date: r.release_date,
+    sales: r.sales,
+    promotion_cost: r.promotion_cost,
+    refund: r.refund,
+    delivery_cost: r.delivery_cost,
+    affiliate_cost: r.affiliate_cost,
+    marketplace_fee: r.marketplace_fee,
+    misc: r.misc,
+    net_income: r.net_income,
+    jasa_kirim: r.jasa_kirim,
+    nama_kurir: r.nama_kurir,
+  }));
+
+  const CHUNK = 500;
+  let inserted = 0;
+  for (let i = 0; i < records.length; i += CHUNK) {
+    const slice = records.slice(i, i + CHUNK);
+    const { error } = await admin.from("finance_rows").insert(slice);
+    if (error) {
+      await admin.from("uploads").delete().eq("id", upload.id);
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+    inserted += slice.length;
+  }
+
+  await admin.from("uploads").update({ row_count: inserted }).eq("id", upload.id);
+  return NextResponse.json({ ok: true, upload_id: upload.id, rows: inserted });
+}

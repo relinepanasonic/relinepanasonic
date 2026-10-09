@@ -13,6 +13,8 @@ type Role = "superadmin" | "client_admin" | "branch_manager" | "store_user" | "a
 const NAV: { href: string; icon: string; label: string; roles?: Role[] }[] = [
   { href: "/",          icon: "📊", label: "Dashboard",           roles: ["superadmin", "branch_manager", "advertiser", "pic_panasonic", "sales"] },
   { href: "/ads",       icon: "🎯", label: "Ads Performance",     roles: ["superadmin", "advertiser"] },
+  { href: "/finance",   icon: "💹", label: "Finance Detail",         roles: ["superadmin", "client_admin", "branch_manager", "pic_panasonic", "sales"] },
+  { href: "/operational", icon: "🏬", label: "Operational Performance", roles: ["superadmin", "client_admin", "branch_manager", "pic_panasonic", "sales"] },
   { href: "/calc",      icon: "🧮", label: "Price Calculator",    roles: ["superadmin", "branch_manager", "pic_panasonic", "sales"] },
   { href: "/upload",    icon: "⬆️", label: "Upload Data",         roles: ["superadmin", "client_admin"] },
   { href: "/reports",   icon: "📄", label: "Monthly Report",      roles: ["superadmin", "client_admin"] },

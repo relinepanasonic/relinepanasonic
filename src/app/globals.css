@@ -229,3 +229,45 @@ table.tbl tr:hover td{background:rgba(201,162,39,.06)}
 .ws-pill{font-size:11.5px;font-weight:700;color:var(--gold);border:1px solid rgba(201,162,39,.35);background:rgba(201,162,39,.08);padding:5px 11px;border-radius:999px;text-decoration:none;white-space:nowrap}
 .ws-pill:hover{background:rgba(201,162,39,.16)}
 @media (max-width:900px){.ws-pill{display:none}}
+
+/* ── Finance Detail / Operational Performance (ported from ProfTokoOnline) ── */
+.kpi-cost:hover{box-shadow:0 12px 34px rgba(239,68,68,.35)}
+.kpi-grid-5{grid-template-columns:repeat(5,1fr)}
+.row.c4{grid-template-columns:repeat(4,1fr)}
+@media(max-width:1400px){.row.c4{grid-template-columns:repeat(2,1fr)}}
+.sortable-th-inner{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%}
+.sort-arrows{display:inline-flex;flex-direction:column;flex-shrink:0;line-height:.72}
+table.tbl-sticky2{width:max-content;min-width:100%}
+.tbl-sticky2 th.sticky-col,.tbl-sticky2 td.sticky-col{position:sticky;background:var(--navy-deep)}
+.tbl-sticky2 .sticky-col-1{left:0;z-index:2}
+.tbl-sticky2 .sticky-col-2{left:220px;z-index:2;border-right:1px solid rgba(201,162,39,.3)}
+.tbl-sticky2 th.sticky-col{z-index:30;background:linear-gradient(90deg,var(--navy2),var(--navy3))}
+.tbl-sticky2 tr:hover td.sticky-col{background:#122a4f}
+.tbl-sticky2 .sticky-col .sticky-inner{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tbl-sticky2 .sticky-col-1 .sticky-inner{width:196px}
+.tbl-sticky2 .sticky-col-2 .sticky-inner{width:136px}
+.fin-compact .filterbar{padding:9px 12px;margin-bottom:12px;gap:8px}
+.fin-compact .kpi-grid,.fin-compact .kpi-grid-5,.fin-compact .kpi-grid-10{gap:10px;margin-bottom:10px}
+.fin-compact .kpi-grid-10{grid-template-columns:repeat(10,1fr)}
+@media(max-width:1400px){.fin-compact .kpi-grid-10{grid-template-columns:repeat(5,1fr)}}
+.fin-compact .kpi{padding:11px 13px}
+.fin-compact .kpi .lbl{font-size:9.5px}
+.fin-compact .kpi .val{margin-top:4px;font-size:clamp(15px,1.6vw,20px)}
+.fin-compact .kpi .kpi-icon{top:10px;right:11px;font-size:16px}
+.fin-compact .row{margin-bottom:8px;gap:12px}
+.fin-compact .panel{padding:12px}
+.fin-compact .panel h3{margin-bottom:2px;font-size:14px}
+.fin-compact .panel .hint{margin-bottom:8px}
+/* toggle strip for the Detail Transaksi / Detail Product Profit tabs */
+.fin-compact .tbl-tabs{display:flex;gap:8px;margin-bottom:8px}
+@keyframes ptSpin{to{transform:rotate(360deg)}}
+@keyframes ptShimmer{0%{background-position:-450px 0}100%{background-position:450px 0}}
+.pt-ring{border-radius:50%;border-style:solid;border-color:rgba(201,162,39,.18);
+  border-top-color:var(--gold);animation:ptSpin .7s linear infinite;flex:none}
+.pt-loading{display:inline-flex;align-items:center;gap:9px;color:var(--gold);font-size:13px;font-weight:600}
+.pt-loading-center{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;
+  padding:40px 0;color:var(--gold);font-weight:700}
+/* shimmering skeleton block */
+.pt-skel{position:relative;overflow:hidden;border-radius:8px;
+  background:linear-gradient(90deg,rgba(255,255,255,.04) 25%,rgba(255,255,255,.10) 37%,rgba(255,255,255,.04) 63%);
+  background-size:900px 100%;animation:ptShimmer 1.4s ease-in-out infinite}

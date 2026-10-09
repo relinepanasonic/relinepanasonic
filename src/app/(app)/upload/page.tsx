@@ -22,6 +22,14 @@ const AD_SLOTS: { key: AdSlotKey; label: string; hint: string; accept: string; a
   { key: "group",  label: "Group Ads Performa", hint: "Data Grup Iklan",         accept: ".xlsx,.xls,.csv" },
 ];
 
+// Finance & Operational — two Shopee exports per dealer/month, posted to their
+// own endpoints (same manual fields as every other upload on this page).
+type FinSlotKey = "finance" | "orders";
+const FIN_SLOTS: { key: FinSlotKey; label: string; hint: string; accept: string; url: string }[] = [
+  { key: "finance", label: "Finance Detail", hint: "Laporan Penghasilan (Income)", accept: ".xlsx,.xls", url: "/api/finance/upload" },
+  { key: "orders",  label: "Operational",    hint: "Order.completed",              accept: ".xlsx,.xls", url: "/api/store/upload" },
+];
+
 // The pre-project baseline snapshot — a month value, but not a real month:
 // no week number, no date range (see pickBulan).
 const BASELINE = "Month Awal";
@@ -38,6 +46,8 @@ const BADGES: { key: string; label: string; color: string }[] = [
   { key: "ads",    label: "Ads",        color: "#f59e0b" },
   { key: "gmvmax", label: "GMV Auto",   color: "#a855f7" },
   { key: "group",  label: "Group Ads",  color: "#ec4899" },
+  { key: "finance", label: "Finance",   color: "#14b8a6" },
+  { key: "orders",  label: "Orders",    color: "#06b6d4" },
 ];
 function subKey(u: UploadRow): string {
   if (u.source !== "ads") return u.source;
@@ -201,7 +211,8 @@ export default function UploadPage() {
     if (!clientId) { setLog(["Workspace not ready."]); setBusy(false); return; }
     const chosenSlots   = SLOTS.filter((s) => files[s.source]);
     const chosenAdSlots = AD_SLOTS.filter((s) => files[s.key]);
-    if (!chosenSlots.length && !chosenAdSlots.length) { setLog(["Pick at least one file."]); setBusy(false); return; }
+    const chosenFinSlots = FIN_SLOTS.filter((s) => files[s.key]);
+    if (!chosenSlots.length && !chosenAdSlots.length && !chosenFinSlots.length) { setLog(["Pick at least one file."]); setBusy(false); return; }
     const manualBase = {
       admin:        form.admin,
       city:         form.city,
@@ -254,6 +265,21 @@ export default function UploadPage() {
         } catch (e) {
           setLog((l) => [...l, `✗ ${slot.label}: ${String(e)}`]);
         }
+      }
+    }
+    for (const slot of chosenFinSlots) {
+      // Finance / Operational need the dealer + year + month picked above.
+      if (!form.dealer || !form.bulan) { setLog((l) => [...l, "✗ " + slot.label + ": pick City, Dealer, Year and Month first"]); continue; }
+      const fd = new FormData();
+      fd.append("file", files[slot.key]!);
+      fd.append("manual", JSON.stringify(manualBase));
+      fd.append("client_id", clientId);
+      try {
+        const res = await fetch(slot.url, { method: "POST", body: fd });
+        const j = await res.json();
+        setLog((l) => [...l, res.ok ? `✓ ${slot.label}: ${j.rows} rows` : `✗ ${slot.label}: ${j.error}`]);
+      } catch (e) {
+        setLog((l) => [...l, `✗ ${slot.label}: ${String(e)}`]);
       }
     }
     setBusy(false);
@@ -478,6 +504,21 @@ export default function UploadPage() {
         <div style={{ marginBottom: 10, fontSize: 13, fontWeight: 700, color: "#cdd9f0" }}>Ads Performance</div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 14, padding: 16, border: "1px dashed rgba(201,162,39,.35)", borderRadius: 14, background: "rgba(15,32,64,.4)", marginBottom: 20 }}>
           {AD_SLOTS.map((s) => (
+            <div key={s.key}>
+              <label style={{ fontSize: 12, color: "#cdd9f0", fontWeight: 600 }}>
+                {s.label} <span style={{ color: "var(--muted)", fontWeight: 400, fontSize: 11 }}>({s.hint})</span>
+              </label>
+              <input type="file" accept={s.accept} style={{ fontSize: 12, color: "#bcd", display: "block", marginTop: 6, width: "100%" }}
+                onChange={(e) => setFiles((f) => ({ ...f, [s.key]: e.target.files?.[0] ?? null }))} />
+              {files[s.key] && <p style={{ marginTop: 6, fontSize: 11, color: "var(--gold)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>✓ {files[s.key]!.name}</p>}
+            </div>
+          ))}
+        </div>
+
+        {/* Finance & Operational — 2 parts */}
+        <div style={{ marginBottom: 10, fontSize: 13, fontWeight: 700, color: "#cdd9f0" }}>Finance &amp; Operational <span style={{ color: "var(--muted)", fontWeight: 400, fontSize: 11 }}>— one dealer, one month per file</span></div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 14, padding: 16, border: "1px dashed rgba(201,162,39,.35)", borderRadius: 14, background: "rgba(15,32,64,.4)", marginBottom: 20 }}>
+          {FIN_SLOTS.map((s) => (
             <div key={s.key}>
               <label style={{ fontSize: 12, color: "#cdd9f0", fontWeight: 600 }}>
                 {s.label} <span style={{ color: "var(--muted)", fontWeight: 400, fontSize: 11 }}>({s.hint})</span>
