@@ -10,15 +10,15 @@ import { useWorkspace } from "@/lib/useWorkspace";
 
 type Role = "superadmin" | "client_admin" | "branch_manager" | "store_user" | "advertiser" | "pic_panasonic" | "sales";
 
-const NAV: { href: string; icon: string; label: string; roles?: Role[] }[] = [
+const NAV: { href: string; icon: string; label: string; short?: string; roles?: Role[] }[] = [
   { href: "/",          icon: "📊", label: "Dashboard",           roles: ["superadmin", "branch_manager", "advertiser", "pic_panasonic", "sales"] },
-  { href: "/ads",       icon: "🎯", label: "Ads Performance",     roles: ["superadmin", "advertiser"] },
-  { href: "/finance",   icon: "💹", label: "Finance Detail",         roles: ["superadmin", "client_admin", "branch_manager", "pic_panasonic", "sales"] },
-  { href: "/operational", icon: "🏬", label: "Operational Performance", roles: ["superadmin", "client_admin", "branch_manager", "pic_panasonic", "sales"] },
-  { href: "/calc",      icon: "🧮", label: "Price Calculator",    roles: ["superadmin", "branch_manager", "pic_panasonic", "sales"] },
-  { href: "/upload",    icon: "⬆️", label: "Upload Data",         roles: ["superadmin", "client_admin"] },
-  { href: "/reports",   icon: "📄", label: "Monthly Report",      roles: ["superadmin", "client_admin"] },
-  { href: "/core",      icon: "🗂️", label: "Core List",          roles: ["superadmin", "client_admin", "advertiser"] },
+  { href: "/ads",       icon: "🎯", label: "Ads Performance", short: "Ads",     roles: ["superadmin", "advertiser"] },
+  { href: "/finance",   icon: "💹", label: "Finance Detail", short: "Finance",         roles: ["superadmin", "client_admin", "branch_manager", "pic_panasonic", "sales"] },
+  { href: "/operational", icon: "🏬", label: "Operational Performance", short: "Ops", roles: ["superadmin", "client_admin", "branch_manager", "pic_panasonic", "sales"] },
+  { href: "/calc",      icon: "🧮", label: "Price Calculator", short: "Calc",    roles: ["superadmin", "branch_manager", "pic_panasonic", "sales"] },
+  { href: "/upload",    icon: "⬆️", label: "Upload Data", short: "Upload",         roles: ["superadmin", "client_admin"] },
+  { href: "/reports",   icon: "📄", label: "Monthly Report", short: "Report",      roles: ["superadmin", "client_admin"] },
+  { href: "/core",      icon: "🗂️", label: "Core List", short: "Core",          roles: ["superadmin", "client_admin", "advertiser"] },
   { href: "/users",     icon: "👥", label: "Users",               roles: ["superadmin", "client_admin"] },
 ];
 
@@ -32,8 +32,10 @@ const ROLE_LABEL: Record<Role, string> = {
   sales:          "Sales",
 };
 
-// Mobile bottom-nav: most-used destinations
-const BOTTOM = ["/", "/ads", "/calc", "/upload"];
+// Mobile bottom-nav priority. Someone who can see up to 5 pages gets them all in
+// the bar; anyone with more gets the first 4 below plus a "More" sheet that
+// lists the rest (Calc, Upload, Reports, Core List, Users, ...).
+const BOTTOM_PRIORITY = ["/", "/ads", "/finance", "/operational", "/calc", "/upload", "/reports", "/core", "/users"];
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -52,6 +54,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
   const [clientName, setClientName] = useState("Panasonic");
   const workspace = useWorkspace();
   const [canSwitch, setCanSwitch] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -99,6 +102,13 @@ function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   const visible = NAV.filter((n) => !n.roles || (role && n.roles.includes(role)));
+  const byPriority = [...visible].sort((a, b) => {
+    const ia = BOTTOM_PRIORITY.indexOf(a.href), ib = BOTTOM_PRIORITY.indexOf(b.href);
+    return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
+  });
+  const needMore = byPriority.length > 5;
+  const barItems = needMore ? byPriority.slice(0, 4) : byPriority;
+  const moreItems = needMore ? byPriority.slice(4) : [];
   // Nested routes (e.g. /calc/marketplace-fee) should still resolve to their
   // parent nav entry ("/calc") for the title/active state — exact match first,
   // then longest-prefix match so "/" doesn't swallow everything else.
@@ -181,17 +191,41 @@ function AppShell({ children }: { children: React.ReactNode }) {
         {children}
       </main>
 
+      {/* Mobile "More" sheet */}
+      {moreOpen && (
+        <div className="more-overlay" onClick={() => setMoreOpen(false)}>
+          <div className="more-sheet" onClick={(e) => e.stopPropagation()}>
+            <div className="more-grid">
+              {moreItems.map((n) => (
+                <Link key={n.href} href={n.href} className={`more-item ${isActive(n.href) ? "active" : ""}`} onClick={() => setMoreOpen(false)}>
+                  <span style={{ fontSize: 22 }}>{n.icon}</span>
+                  <span>{n.label}</span>
+                </Link>
+              ))}
+              {canSwitch && (
+                <a href="/welcome" className="more-item"><span style={{ fontSize: 22 }}>🔀</span><span>Switch workspace</span></a>
+              )}
+              <button className="more-item" onClick={logout}><span style={{ fontSize: 22 }}>🚪</span><span>Logout</span></button>
+            </div>
+            <div style={{ display: "flex", justifyContent: "center", marginTop: 12 }}><LangSwitcher /></div>
+          </div>
+        </div>
+      )}
+
       {/* Mobile bottom nav */}
       <nav className="bottom-nav">
-        {BOTTOM.filter((href) => visible.some((v) => v.href === href)).map((href) => {
-          const n = NAV.find((x) => x.href === href)!;
-          return (
-            <Link key={href} href={href} className={`bn-item ${isActive(href) ? "active" : ""}`}>
-              <span style={{ fontSize: 20 }}>{n.icon}</span>
-              <span>{n.label.split(" ")[0]}</span>
-            </Link>
-          );
-        })}
+        {barItems.map((n) => (
+          <Link key={n.href} href={n.href} className={`bn-item ${isActive(n.href) ? "active" : ""}`} onClick={() => setMoreOpen(false)}>
+            <span style={{ fontSize: 20 }}>{n.icon}</span>
+            <span>{n.short ?? n.label.split(" ")[0]}</span>
+          </Link>
+        ))}
+        {needMore && (
+          <button className={`bn-item ${moreOpen || moreItems.some((n) => isActive(n.href)) ? "active" : ""}`} onClick={() => setMoreOpen((v) => !v)}>
+            <span style={{ fontSize: 20 }}>☰</span>
+            <span>More</span>
+          </button>
+        )}
       </nav>
     </div>
   );

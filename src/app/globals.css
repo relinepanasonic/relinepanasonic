@@ -271,3 +271,26 @@ table.tbl-sticky2{width:max-content;min-width:100%}
 .pt-skel{position:relative;overflow:hidden;border-radius:8px;
   background:linear-gradient(90deg,rgba(255,255,255,.04) 25%,rgba(255,255,255,.10) 37%,rgba(255,255,255,.04) 63%);
   background-size:900px 100%;animation:ptShimmer 1.4s ease-in-out infinite}
+
+/* Mobile "More" sheet */
+.more-overlay{position:fixed;inset:0;z-index:70;background:rgba(2,6,16,.6);backdrop-filter:blur(3px);display:flex;align-items:flex-end}
+.more-sheet{width:100%;background:rgba(10,22,40,.98);border-top:1px solid var(--card-border);border-radius:20px 20px 0 0;
+  padding:16px 14px calc(78px + env(safe-area-inset-bottom));max-height:80vh;overflow-y:auto}
+.more-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.more-item{display:flex;flex-direction:column;align-items:center;gap:6px;padding:12px 6px;border-radius:14px;text-align:center;
+  background:var(--glass);border:1px solid var(--card-border);color:#e8edf8;font-size:11px;font-weight:600;text-decoration:none;cursor:pointer;font-family:inherit}
+.more-item.active{border-color:rgba(201,162,39,.6);color:var(--gold)}
+
+/* Finance Detail / Operational Performance on tablets + phones */
+@media(max-width:1100px){
+  .kpi-grid-5{grid-template-columns:repeat(3,1fr)}
+  .fin-compact .kpi-grid-5{grid-template-columns:repeat(3,1fr)}
+  .fin-compact .kpi-grid-10{grid-template-columns:repeat(2,1fr)}
+}
+@media(max-width:760px){
+  .kpi-grid-5,.fin-compact .kpi-grid-5,.fin-compact .kpi-grid-10{grid-template-columns:1fr 1fr;padding-left:14px;padding-right:14px}
+  .row.c4{display:flex;flex-direction:column;gap:10px;margin:0;padding:0 14px}
+  .fin-compact .filterbar{margin:10px 14px}
+  .fin-compact .panel{margin-left:14px;margin-right:14px}
+  .fin-compact .tbl-tabs{padding:0 14px;flex-wrap:wrap}
+}

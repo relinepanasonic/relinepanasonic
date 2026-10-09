@@ -653,5 +653,5 @@ function DonutChart({ data, t }: { data: { name: string; value: number }[]; t: (
   );
 }
 
-const overlay: React.CSSProperties = { position: "fixed", inset: 0, background: "rgba(2,6,16,.82)", backdropFilter: "blur(4px)", zIndex: 9000, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "30px 20px", overflowY: "auto" };
-const drawer: React.CSSProperties = { width: "min(98vw,1600px)", background: "var(--card,#0d1a36)", border: "1px solid var(--card-border,rgba(201,162,39,.2))", borderRadius: 18, padding: 28, boxShadow: "0 30px 80px rgba(0,0,0,.7)" };
+const overlay: React.CSSProperties = { position: "fixed", inset: 0, background: "rgba(2,6,16,.82)", backdropFilter: "blur(4px)", zIndex: 9000, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "clamp(10px,3vw,30px) clamp(6px,2vw,20px)", overflowY: "auto" };
+const drawer: React.CSSProperties = { width: "min(98vw,1600px)", background: "var(--card,#0d1a36)", border: "1px solid var(--card-border,rgba(201,162,39,.2))", borderRadius: 18, padding: "clamp(12px,3vw,28px)", boxShadow: "0 30px 80px rgba(0,0,0,.7)" };
