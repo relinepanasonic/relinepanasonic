@@ -65,7 +65,6 @@ type FinanceFilters = { years: number[]; months: string[]; stores?: { store_name
 export default function FinanceDashboard({ clientId, refreshKey }: { clientId: string; refreshKey: number }) {
   const { t } = useLang();
   const [supabase] = useState(() => createClient());
-  const [hasAnyData, setHasAnyData] = useState<boolean | null>(null); // null = checking
   const [filters, setFilters] = useState<FinanceFilters>({ years: [], months: [] });
   const [links, setLinks] = useState<Link[]>([]);
   const [sel, setSel] = useState({ year: "", month: "", week: "", city: "", store: "" });
@@ -77,21 +76,26 @@ export default function FinanceDashboard({ clientId, refreshKey }: { clientId: s
 
   const checkData = useCallback(async () => {
     if (!clientId) return;
-    const { count } = await supabase.from("finance_rows").select("id", { count: "exact", head: true }).eq("client_id", clientId);
-    setHasAnyData((count ?? 0) > 0);
     // server-side DISTINCT — never ships every row to the browser just to
     // build a dropdown (a plain select() truncates at 1000 rows, which
     // silently dropped later months once total uploads grew past that)
     const { data: f } = await supabase.rpc("finance_filters");
     setFilters((f as FinanceFilters) || { years: [], months: [] });
-    setLinks(((f as FinanceFilters)?.stores || []).map((x) => ({ city: x.city, store_name: x.store_name })));
+
+    // Offer the user's dealers even when nothing is uploaded yet, so the page
+    // opens with empty charts instead of being blocked.
+    const { data: df } = await supabase.rpc("dashboard_filters");
+    const known = new Set((f as { stores?: { store_name: string }[] } | null)?.stores?.map((x) => x.store_name) ?? []);
+    const extra = (((df as { dealers?: { value: string; city: string | null }[] } | null)?.dealers) || [])
+      .filter((x) => !known.has(x.value)).map((x) => ({ city: x.city, store_name: x.value }));
+    setLinks([...((f as FinanceFilters)?.stores || []).map((x) => ({ city: x.city, store_name: x.store_name })), ...extra]);
   }, [supabase, clientId]);
 
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { checkData(); }, [checkData, refreshKey]);
 
   const load = useCallback(async () => {
-    if (!clientId || !hasAnyData || !sel.store) { setD(null); setPd(null); return; }
+    if (!clientId || !sel.store) { setD(null); setPd(null); return; }
     setLoading(true);
     const params = {
       p_year: sel.year ? Number(sel.year) : null,
@@ -107,7 +111,7 @@ export default function FinanceDashboard({ clientId, refreshKey }: { clientId: s
     setD(data as Summary);
     setPd(pdata as ProductDetail);
     setLoading(false);
-  }, [supabase, clientId, hasAnyData, sel]);
+  }, [supabase, clientId, sel]);
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { load(); }, [load]);
 
@@ -124,20 +128,6 @@ export default function FinanceDashboard({ clientId, refreshKey }: { clientId: s
     // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!sel.store && storesForCity.length === 1) setSel((s) => ({ ...s, store: storesForCity[0] }));
   }, [storesForCity, sel.store]);
-
-  if (hasAnyData === null) return <Loader center />;
-
-  if (!hasAnyData) {
-    return (
-      <div className="panel">
-        <div className="coming">
-          <div className="big">💹</div>
-          <h3 style={{ fontSize: 18, color: "#fff", margin: 0 }}>{t("Upload Data Keuangan First")}</h3>
-          <p style={{ maxWidth: 420, margin: 0 }}>{t("No Shopee Income (Laporan Penghasilan) data has been uploaded yet. Go to the \"Upload Keuangan\" tab to import one.")}</p>
-        </div>
-      </div>
-    );
-  }
 
   const k = d?.kpis;
   const totalModal = pd?.total_modal ?? 0;

@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import dynamicImport from "next/dynamic";
 import { createClient } from "@/lib/supabase/client";
 import Loader from "@/components/Loader";
-import UploadGate from "@/components/UploadGate";
 
 export const dynamic = "force-dynamic";
 
@@ -27,8 +26,6 @@ export default function Page() {
   }, [supabase]);
 
   return (
-    <UploadGate table="order_rows">
-      <StoreDashboard clientId={clientId} refreshKey={refreshKey} />
-    </UploadGate>
+    <StoreDashboard clientId={clientId} refreshKey={refreshKey} />
   );
 }

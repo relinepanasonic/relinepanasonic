@@ -52,7 +52,6 @@ const SLA_ORDER = ["0-3 hari", "4-7 hari", "7-14 hari", ">14 hari"];
 export default function StoreDashboard({ clientId, refreshKey }: { clientId: string; refreshKey: number }) {
   const { t } = useLang();
   const [supabase] = useState(() => createClient());
-  const [hasAnyData, setHasAnyData] = useState<boolean | null>(null);
   const [filters, setFilters] = useState<Filters>({ years: [], months: [] });
   const [links, setLinks] = useState<Link[]>([]);
   const [sel, setSel] = useState({ year: "", month: "", week: "", city: "", store: "" });
@@ -63,18 +62,23 @@ export default function StoreDashboard({ clientId, refreshKey }: { clientId: str
 
   const checkData = useCallback(async () => {
     if (!clientId) return;
-    const { count } = await supabase.from("order_rows").select("id", { count: "exact", head: true }).eq("client_id", clientId);
-    setHasAnyData((count ?? 0) > 0);
     const { data: f } = await supabase.rpc("store_perf_filters");
     setFilters((f as Filters) || { years: [], months: [] });
-    setLinks(((f as { stores?: { store_name: string; city: string | null }[] })?.stores || []).map((x) => ({ city: x.city, store_name: x.store_name })));
+
+    // Offer the user's dealers even when nothing is uploaded yet, so the page
+    // opens with empty charts instead of being blocked.
+    const { data: df } = await supabase.rpc("dashboard_filters");
+    const known = new Set((f as { stores?: { store_name: string }[] } | null)?.stores?.map((x) => x.store_name) ?? []);
+    const extra = (((df as { dealers?: { value: string; city: string | null }[] } | null)?.dealers) || [])
+      .filter((x) => !known.has(x.value)).map((x) => ({ city: x.city, store_name: x.value }));
+    setLinks([...(((f as { stores?: { store_name: string; city: string | null }[] })?.stores) || []).map((x) => ({ city: x.city, store_name: x.store_name })), ...extra]);
   }, [supabase, clientId]);
 
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { checkData(); }, [checkData, refreshKey]);
 
   const load = useCallback(async () => {
-    if (!clientId || !hasAnyData || !sel.store) { setD(null); return; }
+    if (!clientId || !sel.store) { setD(null); return; }
     setLoading(true);
     setLoadErr("");
     try {
@@ -93,7 +97,7 @@ export default function StoreDashboard({ clientId, refreshKey }: { clientId: str
     } finally {
       setLoading(false);
     }
-  }, [supabase, clientId, hasAnyData, sel]);
+  }, [supabase, clientId, sel]);
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { load(); }, [load]);
 
@@ -116,20 +120,6 @@ export default function StoreDashboard({ clientId, refreshKey }: { clientId: str
   // initialKey: the daily table's default order is the backend's own
   // date-ascending order, unchanged until the user clicks a header.
   const dailySort = useTableSort<Summary["daily"][number]>(d?.daily ?? []);
-
-  if (hasAnyData === null) return <Loader center />;
-
-  if (!hasAnyData) {
-    return (
-      <div className="panel">
-        <div className="coming">
-          <div className="big">🏬</div>
-          <h3 style={{ fontSize: 18, color: "#fff", margin: 0 }}>{t("Upload Data Operational Performance First")}</h3>
-          <p style={{ maxWidth: 420, margin: 0 }}>{t("No Shopee Order.completed data has been uploaded yet. Go to the \"Upload Operational Performance\" tab to import one.")}</p>
-        </div>
-      </div>
-    );
-  }
 
   const k = d?.kpis;
   const slaBuckets = SLA_ORDER.map((b) => ({ bucket: b, cnt: d?.sla_buckets.find((x) => x.bucket === b)?.cnt ?? 0 }));
