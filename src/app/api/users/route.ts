@@ -1,6 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { currentWorkspaceId } from "@/lib/workspace-server";
+import { isWorkspaceId } from "@/lib/workspace";
+
+// Valid, de-duplicated workspace list (or null when invalid / empty).
+function cleanWorkspaces(v: unknown): string[] | null {
+  if (!Array.isArray(v)) return null;
+  const out = [...new Set(v.filter((x): x is string => typeof x === "string" && isWorkspaceId(x)))];
+  return out.length ? out : null;
+}
 
 export const runtime = "nodejs";
 
@@ -70,6 +79,8 @@ export async function POST(req: NextRequest) {
     scope_city: (role === "pic_panasonic" || role === "sales") ? scope_city || null : null,
     scope_store: (role === "branch_manager" || role === "store_user") ? scope_store || null : null,
     scope_stores: role === "sales" ? (scope_stores?.length ? scope_stores : null) : null,
+    // superadmin may pick; everyone else gets the workspace the creator is in
+    workspaces: (mgr.role === "superadmin" ? cleanWorkspaces(b.workspaces) : null) ?? [await currentWorkspaceId()],
   });
   if (pErr) {
     await admin.auth.admin.deleteUser(created.user.id); // rollback
@@ -113,6 +124,13 @@ export async function PATCH(req: NextRequest) {
     if (scope_city !== undefined) patch.scope_city = scope_city || null;
     if (scope_store !== undefined) patch.scope_store = scope_store || null;
     if (scope_stores !== undefined) patch.scope_stores = scope_stores?.length ? scope_stores : null;
+  }
+  // Workspace access: superadmin only (a client_admin cannot widen anyone's access).
+  if (b.workspaces !== undefined) {
+    if (mgr.role !== "superadmin") return NextResponse.json({ error: "Only a Super Admin can change workspace access" }, { status: 403 });
+    const ws = cleanWorkspaces(b.workspaces);
+    if (!ws) return NextResponse.json({ error: "Pick at least one workspace" }, { status: 400 });
+    patch.workspaces = ws;
   }
   if (Object.keys(patch).length) {
     const { error } = await admin.from("profiles").update(patch).eq("id", id);

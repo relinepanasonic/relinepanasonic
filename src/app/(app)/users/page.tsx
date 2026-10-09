@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { createClient } from "@/lib/supabase/client";
+import { WORKSPACES } from "@/lib/workspace";
 
 export const dynamic = "force-dynamic";
 
@@ -10,6 +11,7 @@ type Profile = {
   id: string; email: string | null; display_name: string | null;
   username: string | null; role: string; scope_store: string | null; scope_city: string | null;
   scope_stores: string[] | null;
+  workspaces: string[] | null;
 };
 type Invite = {
   id: string; token: string; owner_name: string;
@@ -118,7 +120,7 @@ export default function UsersPage() {
 
   const reload = useCallback(async () => {
     const [{ data: p }, h] = await Promise.all([
-      supabase.from("profiles").select("id,email,display_name,username,role,scope_store,scope_city,scope_stores").order("display_name"),
+      supabase.from("profiles").select("id,email,display_name,username,role,scope_store,scope_city,scope_stores,workspaces").order("display_name"),
       getAuthHeader(),
     ]);
     setRows((p as Profile[]) || []);
@@ -215,11 +217,11 @@ export default function UsersPage() {
   // user to a different role (that's what re-inviting is for), which
   // also means the API's client_admin guard never has to see a role
   // change coming from this form.
-  async function saveUser(id: string, patch: { display_name: string; scope_store?: string | null; password?: string }) {
+  async function saveUser(id: string, patch: { display_name: string; scope_store?: string | null; password?: string; workspaces?: string[] }) {
     const h = await getAuthHeader();
     const res = await fetch("/api/users", {
       method: "PATCH", headers: { ...h, "Content-Type": "application/json" },
-      body: JSON.stringify({ id, display_name: patch.display_name, scope_store: patch.scope_store, password: patch.password || undefined }),
+      body: JSON.stringify({ id, display_name: patch.display_name, scope_store: patch.scope_store, password: patch.password || undefined, workspaces: patch.workspaces }),
     });
     const j = await res.json();
     if (!res.ok) { alert(j.error); return; }
@@ -251,7 +253,7 @@ export default function UsersPage() {
       <div className="tbl-wrap">
         <table className="tbl">
           <thead>
-            <tr><th>Name</th><th>Username</th><th>Email</th><th>Role</th><th>Scope</th><th></th></tr>
+            <tr><th>Name</th><th>Username</th><th>Email</th><th>Role</th><th>Scope</th><th>Workspace</th><th></th></tr>
           </thead>
           <tbody>
             {rows.map((r) => (
@@ -261,6 +263,7 @@ export default function UsersPage() {
                 <td style={{ fontSize: 12, color: "var(--muted)" }}>{r.email || "—"}</td>
                 <td><RolePill role={r.role} /></td>
                 <td style={{ fontSize: 12, color: "var(--muted)" }}>{scopeOf(r)}</td>
+                <td><WorkspacePills ws={r.workspaces} /></td>
                 <td>
                   {canManage(r) && (
                     <div style={{ display: "flex", gap: 6 }}>
@@ -278,7 +281,7 @@ export default function UsersPage() {
               </tr>
             ))}
             {rows.length === 0 && (
-              <tr><td colSpan={6} style={{ textAlign: "center", color: "var(--muted)", padding: 24 }}>No users yet</td></tr>
+              <tr><td colSpan={7} style={{ textAlign: "center", color: "var(--muted)", padding: 24 }}>No users yet</td></tr>
             )}
           </tbody>
         </table>
@@ -475,20 +478,37 @@ export default function UsersPage() {
       )}
 
       {editing && (
-        <EditUserModal user={editing} dealers={dealers} onSave={saveUser} onClose={() => setEditing(null)} />
+        <EditUserModal user={editing} dealers={dealers} canSetWorkspace={myRole === "superadmin"} onSave={saveUser} onClose={() => setEditing(null)} />
       )}
     </div>
   );
 }
 
-function EditUserModal({ user, dealers, onSave, onClose }: {
-  user: Profile; dealers: { value: string; city: string | null }[];
-  onSave: (id: string, patch: { display_name: string; scope_store?: string | null; password?: string }) => void;
+function WorkspacePills({ ws }: { ws: string[] | null }) {
+  const list = ws?.length ? ws : ["gobel"];
+  return (
+    <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
+      {WORKSPACES.filter((w) => list.includes(w.id)).map((w) => (
+        <span key={w.id} style={{ fontSize: 11, fontWeight: 700, padding: "2px 9px", borderRadius: 999, whiteSpace: "nowrap",
+          color: w.id === "light" ? "#e8c84a" : "#9fc2ee",
+          background: w.id === "light" ? "rgba(201,162,39,.12)" : "rgba(59,110,165,.18)",
+          border: "1px solid " + (w.id === "light" ? "rgba(201,162,39,.4)" : "rgba(59,110,165,.45)") }}>
+          {w.id === "light" ? "Light Solution" : "Gobel"}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function EditUserModal({ user, dealers, canSetWorkspace, onSave, onClose }: {
+  user: Profile; dealers: { value: string; city: string | null }[]; canSetWorkspace: boolean;
+  onSave: (id: string, patch: { display_name: string; scope_store?: string | null; password?: string; workspaces?: string[] }) => void;
   onClose: () => void;
 }) {
   const [displayName, setDisplayName] = useState(user.display_name || "");
   const [scopeStore, setScopeStore] = useState(user.scope_store || "");
   const [password, setPassword] = useState("");
+  const [wsSel, setWsSel] = useState<string[]>(user.workspaces?.length ? user.workspaces : ["gobel"]);
   const showStoreScope = user.role === "branch_manager" || user.role === "store_user";
 
   return typeof document === "undefined" ? null : createPortal(
@@ -514,14 +534,30 @@ function EditUserModal({ user, dealers, onSave, onClose }: {
             </Fld>
           )}
 
+          {canSetWorkspace && (
+            <Fld label="Workspace access">
+              <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
+                {WORKSPACES.map((w) => (
+                  <label key={w.id} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: "#e8edf8", cursor: "pointer" }}>
+                    <input type="checkbox" checked={wsSel.includes(w.id)}
+                      onChange={(e) => setWsSel(e.target.checked ? [...wsSel, w.id] : wsSel.filter((x) => x !== w.id))} />
+                    {w.name}
+                  </label>
+                ))}
+              </div>
+              {wsSel.length === 0 && <div style={{ fontSize: 11, color: "#f87171", marginTop: 4 }}>Pick at least one workspace</div>}
+            </Fld>
+          )}
+
           <Fld label="New Password (leave blank to keep current)">
             <input style={inp} type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
           </Fld>
 
           <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
-            <button className="btn-gold" style={{ flex: 1 }}
+            <button className="btn-gold" style={{ flex: 1 }} disabled={canSetWorkspace && wsSel.length === 0}
               onClick={() => onSave(user.id, {
                 display_name: displayName.trim(),
+                ...(canSetWorkspace ? { workspaces: wsSel } : {}),
                 ...(showStoreScope ? { scope_store: scopeStore || null } : {}),
                 password,
               })}>

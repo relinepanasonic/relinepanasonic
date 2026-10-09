@@ -87,16 +87,6 @@ export async function proxy(request: NextRequest) {
 
   const path = request.nextUrl.pathname;
 
-  // Workspace landing page: always reachable (logged in or not). Everything
-  // else needs a workspace chosen first, so every new session starts there.
-  if (path === "/welcome") return response;
-  if (!isWorkspaceId(request.cookies.get(WORKSPACE_COOKIE)?.value) && !path.startsWith("/join/")) {
-    const url = request.nextUrl.clone();
-    url.pathname = "/welcome";
-    url.search = "";
-    return NextResponse.redirect(url);
-  }
-
   const isAuthPage   = path === "/login";
   const isPublicPage = isAuthPage || path.startsWith("/join/");
 
@@ -108,6 +98,16 @@ export async function proxy(request: NextRequest) {
   if (authed && isAuthPage) {
     const url = request.nextUrl.clone();
     url.pathname = "/";
+    return NextResponse.redirect(url);
+  }
+  // Logged in but no workspace chosen yet -> /welcome. That page sends users
+  // who only have ONE workspace straight through; only people with access to
+  // several workspaces actually get to pick.
+  if (authed && path !== "/welcome" && !path.startsWith("/join/")
+    && !isWorkspaceId(request.cookies.get(WORKSPACE_COOKIE)?.value)) {
+    const url = request.nextUrl.clone();
+    url.pathname = "/welcome";
+    url.search = "";
     return NextResponse.redirect(url);
   }
 

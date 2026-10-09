@@ -49,6 +49,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
   const [name, setName] = useState("—");
   const [clientName, setClientName] = useState("Panasonic");
   const workspace = useWorkspace();
+  const [canSwitch, setCanSwitch] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -74,6 +75,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
         // May not exist before Supabase Migration/50 — ignore errors then.
         const { data: acc } = await supabase.from("profiles").select("workspaces").eq("id", user.id).single();
         const allowed = (acc?.workspaces as string[] | null) ?? ["gobel"];
+        setCanSwitch(p.role === "superadmin" || allowed.length > 1);
         const activeWs = clientWorkspaceId();
         if (p.role !== "superadmin" && !allowed.includes(activeWs)) {
           window.location.href = "/welcome?denied=" + activeWs;
@@ -88,6 +90,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
   }, [supabase]);
 
   async function logout() {
+    document.cookie = "ws=; Max-Age=0; path=/"; // next login starts fresh
     await supabase.auth.signOut();
     router.replace("/login");
     router.refresh();
@@ -113,14 +116,21 @@ function AppShell({ children }: { children: React.ReactNode }) {
             <div className="t2">by {clientName}</div>
           </div>
         </div>
-        <a href="/welcome" title="Switch workspace" className="ws-chip">
-          <span className="ws-dot" />
-          <span style={{ flex: 1, minWidth: 0 }}>
-            <span className="ws-l">Workspace</span>
-            <span className="ws-n">{workspace.name}</span>
-          </span>
-          <span className="ws-sw">Switch</span>
-        </a>
+        {(() => {
+          const inner = (
+            <>
+              <span className="ws-dot" />
+              <span style={{ flex: 1, minWidth: 0 }}>
+                <span className="ws-l">Workspace</span>
+                <span className="ws-n">{workspace.name}</span>
+              </span>
+              {canSwitch && <span className="ws-sw">Switch</span>}
+            </>
+          );
+          return canSwitch
+            ? <a href="/welcome" title="Switch workspace" className="ws-chip">{inner}</a>
+            : <div className="ws-chip" style={{ cursor: "default" }}>{inner}</div>;
+        })()}
         <ul className="nav-list">
           {visible.map((n) => (
             <li key={n.href} className={isActive(n.href) ? "active" : ""}>
@@ -141,7 +151,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
             <div className="badge">R</div>
             <div>
               <div className="mob-title">Reline Project</div>
-              <div className="mob-sub">{workspace.name} · <a href="/welcome" style={{ color: "var(--gold)" }}>switch</a></div>
+              <div className="mob-sub">{workspace.name}{canSwitch && <> · <a href="/welcome" style={{ color: "var(--gold)" }}>switch</a></>}</div>
             </div>
           </div>
           <button className="btn-logout" onClick={logout}>Logout</button>
@@ -154,7 +164,9 @@ function AppShell({ children }: { children: React.ReactNode }) {
             <div className="page-sub">Marketplace performance overview — Shopee</div>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <a href="/welcome" className="ws-pill" title="Switch workspace">{workspace.name}</a>
+            {canSwitch
+              ? <a href="/welcome" className="ws-pill" title="Switch workspace">{workspace.name}</a>
+              : <span className="ws-pill" style={{ cursor: "default" }}>{workspace.name}</span>}
             <LangSwitcher />
             <div className="user-badge">
               <span>{name}</span>
