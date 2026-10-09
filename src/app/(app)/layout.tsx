@@ -17,7 +17,6 @@ const NAV: { href: string; icon: string; label: string; short?: string; roles?: 
   { href: "/operational", icon: "🏬", label: "Operational Performance", short: "Ops", roles: ["superadmin", "client_admin", "branch_manager", "pic_panasonic", "sales"] },
   { href: "/calc",      icon: "🧮", label: "Price Calculator", short: "Calc",    roles: ["superadmin", "branch_manager", "pic_panasonic", "sales"] },
   { href: "/upload",    icon: "⬆️", label: "Upload Data", short: "Upload",         roles: ["superadmin", "client_admin"] },
-  { href: "/reports",   icon: "📄", label: "Monthly Report", short: "Report",      roles: ["superadmin", "client_admin"] },
   { href: "/core",      icon: "🗂️", label: "Core List", short: "Core",          roles: ["superadmin", "client_admin", "advertiser"] },
   { href: "/users",     icon: "👥", label: "Users",               roles: ["superadmin", "client_admin"] },
 ];
