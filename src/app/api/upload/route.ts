@@ -2,6 +2,7 @@ import { NextRequest, NextResponse, after } from "next/server";
 import * as XLSX from "xlsx";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { currentSchema } from "@/lib/workspace-server";
 import { mapRow, bqCol, type DataSource, type ManualFields } from "@/lib/parse";
 
 export const runtime = "nodejs";
@@ -172,7 +173,7 @@ export async function POST(req: NextRequest) {
 
   // 4. Build raw row objects keyed by both original header and bqCol form,
   //    then map to typed sales_rows fields.
-  const admin = createAdminClient();
+  const admin = createAdminClient(await currentSchema());
 
   // Source brand/category detection from this workspace's live Core List
   // (master_data) so admin-added brands are picked up without a code deploy.

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { useWorkspace } from "@/lib/useWorkspace";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -11,6 +12,7 @@ export default function LoginPage() {
   const [showPass, setShowPass]     = useState(false);
   const [error, setError]           = useState<string | null>(null);
   const [loading, setLoading]       = useState(false);
+  const workspace = useWorkspace();
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -68,6 +70,10 @@ export default function LoginPage() {
             <h1 className="text-xl font-bold tracking-wide" style={{ color: "#e8edf8" }}>Reline</h1>
             <p className="mt-0.5 text-xs" style={{ color: "#7b8db0" }}>Dashboard Analytics</p>
           </div>
+          <a href="/welcome" title="Change workspace"
+            style={{ fontSize: 12, fontWeight: 700, color: "#c9a227", border: "1px solid rgba(201,162,39,0.4)", background: "rgba(201,162,39,0.08)", padding: "5px 12px", borderRadius: 999, textDecoration: "none" }}>
+            {workspace.name} · change
+          </a>
         </div>
 
         <div style={{ height: 1, background: "linear-gradient(90deg, transparent, rgba(201,162,39,0.3), transparent)", marginBottom: 24 }} />

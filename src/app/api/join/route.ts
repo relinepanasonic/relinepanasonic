@@ -41,7 +41,7 @@ export async function POST(req: NextRequest) {
   // Validate invite
   const { data: inv, error: ie } = await db
     .from("invites")
-    .select("id,owner_name,store_name,role,client_id,used_at,expires_at,scope_stores")
+    .select("id,owner_name,store_name,role,client_id,used_at,expires_at,scope_stores,workspaces")
     .eq("token", token)
     .single();
 
@@ -78,6 +78,7 @@ export async function POST(req: NextRequest) {
     scope_city:   isCityScoped  ? (inv.store_name ?? null) : null,
     scope_store:  isStoreScoped ? (inv.store_name ?? null) : null,
     scope_stores: inv.role === "sales" ? (inv.scope_stores ?? null) : null,
+    workspaces:   inv.workspaces?.length ? inv.workspaces : ["gobel"],
   });
 
   if (pe) {

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import * as XLSX from "xlsx";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { currentSchema } from "@/lib/workspace-server";
 import { parseAdGroupMatrix, inferGroupLevel } from "@/lib/parseAdGroup";
 import { normalizeMonth, type ManualFields } from "@/lib/parse";
 
@@ -49,7 +50,7 @@ export async function POST(req: NextRequest) {
   // (the ads_dashboard_summary RPC filters brand='panasonic'); an explicit
   // manual.brand override wins if ever supplied.
   const brand = manual.brand?.trim() || "Panasonic";
-  const admin = createAdminClient();
+  const admin = createAdminClient(await currentSchema());
 
   // Audit row first (uploads.source is the spos|ads|perf enum — use 'ads';
   // the group/level/period detail lives in meta).

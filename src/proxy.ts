@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { WORKSPACE_COOKIE, isWorkspaceId } from "@/lib/workspace";
 
 // Next.js 16: the old `middleware.ts` convention is renamed to `proxy.ts`.
 // Refreshes the Supabase session on every request and guards protected routes.
@@ -85,6 +86,17 @@ export async function proxy(request: NextRequest) {
   }
 
   const path = request.nextUrl.pathname;
+
+  // Workspace landing page: always reachable (logged in or not). Everything
+  // else needs a workspace chosen first, so every new session starts there.
+  if (path === "/welcome") return response;
+  if (!isWorkspaceId(request.cookies.get(WORKSPACE_COOKIE)?.value) && !path.startsWith("/join/")) {
+    const url = request.nextUrl.clone();
+    url.pathname = "/welcome";
+    url.search = "";
+    return NextResponse.redirect(url);
+  }
+
   const isAuthPage   = path === "/login";
   const isPublicPage = isAuthPage || path.startsWith("/join/");
 

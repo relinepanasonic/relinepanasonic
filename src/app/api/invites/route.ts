@@ -64,6 +64,8 @@ export async function POST(req: NextRequest) {
       client_id:    clientId,
       created_by:   caller.user.id,
       scope_stores: role === "sales" ? (body.scope_stores?.length ? body.scope_stores : null) : null,
+      // workspace the inviter is currently in (cookie "ws"); join copies it to the profile
+      workspaces:   [req.cookies.get("ws")?.value === "light" ? "light" : "gobel"],
     })
     .select("token")
     .single();

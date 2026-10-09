@@ -5,6 +5,8 @@ import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { LangProvider, LANGS, useLangContext } from "@/lib/dashLang";
+import { clientWorkspaceId } from "@/lib/workspace";
+import { useWorkspace } from "@/lib/useWorkspace";
 
 type Role = "superadmin" | "client_admin" | "branch_manager" | "store_user" | "advertiser" | "pic_panasonic" | "sales";
 
@@ -46,6 +48,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
   const [role, setRole] = useState<Role>();
   const [name, setName] = useState("—");
   const [clientName, setClientName] = useState("Panasonic");
+  const workspace = useWorkspace();
 
   useEffect(() => {
     (async () => {
@@ -57,21 +60,29 @@ function AppShell({ children }: { children: React.ReactNode }) {
       const { data: { session } } = await supabase.auth.getSession();
       const user = session?.user;
       if (!user) return;
-      // Single query: embed the client's name via the profiles→clients FK
-      // instead of a second round-trip to the clients table.
+      // Profile + (best-effort) workspace access + the client's name. Kept as
+      // plain selects (no embed): in the Light Solution workspace "profiles"
+      // is a view, where PostgREST embeds are less reliable.
       const { data: p } = await supabase
         .from("profiles")
-        .select("role, display_name, client_id, clients(name)")
+        .select("role, display_name, client_id")
         .eq("id", user.id)
         .single();
       if (p) {
         setRole(p.role as Role);
         setName(p.display_name || user.email?.split("@")[0] || "User");
-        // PostgREST returns a single object for this to-one embed at runtime,
-        // but the client types it as an array — handle both to satisfy TS.
-        const embedded = p.clients as unknown as { name: string } | { name: string }[] | null;
-        const client = Array.isArray(embedded) ? embedded[0] : embedded;
-        if (client?.name) setClientName(client.name);
+        // May not exist before Supabase Migration/50 — ignore errors then.
+        const { data: acc } = await supabase.from("profiles").select("workspaces").eq("id", user.id).single();
+        const allowed = (acc?.workspaces as string[] | null) ?? ["gobel"];
+        const activeWs = clientWorkspaceId();
+        if (p.role !== "superadmin" && !allowed.includes(activeWs)) {
+          window.location.href = "/welcome?denied=" + activeWs;
+          return;
+        }
+        if (p.client_id) {
+          const { data: c } = await supabase.from("clients").select("name").eq("id", p.client_id).single();
+          if (c?.name) setClientName(c.name);
+        }
       }
     })();
   }, [supabase]);
@@ -102,6 +113,14 @@ function AppShell({ children }: { children: React.ReactNode }) {
             <div className="t2">by {clientName}</div>
           </div>
         </div>
+        <a href="/welcome" title="Switch workspace" className="ws-chip">
+          <span className="ws-dot" />
+          <span style={{ flex: 1, minWidth: 0 }}>
+            <span className="ws-l">Workspace</span>
+            <span className="ws-n">{workspace.name}</span>
+          </span>
+          <span className="ws-sw">Switch</span>
+        </a>
         <ul className="nav-list">
           {visible.map((n) => (
             <li key={n.href} className={isActive(n.href) ? "active" : ""}>
@@ -122,7 +141,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
             <div className="badge">R</div>
             <div>
               <div className="mob-title">Reline Project</div>
-              <div className="mob-sub">by {clientName}</div>
+              <div className="mob-sub">{workspace.name} · <a href="/welcome" style={{ color: "var(--gold)" }}>switch</a></div>
             </div>
           </div>
           <button className="btn-logout" onClick={logout}>Logout</button>
@@ -135,6 +154,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
             <div className="page-sub">Marketplace performance overview — Shopee</div>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <a href="/welcome" className="ws-pill" title="Switch workspace">{workspace.name}</a>
             <LangSwitcher />
             <div className="user-badge">
               <span>{name}</span>

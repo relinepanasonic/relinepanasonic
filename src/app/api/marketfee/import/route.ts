@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import * as XLSX from "xlsx";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { currentSchema } from "@/lib/workspace-server";
 import { MONTH_LIST } from "@/lib/parse";
 
 export const runtime = "nodejs";
@@ -72,7 +73,7 @@ export async function POST(req: NextRequest) {
   const file = form.get("file") as File | null;
   if (!file) return NextResponse.json({ error: "NO_FILE" }, { status: 400 });
 
-  const admin = createAdminClient();
+  const admin = createAdminClient(await currentSchema());
   const { data: cs } = await admin.from("clients").select("id").order("created_at").limit(1);
   const clientId = profile.client_id || cs?.[0]?.id;
   if (!clientId) return NextResponse.json({ error: "NO_CLIENT" }, { status: 400 });

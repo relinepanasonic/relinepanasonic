@@ -218,3 +218,14 @@ table.tbl tr:hover td{background:rgba(201,162,39,.06)}
   .bn-item.active{color:var(--gold)}
   .bn-item.active svg{stroke:var(--gold)}
 }
+
+/* Workspace switcher (sidebar chip + topbar pill) */
+.ws-chip{display:flex;align-items:center;gap:10px;margin:2px 8px 12px;padding:9px 11px;border-radius:10px;background:rgba(201,162,39,.08);border:1px solid rgba(201,162,39,.25);text-decoration:none;color:inherit}
+.ws-chip:hover{background:rgba(201,162,39,.14)}
+.ws-dot{width:8px;height:8px;border-radius:50%;background:var(--gold);box-shadow:0 0 8px var(--gold);flex:none}
+.ws-l{display:block;font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+.ws-n{display:block;font-size:12.5px;font-weight:700;color:#e8edf8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ws-sw{font-size:10.5px;font-weight:700;color:var(--gold)}
+.ws-pill{font-size:11.5px;font-weight:700;color:var(--gold);border:1px solid rgba(201,162,39,.35);background:rgba(201,162,39,.08);padding:5px 11px;border-radius:999px;text-decoration:none;white-space:nowrap}
+.ws-pill:hover{background:rgba(201,162,39,.16)}
+@media (max-width:900px){.ws-pill{display:none}}
