@@ -34,7 +34,7 @@ const ROLE_LABEL: Record<Role, string> = {
 // Mobile bottom-nav priority. Someone who can see up to 5 pages gets them all in
 // the bar; anyone with more gets the first 4 below plus a "More" sheet that
 // lists the rest (Calc, Upload, Reports, Core List, Users, ...).
-const BOTTOM_PRIORITY = ["/", "/ads", "/finance", "/operational", "/calc", "/upload", "/reports", "/core", "/users"];
+const BOTTOM_PRIORITY = ["/", "/ads", "/finance", "/operational", "/calc", "/upload", "/core", "/users"];
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (

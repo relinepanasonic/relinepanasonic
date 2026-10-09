@@ -16,7 +16,7 @@ const PALETTE = ["#c9a227", "#e8c84a", "#94a3b8", "#1e4a7a", "#3b6ea5", "#d4b94e
 
 // Kept local to this module (rather than imported from page.tsx) so the lazy
 // chunk stays self-contained — same small-formatter duplication pattern the
-// codebase already uses (see reportPdf.tsx).
+// codebase already uses.
 const idr = (n: number) => "Rp " + new Intl.NumberFormat("id-ID", { notation: "compact", maximumFractionDigits: 2 }).format(n || 0);
 const num = (n: number) => new Intl.NumberFormat("id-ID").format(Math.round(n || 0));
 
