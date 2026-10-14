@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
+import FinOpsUploadCards from "./FinOpsUploadCards";
 import { MONTH_LIST, type DataSource } from "@/lib/parse";
 
 export const dynamic = "force-dynamic";
@@ -20,14 +21,6 @@ const AD_SLOTS: { key: AdSlotKey; label: string; hint: string; accept: string; a
   { key: "ads",    label: "Ads Performa",       hint: "Data Keseluruhan Iklan", accept: ".xlsx,.xls,.csv" },
   { key: "gmvmax", label: "GMV Auto Performa",  hint: "Inkubasi / Shop GMV Max", accept: ".xlsx,.xls,.csv", adsLevel: "incubation" },
   { key: "group",  label: "Group Ads Performa", hint: "Data Grup Iklan",         accept: ".xlsx,.xls,.csv" },
-];
-
-// Finance & Operational — two Shopee exports per dealer/month, posted to their
-// own endpoints (same manual fields as every other upload on this page).
-type FinSlotKey = "finance" | "orders";
-const FIN_SLOTS: { key: FinSlotKey; label: string; hint: string; accept: string; url: string }[] = [
-  { key: "finance", label: "Finance Detail", hint: "Laporan Penghasilan (Income)", accept: ".xlsx,.xls", url: "/api/finance/upload" },
-  { key: "orders",  label: "Operational",    hint: "Order.completed",              accept: ".xlsx,.xls", url: "/api/store/upload" },
 ];
 
 // The pre-project baseline snapshot — a month value, but not a real month:
@@ -211,8 +204,7 @@ export default function UploadPage() {
     if (!clientId) { setLog(["Workspace not ready."]); setBusy(false); return; }
     const chosenSlots   = SLOTS.filter((s) => files[s.source]);
     const chosenAdSlots = AD_SLOTS.filter((s) => files[s.key]);
-    const chosenFinSlots = FIN_SLOTS.filter((s) => files[s.key]);
-    if (!chosenSlots.length && !chosenAdSlots.length && !chosenFinSlots.length) { setLog(["Pick at least one file."]); setBusy(false); return; }
+    if (!chosenSlots.length && !chosenAdSlots.length) { setLog(["Pick at least one file."]); setBusy(false); return; }
     const manualBase = {
       admin:        form.admin,
       city:         form.city,
@@ -265,21 +257,6 @@ export default function UploadPage() {
         } catch (e) {
           setLog((l) => [...l, `✗ ${slot.label}: ${String(e)}`]);
         }
-      }
-    }
-    for (const slot of chosenFinSlots) {
-      // Finance / Operational need the dealer + year + month picked above.
-      if (!form.dealer || !form.bulan) { setLog((l) => [...l, "✗ " + slot.label + ": pick City, Dealer, Year and Month first"]); continue; }
-      const fd = new FormData();
-      fd.append("file", files[slot.key]!);
-      fd.append("manual", JSON.stringify(manualBase));
-      fd.append("client_id", clientId);
-      try {
-        const res = await fetch(slot.url, { method: "POST", body: fd });
-        const j = await res.json();
-        setLog((l) => [...l, res.ok ? `✓ ${slot.label}: ${j.rows} rows${j.products ? ` + ${j.products} product rows (real costs per product)` : ""}` : `✗ ${slot.label}: ${j.error}`]);
-      } catch (e) {
-        setLog((l) => [...l, `✗ ${slot.label}: ${String(e)}`]);
       }
     }
     setBusy(false);
@@ -406,7 +383,7 @@ export default function UploadPage() {
       <div className="panel">
         <h3 style={{ margin: "0 0 4px" }}>Upload Shopee Data</h3>
         <div className="hint" style={{ marginBottom: 18 }}>
-          Pick the week's details once, attach one or more exports (Performa / SPOS / Ads Performa / GMV Auto Performa / Group Ads Performa), then Upload. Brand &amp; Tipe Produk are auto-detected from the product/campaign name.
+          Pick the week&apos;s details once, attach one or more exports (Performa / SPOS / Ads Performa / GMV Auto Performa / Group Ads Performa), then Upload. Brand &amp; Tipe Produk are auto-detected from the product/campaign name.
         </div>
 
         {/* Row 1: Admin | City | PIC Panasonic */}
@@ -515,21 +492,6 @@ export default function UploadPage() {
           ))}
         </div>
 
-        {/* Finance & Operational — 2 parts */}
-        <div style={{ marginBottom: 10, fontSize: 13, fontWeight: 700, color: "#cdd9f0" }}>Finance &amp; Operational <span style={{ color: "var(--muted)", fontWeight: 400, fontSize: 11 }}>— one dealer, one month per file</span></div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 14, padding: 16, border: "1px dashed rgba(201,162,39,.35)", borderRadius: 14, background: "rgba(15,32,64,.4)", marginBottom: 20 }}>
-          {FIN_SLOTS.map((s) => (
-            <div key={s.key}>
-              <label style={{ fontSize: 12, color: "#cdd9f0", fontWeight: 600 }}>
-                {s.label} <span style={{ color: "var(--muted)", fontWeight: 400, fontSize: 11 }}>({s.hint})</span>
-              </label>
-              <input type="file" accept={s.accept} style={{ fontSize: 12, color: "#bcd", display: "block", marginTop: 6, width: "100%" }}
-                onChange={(e) => setFiles((f) => ({ ...f, [s.key]: e.target.files?.[0] ?? null }))} />
-              {files[s.key] && <p style={{ marginTop: 6, fontSize: 11, color: "var(--gold)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>✓ {files[s.key]!.name}</p>}
-            </div>
-          ))}
-        </div>
-
         <div style={{ display: "flex", gap: 14, alignItems: "center", justifyContent: "center" }}>
           <button className="btn-gold" disabled={busy} onClick={submit} style={{ padding: "11px 60px", fontSize: 15 }}>
             {busy ? "Uploading…" : "Upload"}
@@ -542,6 +504,9 @@ export default function UploadPage() {
           </div>
         )}
       </div>
+
+      {/* ───── Finance Detail + Operational Performance: own cards ───── */}
+      <FinOpsUploadCards supabase={supabase} clientId={clientId} cities={cities} onDone={() => loadUploads(clientId)} />
 
       {/* ───── Data per Dealer ───── */}
       {dealerRows.length > 0 && (
