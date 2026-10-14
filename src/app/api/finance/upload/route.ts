@@ -39,6 +39,11 @@ export async function POST(req: NextRequest) {
 
   const buf = Buffer.from(await file.arrayBuffer());
   const wb = XLSX.read(buf, { type: "buffer" });
+  // Shopee changed the export in late 2026 (sheets Summary / Seller Fee / Penghasilan, with Order + Sku rows).
+  // That layout is not parsed yet: reading its Summary sheet instead would silently store wrong rows.
+  if (!wb.SheetNames.some((n) => n.toLowerCase() === "income") && wb.SheetNames.some((n) => n.toLowerCase() === "penghasilan")) {
+    return NextResponse.json({ error: "This is Shopee's NEW Income layout (sheet Penghasilan). It is not supported yet, so nothing was uploaded." }, { status: 400 });
+  }
   const sheetName = wb.SheetNames.find((n) => n.toLowerCase() === "income") || wb.SheetNames[0];
   const ws = wb.Sheets[sheetName];
   const matrix = XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, raw: false });
