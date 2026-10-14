@@ -294,3 +294,9 @@ table.tbl-sticky2{width:max-content;min-width:100%}
   .fin-compact .panel{margin-left:14px;margin-right:14px}
   .fin-compact .tbl-tabs{padding:0 14px;flex-wrap:wrap}
 }
+
+/* Finance: 6 cost cards (incl. Pajak) */
+.kpi-grid-6{grid-template-columns:repeat(6,1fr)}
+@media(max-width:1400px){.kpi-grid-6{grid-template-columns:repeat(3,1fr)}}
+@media(max-width:760px){.kpi-grid-6,.fin-compact .kpi-grid-6{grid-template-columns:1fr 1fr;padding-left:14px;padding-right:14px}}
+.fin-compact .kpi-grid-6{gap:10px;margin-bottom:10px}

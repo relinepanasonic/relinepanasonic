@@ -32,7 +32,7 @@ const fmtDate = (iso: string) => new Date(iso + "T00:00:00").toLocaleDateString(
 
 type Kpis = {
   sales: number; promotion_cost: number; refund: number; delivery_cost: number;
-  affiliate_cost: number; marketplace_fee: number; misc: number; gross_profit: number; ads_cost: number;
+  affiliate_cost: number; marketplace_fee: number; misc: number; tax: number; gross_profit: number; ads_cost: number;
 };
 type DailyRow = { tx_date: string; orders: number; sales: number; promotion_cost: number; marketplace_fee: number; net_income: number; refund: number };
 type Summary = {
@@ -45,7 +45,7 @@ type Summary = {
   monthly_fee: { month: string; fee: number }[];
   monthly_discount: { month: string; discount: number }[];
   monthly_ads_cost: { month: string; ad_cost: number }[];
-  monthly_costs: { month: string; promotion_cost: number; refund: number; delivery_cost: number; affiliate_cost: number; marketplace_fee: number; misc: number }[];
+  monthly_costs: { month: string; promotion_cost: number; refund: number; delivery_cost: number; affiliate_cost: number; marketplace_fee: number; misc: number; tax: number }[];
   payment_method: { method: string; cnt: number }[];
   jasa_kirim: { service: string; cnt: number }[];
   daily: DailyRow[];
@@ -54,7 +54,8 @@ type ProductRow = {
   kode_produk: string; nama_produk: string | null; kode_variasi: string; nama_variasi: string | null;
   units_sold: number; total_sales: number; total_modal: number;
   promotion_cost: number; refund: number; delivery_cost: number; affiliate_cost: number;
-  marketplace_fee: number; ads_cost: number; nett_profit: number;
+  marketplace_fee: number; tax: number; ads_cost: number; nett_profit: number;
+  cost_source?: "actual" | "estimate";
 };
 type ProductDetail = {
   rows: ProductRow[]; total_modal: number; monthly_modal: { month: string; modal: number }[];
@@ -143,6 +144,7 @@ export default function FinanceDashboard({ clientId, refreshKey }: { clientId: s
   const deliverySeries = seriesFrom(d?.monthly_costs, "delivery_cost");
   const affiliateSeries = seriesFrom(d?.monthly_costs, "affiliate_cost");
   const feeSeries = seriesFrom(d?.monthly_costs, "marketplace_fee");
+  const taxSeries = seriesFrom(d?.monthly_costs, "tax");
 
   return (
     <div className="fin-compact">
@@ -181,12 +183,13 @@ export default function FinanceDashboard({ clientId, refreshKey }: { clientId: s
         <div className="kpi"><div className="kpi-icon">🏷️</div><div className="lbl">Total Modal Product</div><div className="val">{rpC(totalModal)}</div><MiniSparkline data={modalSeries} color={GOLD_L} /></div>
         <div className="kpi kpi-roas"><div className="kpi-icon">✅</div><div className="lbl">{t("Nett Profit")}</div><div className="val" style={{ color: nettProfit >= 0 ? undefined : "#f87171" }}>{rpC(nettProfit)}</div><MiniSparkline data={nettSeries} color={GOLD} /></div>
       </div>
-      <div className="kpi-grid kpi-grid-5">
+      <div className="kpi-grid kpi-grid-6">
         <div className="kpi kpi-cost"><div className="kpi-icon">🎟️</div><div className="lbl">{t("Promotion Cost")}</div><div className="val">{k ? rpC(k.promotion_cost) : "—"}</div><MiniSparkline data={promoSeries} color={BLUE} /></div>
         <div className="kpi kpi-cost"><div className="kpi-icon">↩️</div><div className="lbl">{t("Refund")}</div><div className="val">{k ? rpC(k.refund) : "—"}</div><MiniSparkline data={refundSeries} color={BLUE} /></div>
         <div className="kpi kpi-cost"><div className="kpi-icon">🚚</div><div className="lbl">{t("Delivery Cost")}</div><div className="val">{k ? rpC(k.delivery_cost) : "—"}</div><MiniSparkline data={deliverySeries} color={BLUE} /></div>
         <div className="kpi kpi-cost"><div className="kpi-icon">🤝</div><div className="lbl">{t("Affiliate Cost")}</div><div className="val">{k ? rpC(k.affiliate_cost) : "—"}</div><MiniSparkline data={affiliateSeries} color={BLUE} /></div>
         <div className="kpi kpi-cost"><div className="kpi-icon">🏪</div><div className="lbl">{t("Marketplace Fee")}</div><div className="val">{k ? rpC(k.marketplace_fee) : "—"}</div><MiniSparkline data={feeSeries} color={BLUE} /></div>
+        <div className="kpi kpi-cost"><div className="kpi-icon">🧾</div><div className="lbl">Pajak</div><div className="val">{k ? rpC(k.tax ?? 0) : "—"}</div><MiniSparkline data={taxSeries} color={BLUE} /></div>
       </div>
 
       {/* Gross Sales vs Nett Profit — monthly by default, or daily Gross
@@ -306,7 +309,9 @@ function ProductProfitTable({ rows, t }: { rows: ProductRow[]; t: (k: string) =>
     <div className="panel">
       <h3>Detail Product Profit</h3>
       <div className="hint">
-        {t("Modal and Ads Cost are real per-product numbers. Promotional, Refund, Delivery, Affiliate and Market Place Fee are not in the CSV per product, so each is the store total spread across products by their share of Sales (estimates per product, exact in total).")}
+        {rows.some((r) => r.cost_source === "actual")
+          ? "Rows marked Actual use the real per-product costs from Shopee's new Income file (Promotional, Refund, Delivery, Affiliate, Market Place Fee and Pajak). Rows marked Estimate have no Income rows yet, so the remaining store total is spread across them by their share of Sales."
+          : t("Modal and Ads Cost are real per-product numbers. Promotional, Refund, Delivery, Affiliate and Market Place Fee are not in the CSV per product, so each is the store total spread across products by their share of Sales (estimates per product, exact in total).")}
       </div>
 
       <div className="filterbar" style={{ marginTop: 4, marginBottom: 10 }}>
@@ -331,9 +336,11 @@ function ProductProfitTable({ rows, t }: { rows: ProductRow[]; t: (k: string) =>
             <SortableHeader label={t("Delivery Cost")} sortKey="delivery_cost" currentSort={sortConfig} onRequestSort={requestSort} className="num" />
             <SortableHeader label={t("Affiliate Cost")} sortKey="affiliate_cost" currentSort={sortConfig} onRequestSort={requestSort} className="num" />
             <SortableHeader label={t("Market Place Fee")} sortKey="marketplace_fee" currentSort={sortConfig} onRequestSort={requestSort} className="num" />
+            <SortableHeader label="Pajak" sortKey="tax" currentSort={sortConfig} onRequestSort={requestSort} className="num" />
             <SortableHeader label={t("Ads Cost")} sortKey="ads_cost" currentSort={sortConfig} onRequestSort={requestSort} className="num" />
             <SortableHeader label={t("Nett Profit")} sortKey="nett_profit" currentSort={sortConfig} onRequestSort={requestSort} className="num" />
             <th className="num" style={{ whiteSpace: "nowrap" }} title={t("Nett Profit ÷ Sales × 100%")}>%</th>
+            <th title="Actual = real per-product costs from the Income file; Estimate = store total spread by share of sales">Costs</th>
           </tr></thead>
           <tbody>
             {sortedData.map((r) => (
@@ -350,13 +357,15 @@ function ProductProfitTable({ rows, t }: { rows: ProductRow[]; t: (k: string) =>
                 <td className="num" style={{ whiteSpace: "nowrap" }}>{rpFull(r.delivery_cost)}</td>
                 <td className="num" style={{ whiteSpace: "nowrap" }}>{rpFull(r.affiliate_cost)}</td>
                 <td className="num" style={{ whiteSpace: "nowrap" }}>{rpFull(r.marketplace_fee)}</td>
+                <td className="num" style={{ whiteSpace: "nowrap" }}>{rpFull(r.tax ?? 0)}</td>
                 <td className="num" style={{ whiteSpace: "nowrap" }}>{rpFull(r.ads_cost)}</td>
                 <td className="num" style={{ whiteSpace: "nowrap", color: r.nett_profit >= 0 ? "#86efac" : "#f87171", fontWeight: 700 }}>{rpFull(r.nett_profit)}</td>
                 <td className="num" style={{ whiteSpace: "nowrap", color: r.nett_profit >= 0 ? "#86efac" : "#f87171", fontWeight: 700 }}>{r.total_sales > 0 ? `${(r.nett_profit / r.total_sales * 100).toFixed(1)}%` : "—"}</td>
+                <td style={{ whiteSpace: "nowrap", fontSize: 11, fontWeight: 700, color: r.cost_source === "actual" ? "#86efac" : "var(--muted)" }}>{r.cost_source === "actual" ? "Actual" : "Estimate"}</td>
               </tr>
             ))}
             {sortedData.length === 0 && (
-              <tr><td colSpan={15} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>{t("No data for these filters")}</td></tr>
+              <tr><td colSpan={17} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>{t("No data for these filters")}</td></tr>
             )}
           </tbody>
         </table>
@@ -369,7 +378,7 @@ function ProductProfitTable({ rows, t }: { rows: ProductRow[]; t: (k: string) =>
 type DetailRow = {
   order_no: string | null; buyer_username: string | null;
   sales: number | null; promotion_cost: number | null; refund: number | null;
-  delivery_cost: number | null; affiliate_cost: number | null; marketplace_fee: number | null;
+  delivery_cost: number | null; affiliate_cost: number | null; marketplace_fee: number | null; tax?: number | null;
   net_income: number | null;
 };
 function DayDrillDown({ day, clientId, sel, supabase, onClose }: {
@@ -383,7 +392,7 @@ function DayDrillDown({ day, clientId, sel, supabase, onClose }: {
   useEffect(() => {
     (async () => {
       let q = supabase.from("finance_rows")
-        .select("order_no,buyer_username,sales,promotion_cost,refund,delivery_cost,affiliate_cost,marketplace_fee,net_income")
+        .select("order_no,buyer_username,sales,promotion_cost,refund,delivery_cost,affiliate_cost,marketplace_fee,tax,net_income")
         .eq("client_id", clientId).eq("release_date", day);
       if (sel.year) q = q.eq("year", Number(sel.year));
       if (sel.month) q = q.eq("month", sel.month);
@@ -410,7 +419,7 @@ function DayDrillDown({ day, clientId, sel, supabase, onClose }: {
                 <th className="num">{t("Sales")}</th><th className="num">{t("Promotional Cost")}</th>
                 <th className="num">{t("Refund")}</th><th className="num">{t("Delivery Cost")}</th>
                 <th className="num">{t("Affiliate")}</th><th className="num">{t("Market Place Fee")}</th>
-                <th className="num">{t("Gross Profit")}</th>
+                <th className="num">Pajak</th><th className="num">{t("Gross Profit")}</th>
               </tr></thead>
               <tbody>
                 {rows.map((r, i) => (
@@ -423,10 +432,11 @@ function DayDrillDown({ day, clientId, sel, supabase, onClose }: {
                     <td className="num">{rpFull(Math.abs(r.delivery_cost || 0))}</td>
                     <td className="num">{rpFull(Math.abs(r.affiliate_cost || 0))}</td>
                     <td className="num">{rpFull(Math.abs(r.marketplace_fee || 0))}</td>
+                    <td className="num">{rpFull(Math.abs(r.tax || 0))}</td>
                     <td className="num" style={{ color: (r.net_income || 0) >= 0 ? "#86efac" : "#f87171", fontWeight: 700 }}>{rpFull(r.net_income || 0)}</td>
                   </tr>
                 ))}
-                {rows.length === 0 && <tr><td colSpan={9} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>{t("No transactions")}</td></tr>}
+                {rows.length === 0 && <tr><td colSpan={10} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>{t("No transactions")}</td></tr>}
               </tbody>
             </table>
           </div>

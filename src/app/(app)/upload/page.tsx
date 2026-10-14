@@ -277,7 +277,7 @@ export default function UploadPage() {
       try {
         const res = await fetch(slot.url, { method: "POST", body: fd });
         const j = await res.json();
-        setLog((l) => [...l, res.ok ? `✓ ${slot.label}: ${j.rows} rows` : `✗ ${slot.label}: ${j.error}`]);
+        setLog((l) => [...l, res.ok ? `✓ ${slot.label}: ${j.rows} rows${j.products ? ` + ${j.products} product rows (real costs per product)` : ""}` : `✗ ${slot.label}: ${j.error}`]);
       } catch (e) {
         setLog((l) => [...l, `✗ ${slot.label}: ${String(e)}`]);
       }
