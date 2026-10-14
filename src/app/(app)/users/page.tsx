@@ -484,18 +484,25 @@ export default function UsersPage() {
   );
 }
 
+const WS_PILL: Record<string, { label: string; color: string; bg: string; border: string }> = {
+  gobel: { label: "Gobel",          color: "#9fc2ee", bg: "rgba(59,110,165,.18)", border: "rgba(59,110,165,.45)" },
+  light: { label: "Light Solution", color: "#e8c84a", bg: "rgba(201,162,39,.12)", border: "rgba(201,162,39,.4)" },
+  alpha: { label: "Alpha Project",  color: "#6fe0ad", bg: "rgba(46,158,107,.14)", border: "rgba(46,158,107,.4)" },
+};
+
 function WorkspacePills({ ws }: { ws: string[] | null }) {
   const list = ws?.length ? ws : ["gobel"];
   return (
     <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
-      {WORKSPACES.filter((w) => list.includes(w.id)).map((w) => (
-        <span key={w.id} style={{ fontSize: 11, fontWeight: 700, padding: "2px 9px", borderRadius: 999, whiteSpace: "nowrap",
-          color: w.id === "light" ? "#e8c84a" : "#9fc2ee",
-          background: w.id === "light" ? "rgba(201,162,39,.12)" : "rgba(59,110,165,.18)",
-          border: "1px solid " + (w.id === "light" ? "rgba(201,162,39,.4)" : "rgba(59,110,165,.45)") }}>
-          {w.id === "light" ? "Light Solution" : "Gobel"}
-        </span>
-      ))}
+      {WORKSPACES.filter((w) => list.includes(w.id)).map((w) => {
+        const c = WS_PILL[w.id];
+        return (
+          <span key={w.id} style={{ fontSize: 11, fontWeight: 700, padding: "2px 9px", borderRadius: 999, whiteSpace: "nowrap",
+            color: c.color, background: c.bg, border: "1px solid " + c.border }}>
+            {c.label}
+          </span>
+        );
+      })}
     </div>
   );
 }

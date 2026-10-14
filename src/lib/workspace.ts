@@ -2,10 +2,12 @@
 //   gobel = Panasonic Gobel          -> Postgres schema "public"  (existing data)
 //   light = Panasonic Light Solution -> Postgres schema "ws_light" (own empty copy,
 //                                       see Supabase Migration/50-workspaces.sql)
+//   alpha = Alpha Project            -> Postgres schema "ws_alpha" (own empty copy,
+//                                       see Supabase Migration/53-workspace-alpha.sql)
 // The chosen workspace is kept in a session cookie ("ws") so every Supabase call
 // (browser, server, API routes) reads/writes that workspace's schema only.
 
-export type WorkspaceId = "gobel" | "light";
+export type WorkspaceId = "gobel" | "light" | "alpha";
 
 export const WORKSPACE_COOKIE = "ws";
 export const DEFAULT_WORKSPACE: WorkspaceId = "gobel";
@@ -13,10 +15,11 @@ export const DEFAULT_WORKSPACE: WorkspaceId = "gobel";
 export const WORKSPACES: { id: WorkspaceId; name: string; schema: string; tagline: string }[] = [
   { id: "gobel", name: "Panasonic Gobel",          schema: "public",   tagline: "Panasonic Gobel dealer network" },
   { id: "light", name: "Panasonic Light Solution", schema: "ws_light", tagline: "Panasonic Light Solution business" },
+  { id: "alpha", name: "Alpha Project",            schema: "ws_alpha", tagline: "Alpha Project" },
 ];
 
 export function isWorkspaceId(v: string | null | undefined): v is WorkspaceId {
-  return v === "gobel" || v === "light";
+  return v === "gobel" || v === "light" || v === "alpha";
 }
 
 export function workspaceById(id: string | null | undefined) {

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { isWorkspaceId } from "@/lib/workspace";
 import { createClient } from "@supabase/supabase-js";
 
 const admin = () =>
@@ -65,7 +66,7 @@ export async function POST(req: NextRequest) {
       created_by:   caller.user.id,
       scope_stores: role === "sales" ? (body.scope_stores?.length ? body.scope_stores : null) : null,
       // workspace the inviter is currently in (cookie "ws"); join copies it to the profile
-      workspaces:   [req.cookies.get("ws")?.value === "light" ? "light" : "gobel"],
+      workspaces:   [isWorkspaceId(req.cookies.get("ws")?.value) ? (req.cookies.get("ws")!.value) : "gobel"],
     })
     .select("token")
     .single();

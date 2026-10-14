@@ -17,6 +17,12 @@ const COPY: Record<WorkspaceId, { badge: string; badgeTone: "live" | "new"; line
     lines: ["Same dashboard, same tools", "Its own separate database", "Ready for the first upload"],
     note: "Starts empty",
   },
+  alpha: {
+    badge: "NEW",
+    badgeTone: "new",
+    lines: ["Same dashboard, same tools", "Its own separate database", "Ready for the first upload"],
+    note: "Starts empty",
+  },
 };
 
 // Landing page after login. Someone with ONE workspace never sees it — they
@@ -101,13 +107,13 @@ const CSS = `
 .ws-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:32px 20px;position:relative;overflow:hidden;
   background:linear-gradient(135deg,#0a1628 0%,#0f2040 50%,#1a3461 100%);color:#e8edf8;font-family:inherit}
 .ws-rings span{position:absolute;border-radius:50%;border:1px solid rgba(201,162,39,.1);pointer-events:none}
-.ws-main{position:relative;width:100%;max-width:880px;text-align:center}
+.ws-main{position:relative;width:100%;max-width:1040px;text-align:center}
 .ws-logo{width:96px;height:96px;object-fit:contain;margin:0 auto 6px;display:block}
 .ws-main h1{font-size:30px;font-weight:800;letter-spacing:.03em;margin:0}
 .ws-sub{color:#7b8db0;font-size:15px;margin:6px 0 30px}
 .ws-denied{max-width:560px;margin:0 auto 22px;padding:11px 16px;border-radius:10px;font-size:13px;line-height:1.5;
   background:rgba(214,69,69,.12);border:1px solid rgba(214,69,69,.35);color:#f3c4c4}
-.ws-cards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px;text-align:left}
+.ws-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:20px;text-align:left}
 .ws-card{display:flex;flex-direction:column;gap:12px;padding:26px 26px 22px;border-radius:18px;text-decoration:none;color:inherit;
   background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.09);box-shadow:0 20px 50px rgba(0,0,0,.35);
   transition:transform .18s ease,border-color .18s ease,background .18s ease}
