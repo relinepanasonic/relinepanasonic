@@ -15,7 +15,8 @@ interface OrdersManual {
 }
 
 // Upload a Shopee "Order.completed" (order-level) export -> order_rows of the
-// ACTIVE workspace. Super Admin and Admin only (same as the other uploads).
+// ACTIVE workspace: the data behind the Demographic page and the Earning page's
+// Units / Not Paid Order / Not Connected. Super Admin and Admin only.
 export async function POST(req: NextRequest) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -51,15 +52,28 @@ export async function POST(req: NextRequest) {
 
   const admin = createAdminClient(await currentSchema());
 
+  // Orders already in the system (e.g. the same month uploaded again) would be inserted a second
+  // time and double every unit on the Demographic page. Refuse and say how to replace them:
+  // delete the earlier upload (Upload history), then upload the new file.
+  {
+    const orderNos = Array.from(new Set(parsedRows.map((r) => r.order_no).filter(Boolean) as string[]));
+    const already = new Set<string>();
+    for (let i = 0; i < orderNos.length; i += 300) {
+      const { data } = await admin.from("order_rows").select("order_no")
+        .eq("client_id", clientId).eq("store_name", manual.store_name).in("order_no", orderNos.slice(i, i + 300));
+      (data || []).forEach((x: { order_no: string }) => already.add(x.order_no));
+    }
+    if (already.size > 0) {
+      return NextResponse.json({
+        error: `${already.size} of these ${orderNos.length} orders are already uploaded for this store. Delete the earlier upload first (Upload history), then upload this file again.`,
+        code: "DUPLICATE_ORDERS", duplicate_orders: already.size,
+      }, { status: 409 });
+    }
+  }
+
   const { data: upload, error: upErr } = await admin
     .from("uploads")
-    .insert({
-      client_id: clientId,
-      source: "orders",
-      filename: file.name,
-      uploaded_by: user.id,
-      meta: { ...manual },
-    })
+    .insert({ client_id: clientId, source: "orders", filename: file.name, uploaded_by: user.id, meta: { ...manual } })
     .select("id")
     .single();
   if (upErr || !upload) {
@@ -67,15 +81,13 @@ export async function POST(req: NextRequest) {
   }
 
   // Week is derived per order from its own completion date, anchored to the
-  // chosen month's 5-week grid — same convention as Finance Detail.
+  // chosen month's 5-week grid — same convention as Earning.
   const records = parsedRows.map((r) => ({
     client_id: clientId,
     upload_id: upload.id,
     year: manual.year ?? null,
     month: manual.bulan ?? null,
-    week: manual.year && manual.bulan && r.completed_at
-      ? weekOfMonth(r.completed_at.slice(0, 10), manual.year, manual.bulan)
-      : null,
+    week: r.completed_at ? weekOfMonth(r.completed_at.slice(0, 10), manual.year!, manual.bulan!) : null,
     dealer_city: manual.city ?? null,
     store_name: manual.store_name ?? null,
     pic_client: manual.pic_client ?? null,
