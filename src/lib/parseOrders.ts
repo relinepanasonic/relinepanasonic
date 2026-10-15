@@ -46,7 +46,7 @@ function str(v: unknown): string | null {
 
 export function parseOrdersMatrix(matrix: unknown[][]): OrderRow[] {
   if (!matrix.length) return [];
-  const header = (matrix[0] || []).map((h) => String(h ?? "").trim());
+  const header = Array.from(matrix[0] || [], (h) => String(h ?? "").trim()); // dense: blank header cells are holes in sheet rows
   const idx = (name: string) => header.indexOf(name);
 
   const iOrderNo = idx("No. Pesanan");

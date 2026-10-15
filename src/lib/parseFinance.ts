@@ -33,6 +33,9 @@ export interface FinanceRow {
   net_income: number | null;        // AG
   jasa_kirim: string | null;
   nama_kurir: string | null;
+  // Only set by the newer Penghasilan layout (parseIncomeSku.ts); already
+  // INCLUDED in marketplace_fee, reported separately for the Pajak column.
+  pajak?: number;
   raw: Record<string, unknown>;
 }
 
@@ -68,7 +71,7 @@ export function parseFinanceMatrix(matrix: unknown[][]): FinanceParsed {
   const periodeEnd = asISODate(matrix[1]?.[2]);
 
   const headerIdx = findHeaderRow(matrix);
-  const headers = (matrix[headerIdx] || []).map((h) => String(h ?? "").trim());
+  const headers = Array.from(matrix[headerIdx] || [], (h) => String(h ?? "").trim()); // dense: blank header cells are holes in sheet rows
   const idx = (name: string) => headers.findIndex((h) => h.toLowerCase() === name.toLowerCase());
 
   const cOrderNo   = idx("No. Pesanan");
