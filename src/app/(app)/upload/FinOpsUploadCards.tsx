@@ -127,10 +127,10 @@ function UploadCard({ supabase, clientId, cities, onDone, title, roles, endpoint
         <label style={{ fontSize: 12, color: "#cdd9f0", fontWeight: 600, display: "block", marginBottom: 4 }}>
           {fileLabel} <span style={{ color: "var(--muted)", fontWeight: 400, fontSize: 11 }}>{fileHint}</span>
         </label>
-        <ImageGuideModal image={guide} />
-        <input type="file" accept=".xlsx,.xls" style={{ fontSize: 12, color: "#bcd", display: "block", width: "100%" }}
+        <input type="file" accept=".xlsx,.xls" className="file-gold" style={{ fontSize: 12, display: "block", width: "100%" }}
           onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
         {file && <p style={{ marginTop: 6, fontSize: 11, color: "var(--gold)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>✓ {file.name}</p>}
+        <ImageGuideModal image={guide} align="right" />
       </div>
 
       <div style={{ display: "flex", justifyContent: "center" }}>

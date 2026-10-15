@@ -6,7 +6,7 @@ import { createPortal } from "react-dom";
 // Small "Lihat Cara Download Data" text link that opens a centered modal
 // showing the mapped guide screenshot. Self-contained (owns its own
 // open/closed state) so each upload zone can drop one in independently.
-export default function ImageGuideModal({ image }: { image: string }) {
+export default function ImageGuideModal({ image, align }: { image: string; align?: "right" }) {
   const [open, setOpen] = useState(false);
 
   return (
@@ -18,6 +18,7 @@ export default function ImageGuideModal({ image }: { image: string }) {
           background: "none", border: "none", padding: 0, cursor: "pointer",
           fontSize: 11, color: "var(--gold)", textDecoration: "underline",
           textUnderlineOffset: 2, display: "block", marginBottom: 8,
+          ...(align === "right" ? { marginLeft: "auto", marginBottom: 0, marginTop: 8 } : {}),
         }}
       >
         Lihat Cara Download Data

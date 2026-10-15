@@ -462,7 +462,7 @@ export default function UploadPage() {
               <label style={{ fontSize: 12, color: "#cdd9f0", fontWeight: 600 }}>
                 {s.label} <span style={{ color: "var(--muted)", fontWeight: 400, fontSize: 11 }}>({s.hint})</span>
               </label>
-              <input type="file" accept={s.accept} style={{ fontSize: 12, color: "#bcd", display: "block", marginTop: 6, width: "100%" }}
+              <input type="file" accept={s.accept} className="file-gold" style={{ fontSize: 12, display: "block", marginTop: 6, width: "100%" }}
                 onChange={(e) => setFiles((f) => ({ ...f, [s.source]: e.target.files?.[0] ?? null }))} />
               {files[s.source] && <p style={{ marginTop: 6, fontSize: 11, color: "var(--gold)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>✓ {files[s.source]!.name}</p>}
             </div>
@@ -477,7 +477,7 @@ export default function UploadPage() {
               <label style={{ fontSize: 12, color: "#cdd9f0", fontWeight: 600 }}>
                 {s.label} <span style={{ color: "var(--muted)", fontWeight: 400, fontSize: 11 }}>({s.hint})</span>
               </label>
-              <input type="file" accept={s.accept} style={{ fontSize: 12, color: "#bcd", display: "block", marginTop: 6, width: "100%" }}
+              <input type="file" accept={s.accept} className="file-gold" style={{ fontSize: 12, display: "block", marginTop: 6, width: "100%" }}
                 onChange={(e) => setFiles((f) => ({ ...f, [s.key]: e.target.files?.[0] ?? null }))} />
               {files[s.key] && <p style={{ marginTop: 6, fontSize: 11, color: "var(--gold)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>✓ {files[s.key]!.name}</p>}
             </div>
