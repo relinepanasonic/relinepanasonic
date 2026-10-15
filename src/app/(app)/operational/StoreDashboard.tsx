@@ -9,6 +9,7 @@ import {
 import { createClient } from "@/lib/supabase/client";
 import Loader from "@/components/Loader";
 import { useLang } from "@/lib/financeI18n";
+import { fmtDate, fmtDateTime } from "@/lib/dates";
 import { useTableSort } from "@/hooks/useTableSort";
 import SortableHeader from "@/components/SortableHeader";
 import type { CityDetailRow } from "./IndonesiaMap";
@@ -27,7 +28,6 @@ const PALETTE = [GOLD, BLUE, GOLD_L, BLUE_L, BLUE_PALE, GOLD_D, BLUE_D, "#f5e6a8
 
 const rpFull = (n: number) => "Rp " + Math.round(n || 0).toLocaleString("id-ID");
 const numFull = (n: number) => Math.round(n || 0).toLocaleString("id-ID");
-const fmtDate = (iso: string) => new Date(iso + "T00:00:00").toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" });
 const fmtHours = (h: number | null) => h == null ? "—" : h < 48 ? `${h.toFixed(1)} jam` : `${(h / 24).toFixed(1)} hari`;
 const fmtDays = (d: number | null) => d == null ? "—" : `${d.toFixed(1)} hari`;
 
@@ -245,9 +245,7 @@ type DetailRow = {
 };
 function fmtDT(s: string | null): string {
   if (!s) return "—";
-  const d = new Date(s.replace(" ", "T"));
-  if (Number.isNaN(d.getTime())) return "—";
-  return d.toLocaleString("id-ID", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
+  return fmtDateTime(s);
 }
 function slaFor(paid: string | null, completed: string | null): string {
   if (!paid || !completed) return "—";

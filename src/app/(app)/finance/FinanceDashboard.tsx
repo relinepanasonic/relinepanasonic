@@ -11,6 +11,7 @@ import { useLang } from "@/lib/financeI18n";
 import { useTableSort } from "@/hooks/useTableSort";
 import SortableHeader from "@/components/SortableHeader";
 import { sortByBucket, bucketAxisLabel } from "@/lib/timeBuckets";
+import { fmtDate } from "@/lib/dates";
 
 const MONTH_ORDER = ["Baseline","Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"];
 const WEEKS = ["Week 1","Week 2","Week 3","Week 4","Week 5"];
@@ -28,7 +29,6 @@ const rpC = (n: number) => {
   return "Rp " + Math.round(v);
 };
 const rpFull = (n: number) => "Rp " + Math.round(n || 0).toLocaleString("id-ID");
-const fmtDate = (iso: string) => new Date(iso + "T00:00:00").toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" });
 
 type Kpis = {
   sales: number; promotion_cost: number; refund: number; delivery_cost: number;

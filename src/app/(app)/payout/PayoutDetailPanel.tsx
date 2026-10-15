@@ -5,6 +5,7 @@ import type { createClient } from "@/lib/supabase/client";
 import Loader from "@/components/Loader";
 import SortableHeader from "@/components/SortableHeader";
 import { useTableSort } from "@/hooks/useTableSort";
+import { fmtDate } from "@/lib/dates";
 
 // Payout Detail: the SKUs behind one payout — quantity, Modal (cost price) and
 // quantity x Modal, the grand total, and the CSV for the ERP. The lines are a
@@ -12,7 +13,6 @@ import { useTableSort } from "@/hooks/useTableSort";
 
 type Supabase = ReturnType<typeof createClient>;
 const rpFull = (n: number) => "Rp " + Math.round(n || 0).toLocaleString("id-ID");
-const fmtDate = (iso: string | null) => (iso ? new Date(iso.slice(0, 10) + "T00:00:00").toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" }) : "—");
 
 type Batch = {
   id: string; payout_no: string | null; store_name: string; dealer_city: string | null;

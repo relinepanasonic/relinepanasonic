@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import FinOpsUploadCards from "./FinOpsUploadCards";
+import { fmtDateTime } from "@/lib/dates";
 import { MONTH_LIST, type DataSource } from "@/lib/parse";
 
 export const dynamic = "force-dynamic";
@@ -372,9 +373,7 @@ export default function UploadPage() {
   const isBaseline = form.bulan === BASELINE;
 
   function fmtWhen(iso: string): string {
-    const d = new Date(iso);
-    return d.toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" })
-      + " " + d.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" });
+    return fmtDateTime(iso);
   }
 
   return (

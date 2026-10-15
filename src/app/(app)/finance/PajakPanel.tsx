@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import Loader from "@/components/Loader";
 import SortableHeader from "@/components/SortableHeader";
 import { useTableSort } from "@/hooks/useTableSort";
+import { fmtDate } from "@/lib/dates";
 
 // Pajak sub page of Finance Detail: the tax (PPh 22) Shopee withholds, per
 // transaction and per SKU (product), with a drawer for each:
@@ -25,7 +26,6 @@ const rpC = (n: number) => {
   return "Rp " + Math.round(v);
 };
 const pctStr = (tax: number, base: number) => (base > 0 ? ((Math.abs(tax) / base) * 100).toFixed(2) + "%" : "—");
-const fmtDate = (iso: string | null) => (iso ? new Date(iso + "T00:00:00").toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" }) : "—");
 
 type Summary = {
   kpis: { tax: number; tax_base: number; sales: number; orders: number; taxed_orders: number; rate: number | null };

@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { createClient } from "@/lib/supabase/client";
 import { WORKSPACES } from "@/lib/workspace";
+import { fmtDate } from "@/lib/dates";
 
 export const dynamic = "force-dynamic";
 
@@ -304,7 +305,7 @@ export default function UsersPage() {
                       {ROLE_LABEL[inv.role] || inv.role}{inv.store_name ? ` · ${inv.store_name}` : ""}
                     </div>
                   </div>
-                  <div style={{ fontSize: 11, color: "#7b8db0" }}>Expires {new Date(inv.expires_at).toLocaleDateString()}</div>
+                  <div style={{ fontSize: 11, color: "#7b8db0" }}>Expires {fmtDate(inv.expires_at)}</div>
                   <button onClick={() => copyText(url)}
                     style={{ padding: "5px 12px", borderRadius: 8, border: "1px solid rgba(201,162,39,0.3)", background: "rgba(201,162,39,0.1)", color: "#c9a227", fontSize: 12, cursor: "pointer" }}>
                     Copy Link

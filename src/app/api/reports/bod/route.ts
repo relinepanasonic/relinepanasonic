@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { fmtDate } from "@/lib/dates";
 import { renderToBuffer } from "@react-pdf/renderer";
 import { createClient } from "@/lib/supabase/server";
 import {
@@ -73,13 +74,11 @@ export async function POST(req: NextRequest) {
 
   const scopeLabel = dealer || city || t.scopeAllDealers;
   const periodLabel = periodOrAllLabel(lang, f.year || "", quarter || "", month || "", week);
-  const dateLocale = lang === "en" ? "en-US" : lang === "jp" ? "ja-JP" : "id-ID";
-
   const buffer = await renderToBuffer(
     BodReportDocument({
       scopeLabel,
       periodLabel,
-      generatedAt: new Date().toLocaleDateString(dateLocale, { day: "2-digit", month: "long", year: "numeric" }),
+      generatedAt: fmtDate(new Date(), "Asia/Jakarta"), // server clock, shown in Jakarta time
       scope: { year: f.year || "", quarter: quarter || "", month: month || "", week: week || "", city: city || "", dealer: dealer || "" },
       current,
       previous: (prevRes.data as Summary) || null,

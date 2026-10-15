@@ -5,6 +5,7 @@ import type { createClient } from "@/lib/supabase/client";
 import Loader from "@/components/Loader";
 import SortableHeader from "@/components/SortableHeader";
 import { useTableSort } from "@/hooks/useTableSort";
+import { fmtDate } from "@/lib/dates";
 
 // Earning: the Finance "Daily Transaction Detail" per dealer, one row per
 // fund-release day, with a check box in the first column. Ticked days become a
@@ -15,7 +16,6 @@ type Supabase = ReturnType<typeof createClient>;
 const MONTH_ORDER = ["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"];
 const WEEKS = ["Week 1", "Week 2", "Week 3", "Week 4", "Week 5"];
 const rpFull = (n: number) => "Rp " + Math.round(n || 0).toLocaleString("id-ID");
-const fmtDate = (iso: string) => new Date(iso + "T00:00:00").toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" });
 
 type Row = {
   day: string; orders: number; sales: number; promotion_cost: number; marketplace_fee: number;
