@@ -2,66 +2,54 @@
 
 import { useState } from "react";
 import type { createClient } from "@/lib/supabase/client";
+import ImageGuideModal from "@/components/ImageGuideModal";
+import { GUIDE } from "@/lib/uploadGuides";
 
-// Two self-contained upload cards — Finance Detail (Shopee "Laporan
-// Penghasilan") and Operational Performance (Shopee "Order.completed") — each
-// with its own Year / Month / City / Dealer, its own file and its own Upload
-// button, side by side. Each posts to its own endpoint.
+// Two self-contained upload cards — Earning (Shopee "Laporan Penghasilan") and
+// Demographic (Shopee "Order.completed") — each with its own Year / Month /
+// City / Dealer, its own file and its own Upload button, side by side. Each
+// posts to its own endpoint. No description text: the image guide shows how to
+// download the file from Shopee.
 
 const MONTHS = ["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"];
 const THIS_YEAR = new Date().getFullYear();
 
 type Supabase = ReturnType<typeof createClient>;
 type CityRow = { value: string; pic: string | null };
+type UploadJson = { rows?: number; product_lines?: number; unreconciled_orders?: number; error?: string };
 
 export default function FinOpsUploadCards({ supabase, clientId, cities, onDone }: {
   supabase: Supabase; clientId: string; cities: CityRow[]; onDone: () => void;
 }) {
   return (
     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(min(100%,420px),1fr))", gap: 20, marginTop: 20, alignItems: "start" }}>
-      <section>
-        <SectionTitle title="Finance Detail" tiers="Super Admin | Admin" />
-        <UploadCard
-          supabase={supabase} clientId={clientId} cities={cities} onDone={onDone}
-          heading="Upload Keuangan"
-          endpoint="/api/finance/upload"
-          fileLabel="Income Report"
-          fileHint="(Laporan Penghasilan)"
-          manualHref="/manuals/Manual-Book-Ambil-Report-Keuangan-Shopee.pdf"
-          intro={<>Upload the Shopee &quot;Laporan Penghasilan&quot; (Income) export — the &quot;Income&quot; or &quot;Penghasilan&quot; sheet is read automatically, so the Excel file can be uploaded as it is (no CSV needed). The newer &quot;Penghasilan&quot; layout also gives real per-product costs (and Pajak) for Detail Product Profit. Week is auto-detected per transaction from its release date (Week 1 = days 1–7 of the month you pick, Week 5 may spill a few days into the next month).</>}
-          okMessage={(j) => `✓ ${j.rows} transactions imported${j.products ? ` · ${j.products} product rows (real per-product costs + Pajak)` : ""}`}
-        />
-      </section>
-      <section>
-        <SectionTitle title="Operational Performance" tiers="Super Admin | Admin" />
-        <UploadCard
-          supabase={supabase} clientId={clientId} cities={cities} onDone={onDone}
-          heading="Upload Operational Performance"
-          endpoint="/api/store/upload"
-          fileLabel="Order Report"
-          fileHint="(Order.completed)"
-          intro={<>Upload the Shopee &quot;Order.completed&quot; (order-level) export — the sheet is read automatically. Week is auto-detected per order from its completion date (Week 1 = days 1–7 of the month you pick).</>}
-          okMessage={(j) => `✓ ${j.rows} order lines imported`}
-        />
-      </section>
+      <UploadCard
+        supabase={supabase} clientId={clientId} cities={cities} onDone={onDone}
+        title="Earning" roles="Super Admin | Admin"
+        endpoint="/api/finance/upload"
+        fileLabel="Earning" fileHint="(Laporan Penghasilan)"
+        guide={GUIDE.finance}
+        okMessage={(j) => [
+          `✓ ${j.rows} rows${j.product_lines ? ` · ${j.product_lines} product lines (real per-product costs)` : ""}`,
+          ...(j.unreconciled_orders ? [`⚠ ${j.unreconciled_orders} order(s) do not add up to Shopee's Total Penghasilan — check the file`] : []),
+        ]}
+      />
+      <UploadCard
+        supabase={supabase} clientId={clientId} cities={cities} onDone={onDone}
+        title="Demographic" roles="Super Admin | Admin"
+        endpoint="/api/store/upload"
+        fileLabel="Order Completed" fileHint="(Order.completed)"
+        guide={GUIDE.order}
+        okMessage={(j) => [`✓ ${j.rows} rows`]}
+      />
     </div>
   );
 }
 
-function SectionTitle({ title, tiers }: { title: string; tiers: string }) {
-  return (
-    <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap", margin: "0 0 8px 4px" }}>
-      <span style={{ fontSize: 16, fontWeight: 800, color: "var(--gold)" }}>{title}</span>
-      <span style={{ fontSize: 12, color: "var(--muted)" }}>{tiers}</span>
-    </div>
-  );
-}
-
-function UploadCard({ supabase, clientId, cities, onDone, heading, endpoint, fileLabel, fileHint, intro, manualHref, okMessage }: {
+function UploadCard({ supabase, clientId, cities, onDone, title, roles, endpoint, fileLabel, fileHint, guide, okMessage }: {
   supabase: Supabase; clientId: string; cities: CityRow[]; onDone: () => void;
-  heading: string; endpoint: string; fileLabel: string; fileHint: string;
-  intro: React.ReactNode; manualHref?: string;
-  okMessage: (j: { rows?: number; products?: number }) => string;
+  title: string; roles: string; endpoint: string; fileLabel: string; fileHint: string; guide: string;
+  okMessage: (j: UploadJson) => string[];
 }) {
   const [year, setYear] = useState(THIS_YEAR);
   const [bulan, setBulan] = useState("");
@@ -70,7 +58,7 @@ function UploadCard({ supabase, clientId, cities, onDone, heading, endpoint, fil
   const [dealers, setDealers] = useState<string[]>([]);
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
-  const [log, setLog] = useState("");
+  const [log, setLog] = useState<string[]>([]);
 
   async function pickCity(c: string) {
     setCity(c); setDealer("");
@@ -81,10 +69,10 @@ function UploadCard({ supabase, clientId, cities, onDone, heading, endpoint, fil
   }
 
   async function submit() {
-    if (!clientId) { setLog("✗ Workspace not ready."); return; }
-    if (!bulan || !city || !dealer) { setLog("✗ Pick Month, City and Dealer first."); return; }
-    if (!file) { setLog("✗ Choose a file first."); return; }
-    setBusy(true); setLog("");
+    if (!clientId) { setLog(["✗ Workspace not ready."]); return; }
+    if (!bulan || !city || !dealer) { setLog(["✗ Pick Month, City and Dealer first."]); return; }
+    if (!file) { setLog(["✗ Choose a file first."]); return; }
+    setBusy(true); setLog([]);
     const fd = new FormData();
     fd.append("file", file);
     fd.append("client_id", clientId);
@@ -95,26 +83,19 @@ function UploadCard({ supabase, clientId, cities, onDone, heading, endpoint, fil
     }));
     try {
       const res = await fetch(endpoint, { method: "POST", body: fd });
-      const j = await res.json().catch(() => ({}));
+      const j: UploadJson = await res.json().catch(() => ({}));
       if (res.ok) { setLog(okMessage(j)); setFile(null); onDone(); }
-      else setLog("✗ " + (j.error || `Upload failed (${res.status})`));
-    } catch (e) { setLog("✗ " + String(e)); }
+      else setLog(["✗ " + (j.error || `Upload failed (${res.status})`)]);
+    } catch (e) { setLog(["✗ " + String(e)]); }
     setBusy(false);
   }
 
   return (
     <div className="panel" style={{ margin: 0 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12, marginBottom: 4 }}>
-        <h3 style={{ margin: 0 }}>{heading}</h3>
-        {manualHref && (
-          <a href={manualHref} download style={{
-            display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 700, textDecoration: "none",
-            color: "var(--navy-deep)", background: "linear-gradient(135deg,var(--gold),var(--gold-soft))",
-            padding: "8px 14px", borderRadius: 999,
-          }}>⬇ Download Cara Ambil Report Keuangan dari Shopee</a>
-        )}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 8, marginBottom: 14 }}>
+        <h3 style={{ margin: 0 }}>{title}</h3>
+        <span style={{ fontSize: 12, color: "var(--muted)" }}>{roles}</span>
       </div>
-      <div className="hint" style={{ marginBottom: 16 }}>{intro}</div>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 14, marginBottom: 14 }}>
         <Field label="Year">
@@ -143,10 +124,11 @@ function UploadCard({ supabase, clientId, cities, onDone, heading, endpoint, fil
       </div>
 
       <div style={{ padding: 16, border: "1px dashed rgba(201,162,39,.35)", borderRadius: 14, background: "rgba(15,32,64,.4)", marginBottom: 20 }}>
-        <label style={{ fontSize: 12, color: "#cdd9f0", fontWeight: 600 }}>
+        <label style={{ fontSize: 12, color: "#cdd9f0", fontWeight: 600, display: "block", marginBottom: 4 }}>
           {fileLabel} <span style={{ color: "var(--muted)", fontWeight: 400, fontSize: 11 }}>{fileHint}</span>
         </label>
-        <input type="file" accept=".xlsx,.xls" style={{ fontSize: 12, color: "#bcd", display: "block", marginTop: 6, width: "100%" }}
+        <ImageGuideModal image={guide} />
+        <input type="file" accept=".xlsx,.xls" style={{ fontSize: 12, color: "#bcd", display: "block", width: "100%" }}
           onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
         {file && <p style={{ marginTop: 6, fontSize: 11, color: "var(--gold)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>✓ {file.name}</p>}
       </div>
@@ -157,9 +139,11 @@ function UploadCard({ supabase, clientId, cities, onDone, heading, endpoint, fil
         </button>
       </div>
 
-      {log && (
-        <div style={{ background: "rgba(7,13,26,.8)", border: "1px solid var(--line)", borderRadius: 12, padding: 16, fontFamily: "monospace", fontSize: 12, marginTop: 16, color: log.startsWith("✓") ? "var(--gold)" : "#f87171", wordBreak: "break-word" }}>
-          {log}
+      {log.length > 0 && (
+        <div style={{ background: "rgba(7,13,26,.8)", border: "1px solid var(--line)", borderRadius: 12, padding: 16, fontFamily: "monospace", fontSize: 12, marginTop: 16, wordBreak: "break-word" }}>
+          {log.map((l, i) => (
+            <div key={i} style={{ color: l.startsWith("✓") ? "var(--gold)" : l.startsWith("⚠") ? "#fbbf24" : "#f87171", marginBottom: 4 }}>{l}</div>
+          ))}
         </div>
       )}
     </div>

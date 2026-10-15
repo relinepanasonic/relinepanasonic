@@ -140,7 +140,7 @@ export default function PayoutDetailPanel({ supabase, batchId, onSelect, onBack 
             {(b.qty_missing > 0 || b.modal_missing > 0) && (
               <div style={{ marginTop: 10, fontSize: 12.5, color: "#fbbf24", lineHeight: 1.55 }}>
                 {b.qty_missing > 0 && <div>⚠ {b.qty_missing} SKU line(s) have no quantity: their orders are not in the Operational upload (Order.completed). Upload it for this dealer and month, then cancel and proceed this payout again.</div>}
-                {b.modal_missing > 0 && <div>⚠ {b.modal_missing} SKU line(s) have no Modal price: enter it in Finance Detail → Modal Product, then cancel and proceed this payout again.</div>}
+                {b.modal_missing > 0 && <div>⚠ {b.modal_missing} SKU line(s) have no Modal price: enter it in Earning → Modal Product, then cancel and proceed this payout again.</div>}
               </div>
             )}
           </div>

@@ -40,8 +40,8 @@ const BADGES: { key: string; label: string; color: string }[] = [
   { key: "ads",    label: "Ads",        color: "#f59e0b" },
   { key: "gmvmax", label: "GMV Auto",   color: "#a855f7" },
   { key: "group",  label: "Group Ads",  color: "#ec4899" },
-  { key: "finance", label: "Finance",   color: "#14b8a6" },
-  { key: "orders",  label: "Orders",    color: "#06b6d4" },
+  { key: "finance", label: "Earning",   color: "#14b8a6" },
+  { key: "orders",  label: "Demographic", color: "#06b6d4" },
 ];
 function subKey(u: UploadRow): string {
   if (u.source !== "ads") return u.source;
@@ -49,8 +49,6 @@ function subKey(u: UploadRow): string {
   return "ads";
 }
 
-const idr = (n: number) => "Rp " + new Intl.NumberFormat("id-ID", { notation: "compact", maximumFractionDigits: 2 }).format(n || 0);
-const num = (n: number) => new Intl.NumberFormat("id-ID").format(Math.round(n || 0));
 
 function toISO(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
@@ -107,7 +105,6 @@ export default function UploadPage() {
   const [uploads, setUploads] = useState<UploadRow[]>([]);
   const [coverage, setCoverage] = useState<Record<string, Coverage>>({});
   const [dealerRows, setDealerRows] = useState<DealerRow[]>([]);
-  const [baselineDealers, setBaselineDealers] = useState<Omit<DealerRow, "trend">[]>([]);
   const [flt,     setFlt]     = useState({ year: "", month: "", week: "", city: "", dealer: "", source: "" }); // city/source kept for reset compat
 
   // load uploads + what each one actually contains
@@ -163,14 +160,10 @@ export default function UploadPage() {
 
       loadUploads(cid);
 
-      // real per-dealer analytics — same source as the Dashboard's
-      // "Detail Data per Dealer" panel, not raw upload-metadata counts.
+      // dealer -> city lookup for the Upload Log (same source as the Dashboard)
       const { data: snap } = await supabase.rpc("get_dashboard_snapshot");
       setDealerRows(((snap as { dealers?: DealerRow[] } | null)?.dealers) || []);
 
-      // Same shape, but Month Awal (pre-project baseline) instead of live data.
-      const { data: base } = await supabase.rpc("baseline_dealers", { p_client_id: cid });
-      setBaselineDealers((base as Omit<DealerRow, "trend">[]) || []);
     })();
   }, [supabase, loadUploads]);
 
@@ -504,82 +497,8 @@ export default function UploadPage() {
         )}
       </div>
 
-      {/* ───── Finance Detail + Operational Performance: own cards ───── */}
+      {/* ───── Earning + Demographic: own cards ───── */}
       <FinOpsUploadCards supabase={supabase} clientId={clientId} cities={cities} onDone={() => loadUploads(clientId)} />
-
-      {/* ───── Data per Dealer ───── */}
-      {dealerRows.length > 0 && (
-        <div className="panel" style={{ marginTop: 18 }}>
-          <h3 style={{ margin: "0 0 4px" }}>Data per Dealer</h3>
-          <div className="hint">Sorted by sales — mirrors the Dashboard&apos;s Detail Data per Dealer.</div>
-          <div className="tbl-wrap" style={{ marginTop: 14, maxHeight: 440 }}>
-            <table className="tbl">
-              <thead>
-                <tr>
-                  <th>Dealer</th><th style={{ width: 90 }}>Trend</th><th>City</th><th className="num">Sales</th><th className="num">Traffic</th>
-                  <th className="num">In-Cart</th><th className="num">Cart Rate</th><th className="num">Ads Cost</th><th className="num">ROAS</th>
-                </tr>
-              </thead>
-              <tbody>
-                {dealerRows.map((r, i) => {
-                  const cr = r.traffic ? (r.in_cart / r.traffic) * 100 : 0;
-                  return (
-                    <tr key={i}>
-                      <td style={{ fontWeight: 600 }}>{r.store_name}</td>
-                      <td><Sparkline id={`up-spark-${i}`} points={(r.trend || []).map((t) => t.sales)} /></td>
-                      <td>{r.city || "—"}</td>
-                      <td className="num">{idr(r.sales)}</td>
-                      <td className="num">{num(r.traffic)}</td>
-                      <td className="num">{num(r.in_cart)}</td>
-                      <td className="num">{cr.toFixed(1)}%</td>
-                      <td className="num">{idr(r.ad_cost)}</td>
-                      <td className="num"><span className={`pill ${!r.roas ? "" : r.roas >= 3 ? "good" : r.roas >= 1 ? "warn" : "bad"}`}>{r.roas ? r.roas.toFixed(2) + "×" : "—"}</span></td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* ───── Baseline Dealer ───── */}
-      {baselineDealers.length > 0 && (
-        <div className="panel" style={{ marginTop: 18 }}>
-          <h3 style={{ margin: "0 0 4px" }}>Baseline Dealer</h3>
-          <div className="hint">Pre-project snapshot (&quot;Month Awal&quot;) per dealer — same columns as Data per Dealer above.</div>
-          <div className="tbl-wrap" style={{ marginTop: 14, maxHeight: 440 }}>
-            <table className="tbl">
-              <thead>
-                <tr>
-                  <th>Dealer</th><th style={{ width: 90 }}>Trend</th><th>City</th><th className="num">Sales</th><th className="num">Traffic</th>
-                  <th className="num">In-Cart</th><th className="num">Cart Rate</th><th className="num">Ads Cost</th><th className="num">ROAS</th>
-                </tr>
-              </thead>
-              <tbody>
-                {baselineDealers.map((r, i) => {
-                  const cr = r.traffic ? (r.in_cart / r.traffic) * 100 : 0;
-                  return (
-                    <tr key={i}>
-                      <td style={{ fontWeight: 600 }}>{r.store_name}</td>
-                      {/* Baseline is one snapshot, not a series — Sparkline
-                          already renders blank for fewer than 2 points. */}
-                      <td><Sparkline id={`base-spark-${i}`} points={[]} /></td>
-                      <td>{r.city || "—"}</td>
-                      <td className="num">{idr(r.sales)}</td>
-                      <td className="num">{num(r.traffic)}</td>
-                      <td className="num">{num(r.in_cart)}</td>
-                      <td className="num">{cr.toFixed(1)}%</td>
-                      <td className="num">{idr(r.ad_cost)}</td>
-                      <td className="num"><span className={`pill ${!r.roas ? "" : r.roas >= 3 ? "good" : r.roas >= 1 ? "warn" : "bad"}`}>{r.roas ? r.roas.toFixed(2) + "×" : "—"}</span></td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
 
       {/* ───── Upload Log ───── */}
       <div className="panel" style={{ marginTop: 18 }}>
@@ -710,35 +629,5 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
       <label>{label}</label>
       {children}
     </div>
-  );
-}
-
-function Sparkline({ id, points, width = 84, height = 30 }: { id: string; points: number[]; width?: number; height?: number }) {
-  if (points.length < 2) return <span style={{ display: "inline-block", width, height }} />;
-  const pad = 4;
-  const max = Math.max(...points), min = Math.min(...points);
-  const range = max - min || 1;
-  const stepX = (width - pad * 2) / (points.length - 1);
-  const coords = points.map((p, i) => [pad + i * stepX, pad + (height - pad * 2) * (1 - (p - min) / range)] as const);
-  const linePath = coords.map(([x, y], i) => `${i === 0 ? "M" : "L"} ${x.toFixed(1)} ${y.toFixed(1)}`).join(" ");
-  const areaPath = `${linePath} L ${coords[coords.length - 1][0].toFixed(1)} ${height} L ${coords[0][0].toFixed(1)} ${height} Z`;
-  const up = points[points.length - 1] >= points[0];
-  const color = up ? "#4ade80" : "#f87171";
-  const [lastX, lastY] = coords[coords.length - 1];
-  return (
-    <svg width={width} height={height} style={{ display: "block" }}>
-      <defs>
-        <linearGradient id={`${id}-fill`} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%"   stopColor={color} stopOpacity={0.45} />
-          <stop offset="100%" stopColor={color} stopOpacity={0} />
-        </linearGradient>
-        <filter id={`${id}-glow`} x="-80%" y="-80%" width="260%" height="260%">
-          <feDropShadow dx="0" dy="0" stdDeviation="1.4" floodColor={color} floodOpacity="0.85" />
-        </filter>
-      </defs>
-      <path d={areaPath} fill={`url(#${id}-fill)`} stroke="none" />
-      <path d={linePath} fill="none" stroke={color} strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" />
-      <circle cx={lastX} cy={lastY} r={2.4} fill={color} filter={`url(#${id}-glow)`} />
-    </svg>
   );
 }
