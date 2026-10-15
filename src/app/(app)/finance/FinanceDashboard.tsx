@@ -1,5 +1,6 @@
 "use client";
 
+import { fmtDate } from "@/lib/dates";
 import { useEffect, useState, useCallback, useMemo, useId } from "react";
 import {
   BarChart, Bar, ComposedChart, Line, PieChart, Pie, Cell,
@@ -10,8 +11,7 @@ import Loader from "@/components/Loader";
 import { useLang } from "@/lib/financeI18n";
 import { useTableSort } from "@/hooks/useTableSort";
 import SortableHeader from "@/components/SortableHeader";
-import { sortByBucket, bucketAxisLabel } from "@/lib/timeBuckets";
-import { fmtDate } from "@/lib/dates";
+import { sortByBucket, bucketAxisLabel, bucketTooltipLabel } from "@/lib/timeBuckets";
 
 const MONTH_ORDER = ["Baseline","Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"];
 const WEEKS = ["Week 1","Week 2","Week 3","Week 4","Week 5"];
@@ -29,12 +29,24 @@ const rpC = (n: number) => {
   return "Rp " + Math.round(v);
 };
 const rpFull = (n: number) => "Rp " + Math.round(n || 0).toLocaleString("id-ID");
+// "Rp 518.301  19.2%": the % (of that day's Sales) sits right of the number, one size smaller
+function RpPct({ value, sales }: { value: number; sales: number }) {
+  return (
+    <>
+      {rpFull(value)}
+      <span style={{ display: "inline-block", minWidth: "3.9em", textAlign: "right", marginLeft: 6, fontSize: "calc(1em - 1px)", opacity: 0.75 }}>
+        {sales > 0 ? `${(value / sales * 100).toFixed(1)}%` : "—"}
+      </span>
+    </>
+  );
+}
 
 type Kpis = {
   sales: number; promotion_cost: number; refund: number; delivery_cost: number;
-  affiliate_cost: number; marketplace_fee: number; misc: number; tax: number; gross_profit: number; ads_cost: number;
+  affiliate_cost: number; marketplace_fee: number; misc: number; gross_profit: number; ads_cost: number;
 };
 type DailyRow = { tx_date: string; orders: number; sales: number; promotion_cost: number; marketplace_fee: number; net_income: number; refund: number };
+type DailyView = DailyRow & { pajak: number };
 type Summary = {
   kpis: Kpis;
   monthly: { month: string; sales: number; profit: number }[];
@@ -45,7 +57,7 @@ type Summary = {
   monthly_fee: { month: string; fee: number }[];
   monthly_discount: { month: string; discount: number }[];
   monthly_ads_cost: { month: string; ad_cost: number }[];
-  monthly_costs: { month: string; promotion_cost: number; refund: number; delivery_cost: number; affiliate_cost: number; marketplace_fee: number; misc: number; tax: number }[];
+  monthly_costs: { month: string; promotion_cost: number; refund: number; delivery_cost: number; affiliate_cost: number; marketplace_fee: number; misc: number }[];
   payment_method: { method: string; cnt: number }[];
   jasa_kirim: { service: string; cnt: number }[];
   daily: DailyRow[];
@@ -54,8 +66,36 @@ type ProductRow = {
   kode_produk: string; nama_produk: string | null; kode_variasi: string; nama_variasi: string | null;
   units_sold: number; total_sales: number; total_modal: number;
   promotion_cost: number; refund: number; delivery_cost: number; affiliate_cost: number;
-  marketplace_fee: number; tax: number; ads_cost: number; nett_profit: number;
-  cost_source?: "actual" | "estimate";
+  marketplace_fee: number; pajak: number; ads_cost: number; nett_profit: number;
+  costing: "real" | "mixed" | "estimated";
+};
+type FinanceProductRow = {
+  kode_produk: string; nama_produk: string | null; orders: number; sales: number;
+  promotion_cost: number; refund: number; delivery_cost: number; affiliate_cost: number;
+  marketplace_fee: number; pajak: number; other: number; net_income: number;
+  // from the Order Completed upload (migration 0131); units null = none of this product's orders found there
+  units: number | null; units_orders: number; sales_with_units: number;
+};
+type FinanceProductView = FinanceProductRow & { units_per_order: number | null };
+// finance lines with no Order Completed match, grouped by the month the order was created (YYMM from the order number)
+type MissingUnits = { ym: string; orders: number; sales: number };
+type FinanceProducts = { rows: FinanceProductRow[]; missing?: MissingUnits[]; orders_total: number; orders_with_detail: number };
+type NotPaidRow = {
+  order_no: string; created_at: string | null; completed_at: string | null; days_waiting: number | null;
+  payment_method: string | null; order_value: number | null; units: number; return_status: string | null; products: string | null;
+};
+type NotPaidData = {
+  rows: NotPaidRow[]; not_paid_orders: number; not_paid_value: number; orders_checked: number;
+  window_from: string | null; window_to: string | null;
+};
+type UnconnectedRow = {
+  order_no: string; order_date: string | null; release_date: string | null; products: string | null;
+  sales: number; net_income: number; reason: "month_missing" | "not_in_file" | "unknown";
+};
+type UnconnectedData = {
+  rows: UnconnectedRow[]; orders_total: number; orders_connected: number;
+  unconnected_orders: number; unconnected_net: number;
+  by_reason: Partial<Record<UnconnectedRow["reason"], { orders: number; net: number }>>;
 };
 type ProductDetail = {
   rows: ProductRow[]; total_modal: number; monthly_modal: { month: string; modal: number }[];
@@ -71,9 +111,13 @@ export default function FinanceDashboard({ clientId, refreshKey }: { clientId: s
   const [sel, setSel] = useState({ year: "", month: "", week: "", city: "", store: "" });
   const [d, setD] = useState<Summary | null>(null);
   const [pd, setPd] = useState<ProductDetail | null>(null);
+  const [fp, setFp] = useState<FinanceProducts | null>(null);
   const [loading, setLoading] = useState(false);
   const [drill, setDrill] = useState<string | null>(null);
-  const [activeTable, setActiveTable] = useState<"transaksi" | "profit">("transaksi");
+  const [activeTable, setActiveTable] = useState<"transaksi" | "profit" | "notpaid" | "unconnected">("transaksi");
+  const [np, setNp] = useState<NotPaidData | null>(null);
+  const [uc, setUc] = useState<UnconnectedData | null>(null);
+  const [dailyPajak, setDailyPajak] = useState<Record<string, number>>({});
 
   const checkData = useCallback(async () => {
     if (!clientId) return;
@@ -82,21 +126,20 @@ export default function FinanceDashboard({ clientId, refreshKey }: { clientId: s
     // silently dropped later months once total uploads grew past that)
     const { data: f } = await supabase.rpc("finance_filters");
     setFilters((f as FinanceFilters) || { years: [], months: [] });
-
-    // Offer the user's dealers even when nothing is uploaded yet, so the page
-    // opens with empty charts instead of being blocked.
+    // dealers this user may see: those with data + the role-scoped dealer list of the main dashboard,
+    // so the page opens (with empty charts) even before anything is uploaded
     const { data: df } = await supabase.rpc("dashboard_filters");
-    const known = new Set((f as { stores?: { store_name: string }[] } | null)?.stores?.map((x) => x.store_name) ?? []);
+    const known = new Set(((f as { stores?: { store_name: string }[] } | null)?.stores || []).map((x) => x.store_name));
     const extra = (((df as { dealers?: { value: string; city: string | null }[] } | null)?.dealers) || [])
       .filter((x) => !known.has(x.value)).map((x) => ({ city: x.city, store_name: x.value }));
-    setLinks([...((f as FinanceFilters)?.stores || []).map((x) => ({ city: x.city, store_name: x.store_name })), ...extra]);
+    setLinks([...(((f as { stores?: { store_name: string; city: string | null }[] } | null)?.stores) || []).map((x) => ({ city: x.city, store_name: x.store_name })), ...extra]);
   }, [supabase, clientId]);
 
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { checkData(); }, [checkData, refreshKey]);
 
   const load = useCallback(async () => {
-    if (!clientId || !sel.store) { setD(null); setPd(null); return; }
+    if (!clientId || !sel.store) { setD(null); setPd(null); setFp(null); setUc(null); setNp(null); setDailyPajak({}); return; }
     setLoading(true);
     const params = {
       p_year: sel.year ? Number(sel.year) : null,
@@ -105,12 +148,20 @@ export default function FinanceDashboard({ clientId, refreshKey }: { clientId: s
       p_city: sel.city || null,
       p_store: sel.store,
     };
-    const [{ data }, { data: pdata }] = await Promise.all([
+    const [{ data }, { data: pdata }, { data: fpdata }, { data: ucdata }, { data: dpdata }, { data: npdata }] = await Promise.all([
       supabase.rpc("finance_summary", params),
-      supabase.rpc("product_profit_detail", params),
+      supabase.rpc("product_profit_detail", params), // still feeds the Modal KPI and charts
+      supabase.rpc("finance_product_profit", params), // the Detail Product Profit table (migration 0130)
+      supabase.rpc("finance_unconnected_orders", params), // earnings with no Order Selesai row (migration 0133)
+      supabase.rpc("finance_daily_pajak", params), // Pajak per release date (migration 0134)
+      supabase.rpc("finance_not_paid_orders", params), // completed orders with no earning yet (migration 0135)
     ]);
     setD(data as Summary);
     setPd(pdata as ProductDetail);
+    setFp((fpdata as FinanceProducts) || null);
+    setUc((ucdata as UnconnectedData) || null);
+    setNp((npdata as NotPaidData) || null);
+    setDailyPajak(Object.fromEntries(((dpdata as { tx_date: string; pajak: number }[]) || []).map((x) => [x.tx_date, Number(x.pajak)])));
     setLoading(false);
   }, [supabase, clientId, sel]);
   // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -122,6 +173,15 @@ export default function FinanceDashboard({ clientId, refreshKey }: { clientId: s
   const storesForCity = useMemo(() => sel.city
     ? Array.from(new Set(links.filter((l) => l.city === sel.city).map((l) => l.store_name).filter(Boolean) as string[]))
     : Array.from(new Set(links.map((l) => l.store_name).filter(Boolean) as string[])), [links, sel.city]);
+
+  // Pajak is its own column; the finance summary's marketplace fee still contains it, so take it out here
+  const dailyRows = useMemo<DailyView[]>(
+    () => (d?.daily || []).map((r) => {
+      const pajak = dailyPajak[r.tx_date] ?? 0;
+      return { ...r, pajak, marketplace_fee: Math.max(r.marketplace_fee - pajak, 0) };
+    }),
+    [d, dailyPajak],
+  );
 
   function pickCity(city: string) { setSel((s) => ({ ...s, city, store: "" })); }
   // A dealer owner (or a one-dealer city) has exactly one option: pick it for them.
@@ -144,14 +204,13 @@ export default function FinanceDashboard({ clientId, refreshKey }: { clientId: s
   const deliverySeries = seriesFrom(d?.monthly_costs, "delivery_cost");
   const affiliateSeries = seriesFrom(d?.monthly_costs, "affiliate_cost");
   const feeSeries = seriesFrom(d?.monthly_costs, "marketplace_fee");
-  const taxSeries = seriesFrom(d?.monthly_costs, "tax");
 
   return (
     <div className="fin-compact">
       {/* filters — City + Dealer only at first; Year/Month/Week auto-reveal once a store is picked */}
       <div className="filterbar">
         <Sel label={t("City")} value={sel.city} onChange={pickCity} opts={cities} all={t("All Cities")} />
-        <Sel label={t("Store")} value={sel.store} onChange={(v) => setSel((s) => ({ ...s, store: v }))} opts={storesForCity} all={t("Pick a store…")} />
+        <Sel label={t("Dealer")} value={sel.store} onChange={(v) => setSel((s) => ({ ...s, store: v }))} opts={storesForCity} all={t("Pick a dealer…")} />
         {sel.store && (
           <>
             <Sel label={t("Year")}  value={sel.year}  onChange={(v) => setSel((s) => ({ ...s, year: v }))}  opts={years.map(String)} all={t("All Years")} />
@@ -168,7 +227,7 @@ export default function FinanceDashboard({ clientId, refreshKey }: { clientId: s
           <div className="coming">
             <div className="big">🏬</div>
             <h3 style={{ fontSize: 18, color: "#fff", margin: 0 }}>{t("Choose Store")}</h3>
-            <p style={{ maxWidth: 420, margin: 0 }}>{t("Finance Detail is shown per store — pick a Store above to view its dashboard.")}</p>
+            <p style={{ maxWidth: 420, margin: 0 }}>{t("Earning is shown per store — pick a Store above to view its dashboard.")}</p>
           </div>
         </div>
       ) : (
@@ -183,13 +242,12 @@ export default function FinanceDashboard({ clientId, refreshKey }: { clientId: s
         <div className="kpi"><div className="kpi-icon">🏷️</div><div className="lbl">Total Modal Product</div><div className="val">{rpC(totalModal)}</div><MiniSparkline data={modalSeries} color={GOLD_L} /></div>
         <div className="kpi kpi-roas"><div className="kpi-icon">✅</div><div className="lbl">{t("Nett Profit")}</div><div className="val" style={{ color: nettProfit >= 0 ? undefined : "#f87171" }}>{rpC(nettProfit)}</div><MiniSparkline data={nettSeries} color={GOLD} /></div>
       </div>
-      <div className="kpi-grid kpi-grid-6">
+      <div className="kpi-grid kpi-grid-5">
         <div className="kpi kpi-cost"><div className="kpi-icon">🎟️</div><div className="lbl">{t("Promotion Cost")}</div><div className="val">{k ? rpC(k.promotion_cost) : "—"}</div><MiniSparkline data={promoSeries} color={BLUE} /></div>
         <div className="kpi kpi-cost"><div className="kpi-icon">↩️</div><div className="lbl">{t("Refund")}</div><div className="val">{k ? rpC(k.refund) : "—"}</div><MiniSparkline data={refundSeries} color={BLUE} /></div>
         <div className="kpi kpi-cost"><div className="kpi-icon">🚚</div><div className="lbl">{t("Delivery Cost")}</div><div className="val">{k ? rpC(k.delivery_cost) : "—"}</div><MiniSparkline data={deliverySeries} color={BLUE} /></div>
         <div className="kpi kpi-cost"><div className="kpi-icon">🤝</div><div className="lbl">{t("Affiliate Cost")}</div><div className="val">{k ? rpC(k.affiliate_cost) : "—"}</div><MiniSparkline data={affiliateSeries} color={BLUE} /></div>
         <div className="kpi kpi-cost"><div className="kpi-icon">🏪</div><div className="lbl">{t("Marketplace Fee")}</div><div className="val">{k ? rpC(k.marketplace_fee) : "—"}</div><MiniSparkline data={feeSeries} color={BLUE} /></div>
-        <div className="kpi kpi-cost"><div className="kpi-icon">🧾</div><div className="lbl">Pajak</div><div className="val">{k ? rpC(k.tax ?? 0) : "—"}</div><MiniSparkline data={taxSeries} color={BLUE} /></div>
       </div>
 
       {/* Gross Sales vs Nett Profit — monthly by default, or daily Gross
@@ -233,12 +291,21 @@ export default function FinanceDashboard({ clientId, refreshKey }: { clientId: s
       <div className="tbl-tabs">
         <button onClick={() => setActiveTable("transaksi")} style={tableTabBtn(activeTable === "transaksi")}>{t("Daily Transaction Detail")}</button>
         <button onClick={() => setActiveTable("profit")} style={tableTabBtn(activeTable === "profit")}>Detail Product Profit</button>
+        <button onClick={() => setActiveTable("notpaid")} style={tableTabBtn(activeTable === "notpaid")}>
+          {t("Not Paid Order")}
+        </button>
+        <button onClick={() => setActiveTable("unconnected")} style={tableTabBtn(activeTable === "unconnected")}>
+          {t("Not Connected")}{uc && uc.unconnected_orders > 0 && <span style={COUNT_BADGE}>{uc.unconnected_orders > 99 ? "99+" : uc.unconnected_orders}</span>}
+        </button>
       </div>
-
       {activeTable === "transaksi" ? (
-        <DailyTransactionTable rows={d?.daily || []} onRowClick={setDrill} t={t} />
+        <DailyTransactionTable rows={dailyRows} onRowClick={setDrill} t={t} />
+      ) : activeTable === "profit" ? (
+        <ProductProfitTable data={fp} t={t} />
+      ) : activeTable === "notpaid" ? (
+        <NotPaidTable data={np} t={t} />
       ) : (
-        <ProductProfitTable rows={pd?.rows || []} t={t} />
+        <NotConnectedTable data={uc} t={t} />
       )}
 
       {drill && (
@@ -251,8 +318,8 @@ export default function FinanceDashboard({ clientId, refreshKey }: { clientId: s
 }
 
 /* ── Daily Transaction Detail: universal sortable header ── */
-function DailyTransactionTable({ rows, onRowClick, t }: { rows: DailyRow[]; onRowClick: (day: string) => void; t: (k: string) => string }) {
-  const { sortedData, sortConfig, requestSort } = useTableSort<DailyRow>(rows);
+function DailyTransactionTable({ rows, onRowClick, t }: { rows: DailyView[]; onRowClick: (day: string) => void; t: (k: string) => string }) {
+  const { sortedData, sortConfig, requestSort } = useTableSort<DailyView>(rows);
   return (
     <div className="panel">
       <h3>{t("Daily Transaction Detail")}</h3>
@@ -265,8 +332,9 @@ function DailyTransactionTable({ rows, onRowClick, t }: { rows: DailyRow[]; onRo
             <SortableHeader label={t("Sales")} sortKey="sales" currentSort={sortConfig} onRequestSort={requestSort} className="num" />
             <SortableHeader label={t("Promotion Cost")} sortKey="promotion_cost" currentSort={sortConfig} onRequestSort={requestSort} className="num" />
             <SortableHeader label={t("Marketplace Fee")} sortKey="marketplace_fee" currentSort={sortConfig} onRequestSort={requestSort} className="num" />
-            <SortableHeader label={t("Net Income")} sortKey="net_income" currentSort={sortConfig} onRequestSort={requestSort} className="num" />
             <SortableHeader label={t("Refund")} sortKey="refund" currentSort={sortConfig} onRequestSort={requestSort} className="num" />
+            <SortableHeader label={t("Pajak")} sortKey="pajak" currentSort={sortConfig} onRequestSort={requestSort} className="num" />
+            <SortableHeader label={t("Net Income")} sortKey="net_income" currentSort={sortConfig} onRequestSort={requestSort} className="num" />
           </tr></thead>
           <tbody>
             {sortedData.map((r) => (
@@ -274,14 +342,15 @@ function DailyTransactionTable({ rows, onRowClick, t }: { rows: DailyRow[]; onRo
                 <td style={{ fontWeight: 600 }}>{fmtDate(r.tx_date)}</td>
                 <td className="num">{r.orders}</td>
                 <td className="num">{rpFull(r.sales)}</td>
-                <td className="num">{rpFull(r.promotion_cost)}</td>
-                <td className="num">{rpFull(r.marketplace_fee)}</td>
-                <td className="num" style={{ color: r.net_income >= 0 ? "#86efac" : "#f87171", fontWeight: 700 }}>{rpFull(r.net_income)}</td>
-                <td className="num">{rpFull(r.refund)}</td>
+                <td className="num"><RpPct value={r.promotion_cost} sales={r.sales} /></td>
+                <td className="num"><RpPct value={r.marketplace_fee} sales={r.sales} /></td>
+                <td className="num"><RpPct value={r.refund} sales={r.sales} /></td>
+                <td className="num"><RpPct value={r.pajak} sales={r.sales} /></td>
+                <td className="num" style={{ color: r.net_income >= 0 ? "#86efac" : "#f87171", fontWeight: 700 }}><RpPct value={r.net_income} sales={r.sales} /></td>
               </tr>
             ))}
             {sortedData.length === 0 && (
-              <tr><td colSpan={7} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>{t("No data for these filters")}</td></tr>
+              <tr><td colSpan={8} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>{t("No data for these filters")}</td></tr>
             )}
           </tbody>
         </table>
@@ -290,34 +359,46 @@ function DailyTransactionTable({ rows, onRowClick, t }: { rows: DailyRow[]; onRo
   );
 }
 
-/* ── Detail Product Profit: 13-column variant-level P&L, search + sortable ── */
-function ProductProfitTable({ rows, t }: { rows: ProductRow[]; t: (k: string) => string }) {
+/* ── Detail Product Profit: strictly from the finance upload (Shopee "Penghasilan" report) ──
+   One row per Shopee product ID — Sales is Harga Produk, every cost is Shopee's own number
+   for that product (migration 0130). No Product Performance (SPOS), Modal or Ads data. */
+function ProductProfitTable({ data, t }: { data: FinanceProducts | null; t: (k: string) => string }) {
   const [search, setSearch] = useState("");
+  const rows = data?.rows;
+
+  const withUnitsPerOrder = useMemo<FinanceProductView[]>(
+    () => (rows || []).map((r) => ({ ...r, units_per_order: r.units != null && r.units_orders > 0 ? r.units / r.units_orders : null })),
+    [rows],
+  );
 
   const filtered = useMemo(() => {
+    const all = withUnitsPerOrder;
     const q = search.trim().toLowerCase();
-    if (!q) return rows;
-    return rows.filter((r) =>
+    if (!q) return all;
+    return all.filter((r) =>
       (r.kode_produk || "").toLowerCase().includes(q) ||
-      (r.nama_produk || "").toLowerCase().includes(q) ||
-      (r.nama_variasi || "").toLowerCase().includes(q));
-  }, [rows, search]);
+      (r.nama_produk || "").toLowerCase().includes(q));
+  }, [withUnitsPerOrder, search]);
 
-  const { sortedData, sortConfig, requestSort } = useTableSort<ProductRow>(filtered, "total_sales");
+  const { sortedData, sortConfig, requestSort } = useTableSort<FinanceProductView>(filtered, "sales");
+
+  const total = data?.orders_total ?? 0;
+  const withDetail = data?.orders_with_detail ?? 0;
+  const cell = { whiteSpace: "nowrap" } as const;
 
   return (
     <div className="panel">
       <h3>Detail Product Profit</h3>
-      <div className="hint">
-        {rows.some((r) => r.cost_source === "actual")
-          ? "Rows marked Actual use the real per-product costs from Shopee's new Income file (Promotional, Refund, Delivery, Affiliate, Market Place Fee and Pajak). Rows marked Estimate have no Income rows yet, so the remaining store total is spread across them by their share of Sales."
-          : t("Modal and Ads Cost are real per-product numbers. Promotional, Refund, Delivery, Affiliate and Market Place Fee are not in the CSV per product, so each is the store total spread across products by their share of Sales (estimates per product, exact in total).")}
-      </div>
+      {total > 0 && withDetail < total && (
+        <div className="hint" style={{ marginTop: 6, color: "#fbbf24" }}>
+          {t("Product detail covers")} {withDetail.toLocaleString("id-ID")} / {total.toLocaleString("id-ID")} {t("orders")} — {t("older uploads have no per-product lines; upload the newer Penghasilan report for those months.")}
+        </div>
+      )}
 
       <div className="filterbar" style={{ marginTop: 4, marginBottom: 10 }}>
         <div className="fld" style={{ minWidth: 260 }}>
           <label>{t("Search")}</label>
-          <input type="text" placeholder={t("Product Code / Product Name / Variant Name")}
+          <input type="text" placeholder={t("Product Code / Product Name")}
             value={search} onChange={(e) => setSearch(e.target.value)}
             style={{ background: "rgba(10,22,40,.5)", border: "1px solid rgba(201,162,39,.2)", borderRadius: 8, padding: "8px 10px", color: "#e8edf8", fontSize: 13, width: "100%" }} />
         </div>
@@ -326,46 +407,239 @@ function ProductProfitTable({ rows, t }: { rows: ProductRow[]; t: (k: string) =>
         <table className="tbl tbl-sticky2">
           <thead><tr>
             <th className="sticky-col sticky-col-1"><span className="sticky-inner">{t("Product Name")}</span></th>
-            <th className="sticky-col sticky-col-2"><span className="sticky-inner">{t("Variant Name")}</span></th>
-            <th>{t("Product Code")}</th><th>{t("Variant Code")}</th>
-            <SortableHeader label={t("Product Sold")} sortKey="units_sold" currentSort={sortConfig} onRequestSort={requestSort} className="num" />
-            <SortableHeader label={t("Sales")} sortKey="total_sales" currentSort={sortConfig} onRequestSort={requestSort} className="num" />
-            <SortableHeader label="Total Modal Product" sortKey="total_modal" currentSort={sortConfig} onRequestSort={requestSort} className="num" />
+            <th>{t("Product Code")}</th>
+            <SortableHeader label={t("Orders")} sortKey="orders" currentSort={sortConfig} onRequestSort={requestSort} className="num" />
+            <SortableHeader label={t("Units Sold")} sortKey="units" currentSort={sortConfig} onRequestSort={requestSort} className="num" />
+            <SortableHeader label={t("Units / Order")} sortKey="units_per_order" currentSort={sortConfig} onRequestSort={requestSort} className="num" />
+            <SortableHeader label={t("Sales")} sortKey="sales" currentSort={sortConfig} onRequestSort={requestSort} className="num" />
             <SortableHeader label={t("Promotional Cost")} sortKey="promotion_cost" currentSort={sortConfig} onRequestSort={requestSort} className="num" />
             <SortableHeader label={t("Refund")} sortKey="refund" currentSort={sortConfig} onRequestSort={requestSort} className="num" />
             <SortableHeader label={t("Delivery Cost")} sortKey="delivery_cost" currentSort={sortConfig} onRequestSort={requestSort} className="num" />
             <SortableHeader label={t("Affiliate Cost")} sortKey="affiliate_cost" currentSort={sortConfig} onRequestSort={requestSort} className="num" />
             <SortableHeader label={t("Market Place Fee")} sortKey="marketplace_fee" currentSort={sortConfig} onRequestSort={requestSort} className="num" />
-            <SortableHeader label="Pajak" sortKey="tax" currentSort={sortConfig} onRequestSort={requestSort} className="num" />
-            <SortableHeader label={t("Ads Cost")} sortKey="ads_cost" currentSort={sortConfig} onRequestSort={requestSort} className="num" />
-            <SortableHeader label={t("Nett Profit")} sortKey="nett_profit" currentSort={sortConfig} onRequestSort={requestSort} className="num" />
-            <th className="num" style={{ whiteSpace: "nowrap" }} title={t("Nett Profit ÷ Sales × 100%")}>%</th>
-            <th title="Actual = real per-product costs from the Income file; Estimate = store total spread by share of sales">Costs</th>
+            <SortableHeader label={t("Pajak")} sortKey="pajak" currentSort={sortConfig} onRequestSort={requestSort} className="num" />
+            <SortableHeader label={t("Other")} sortKey="other" currentSort={sortConfig} onRequestSort={requestSort} className="num" />
+            <SortableHeader label={t("Nett Income")} sortKey="net_income" currentSort={sortConfig} onRequestSort={requestSort} className="num" />
+            <th className="num" style={cell} title={t("Nett Income ÷ Sales × 100%")}>%</th>
           </tr></thead>
           <tbody>
             {sortedData.map((r) => (
-              <tr key={`${r.kode_produk}::${r.kode_variasi}`}>
+              <tr key={r.kode_produk}>
                 <td className="sticky-col sticky-col-1" title={r.nama_produk || undefined}><span className="sticky-inner">{r.nama_produk || "—"}</span></td>
-                <td className="sticky-col sticky-col-2" title={r.nama_variasi || undefined}><span className="sticky-inner">{r.nama_variasi || "—"}</span></td>
                 <td style={{ fontFamily: "monospace", fontSize: 12, whiteSpace: "nowrap" }}>{r.kode_produk}</td>
-                <td style={{ fontFamily: "monospace", fontSize: 12, whiteSpace: "nowrap" }}>{r.kode_variasi}</td>
-                <td className="num" style={{ whiteSpace: "nowrap" }}>{r.units_sold.toLocaleString("id-ID")}</td>
-                <td className="num" style={{ whiteSpace: "nowrap" }}>{rpFull(r.total_sales)}</td>
-                <td className="num" style={{ whiteSpace: "nowrap" }}>{rpFull(r.total_modal)}</td>
-                <td className="num" style={{ whiteSpace: "nowrap" }}>{rpFull(r.promotion_cost)}</td>
-                <td className="num" style={{ whiteSpace: "nowrap" }}>{rpFull(r.refund)}</td>
-                <td className="num" style={{ whiteSpace: "nowrap" }}>{rpFull(r.delivery_cost)}</td>
-                <td className="num" style={{ whiteSpace: "nowrap" }}>{rpFull(r.affiliate_cost)}</td>
-                <td className="num" style={{ whiteSpace: "nowrap" }}>{rpFull(r.marketplace_fee)}</td>
-                <td className="num" style={{ whiteSpace: "nowrap" }}>{rpFull(r.tax ?? 0)}</td>
-                <td className="num" style={{ whiteSpace: "nowrap" }}>{rpFull(r.ads_cost)}</td>
-                <td className="num" style={{ whiteSpace: "nowrap", color: r.nett_profit >= 0 ? "#86efac" : "#f87171", fontWeight: 700 }}>{rpFull(r.nett_profit)}</td>
-                <td className="num" style={{ whiteSpace: "nowrap", color: r.nett_profit >= 0 ? "#86efac" : "#f87171", fontWeight: 700 }}>{r.total_sales > 0 ? `${(r.nett_profit / r.total_sales * 100).toFixed(1)}%` : "—"}</td>
-                <td style={{ whiteSpace: "nowrap", fontSize: 11, fontWeight: 700, color: r.cost_source === "actual" ? "#86efac" : "var(--muted)" }}>{r.cost_source === "actual" ? "Actual" : "Estimate"}</td>
+                <td className="num" style={cell}>{r.orders.toLocaleString("id-ID")}</td>
+                <td className="num" style={cell}
+                  title={r.units != null && r.sales_with_units < r.sales * 0.995 ? `${t("Units known for")} ${(r.sales_with_units / (r.sales || 1) * 100).toFixed(0)}% ${t("of this product's Sales")}` : undefined}>
+                  {r.units == null ? "—" : Math.round(r.units).toLocaleString("id-ID")}
+                  {r.units != null && r.sales_with_units < r.sales * 0.995 ? <span style={{ color: "#fbbf24" }}>*</span> : null}
+                </td>
+                <td className="num" style={cell}>{r.units_per_order == null ? "—" : r.units_per_order.toLocaleString("id-ID", { maximumFractionDigits: 1 })}</td>
+                <td className="num" style={cell}>{rpFull(r.sales)}</td>
+                <td className="num" style={cell}>{rpFull(r.promotion_cost)}</td>
+                <td className="num" style={cell}>{rpFull(r.refund)}</td>
+                <td className="num" style={cell}>{rpFull(r.delivery_cost)}</td>
+                <td className="num" style={cell}>{rpFull(r.affiliate_cost)}</td>
+                <td className="num" style={cell}>{rpFull(r.marketplace_fee)}</td>
+                <td className="num" style={cell}>{rpFull(r.pajak)}</td>
+                <td className="num" style={cell}>{rpFull(r.other)}</td>
+                <td className="num" style={{ ...cell, color: r.net_income >= 0 ? "#86efac" : "#f87171", fontWeight: 700 }}>{rpFull(r.net_income)}</td>
+                <td className="num" style={{ ...cell, color: r.net_income >= 0 ? "#86efac" : "#f87171", fontWeight: 700 }}>{r.sales > 0 ? `${(r.net_income / r.sales * 100).toFixed(1)}%` : "—"}</td>
               </tr>
             ))}
             {sortedData.length === 0 && (
-              <tr><td colSpan={17} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>{t("No data for these filters")}</td></tr>
+              <tr><td colSpan={15} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>
+                {total > 0 && withDetail === 0
+                  ? t("No per-product data for this period. Upload the newer Shopee Penghasilan income report to see products here.")
+                  : t("No data for these filters")}
+              </td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+/* ── Not Paid Order: orders that are completed (Order Selesai) but have no earning yet ──
+   Earning is the core. An order is listed until its No. Pesanan appears in ANY finance upload,
+   then it drops off (migration 0135). Orders created outside the period the Earning uploads
+   cover (e.g. December when Earning starts in January) are ignored. */
+function NotPaidTable({ data, t }: { data: NotPaidData | null; t: (k: string) => string }) {
+  const [search, setSearch] = useState("");
+  const rows = data?.rows;
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return (rows || []).filter((r) => !q || r.order_no.toLowerCase().includes(q) || (r.products || "").toLowerCase().includes(q));
+  }, [rows, search]);
+  const { sortedData, sortConfig, requestSort } = useTableSort<NotPaidRow>(filtered, "completed_at");
+
+  function downloadCsv() {
+    const esc = (v: unknown) => { const s = String(v ?? ""); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+    const head = ["No. Pesanan", "Order Created", "Order Completed", "Days Waiting", "Products", "Units", "Order Value", "Payment Method", "Return Status"];
+    const lines = [head.join(",")].concat(sortedData.map((r) => [r.order_no, r.created_at, r.completed_at, r.days_waiting, r.products, r.units, r.order_value, r.payment_method, r.return_status].map(esc).join(",")));
+    const blob = new Blob(["﻿" + lines.join("\r\n")], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `not-paid-orders_${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  const count = data?.not_paid_orders ?? 0;
+  const cell = { whiteSpace: "nowrap" } as const;
+  const waitColor = (d: number | null) => (d == null ? "var(--muted)" : d > 14 ? "#f87171" : d > 7 ? "#fbbf24" : "inherit");
+
+  return (
+    <div className="panel">
+      <h3>{t("Not Paid Order")}</h3>
+      {data && data.orders_checked > 0 && (
+        <div className="kpi-grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(210px, 270px))", marginBottom: 14 }}>
+          <div className="kpi kpi-hero">
+            <div className="kpi-icon">⏳</div>
+            <div className="lbl">{t("Not Paid Order")}</div>
+            <div className="val">{count.toLocaleString("id-ID")}</div>
+            <div className="kpi-sub">{t("of")} {data.orders_checked.toLocaleString("id-ID")} {t("orders")}</div>
+          </div>
+          <div className="kpi">
+            <div className="kpi-icon">💰</div>
+            <div className="lbl">{t("Order Value")}</div>
+            <div className="val">{rpFull(data.not_paid_value)}</div>
+          </div>
+        </div>
+      )}
+      <div className="filterbar" style={{ marginTop: 6, marginBottom: 10, alignItems: "flex-end" }}>
+        <div className="fld" style={{ minWidth: 240 }}>
+          <label>{t("Search")}</label>
+          <input type="text" placeholder={t("Order No. / Product")} value={search} onChange={(e) => setSearch(e.target.value)}
+            style={{ background: "rgba(10,22,40,.5)", border: "1px solid rgba(201,162,39,.2)", borderRadius: 8, padding: "8px 10px", color: "#e8edf8", fontSize: 13, width: "100%" }} />
+        </div>
+        <button className="btn-ghost" onClick={downloadCsv} disabled={!sortedData.length}>⬇ {t("Download CSV")}</button>
+      </div>
+
+      <div className="tbl-wrap" style={{ maxHeight: 450 }}>
+        <table className="tbl">
+          <thead><tr>
+            <SortableHeader label={t("Order No.")} sortKey="order_no" currentSort={sortConfig} onRequestSort={requestSort} />
+            <SortableHeader label={t("Order Created")} sortKey="created_at" currentSort={sortConfig} onRequestSort={requestSort} />
+            <SortableHeader label={t("Order Completed")} sortKey="completed_at" currentSort={sortConfig} onRequestSort={requestSort} />
+            <SortableHeader label={t("Days Waiting")} sortKey="days_waiting" currentSort={sortConfig} onRequestSort={requestSort} className="num" />
+            <th>{t("Products")}</th>
+            <SortableHeader label={t("Units")} sortKey="units" currentSort={sortConfig} onRequestSort={requestSort} className="num" />
+            <SortableHeader label={t("Order Value")} sortKey="order_value" currentSort={sortConfig} onRequestSort={requestSort} className="num" />
+            <th>{t("Payment")}</th>
+            <th>{t("Note")}</th>
+          </tr></thead>
+          <tbody>
+            {sortedData.map((r) => (
+              <tr key={r.order_no}>
+                <td style={{ ...cell, fontFamily: "monospace", fontSize: 12 }}>{r.order_no}</td>
+                <td style={cell}>{fmtDate(r.created_at)}</td>
+                <td style={cell}>{fmtDate(r.completed_at)}</td>
+                <td className="num" style={{ ...cell, fontWeight: 700, color: waitColor(r.days_waiting) }}>{r.days_waiting == null ? "—" : r.days_waiting}</td>
+                <td style={{ maxWidth: 320, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 12 }} title={r.products || undefined}>{r.products || "—"}</td>
+                <td className="num" style={cell}>{Math.round(r.units).toLocaleString("id-ID")}</td>
+                <td className="num" style={cell}>{r.order_value == null ? "—" : rpFull(r.order_value)}</td>
+                <td style={{ ...cell, fontSize: 12 }}>{r.payment_method || "—"}</td>
+                <td style={{ ...cell, fontSize: 11.5, color: "#fbbf24" }}>{r.return_status ? t("Return approved") : ""}</td>
+              </tr>
+            ))}
+            {sortedData.length === 0 && (
+              <tr><td colSpan={9} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>
+                {data?.window_from ? t("No unpaid orders.") : t("Upload Earning for this store first — nothing to compare yet.")}
+              </td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+/* ── Not Connected: earnings (finance orders) with no Order Selesai row ──
+   Finance is the base; an earning is connected when its order number exists in an
+   Order Completed upload of any month (migration 0133). Nothing here is dropped from
+   Earning — these orders are fully counted, they just have no units / order details. */
+function NotConnectedTable({ data, t }: { data: UnconnectedData | null; t: (k: string) => string }) {
+  const [search, setSearch] = useState("");
+  const [reason, setReason] = useState<"" | UnconnectedRow["reason"]>("");
+  const rows = data?.rows;
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return (rows || []).filter((r) =>
+      (!reason || r.reason === reason) &&
+      (!q || r.order_no.toLowerCase().includes(q) || (r.products || "").toLowerCase().includes(q)));
+  }, [rows, search, reason]);
+  const { sortedData, sortConfig, requestSort } = useTableSort<UnconnectedRow>(filtered, "order_date");
+
+  const reasonLabel = (r: UnconnectedRow["reason"]) =>
+    r === "month_missing" ? t("Order Completed month not uploaded")
+    : r === "not_in_file" ? t("Not in the uploaded Order Completed")
+    : t("No created date");
+  const reasonColor = (r: UnconnectedRow["reason"]) => (r === "month_missing" ? "#fbbf24" : r === "not_in_file" ? "#f87171" : "var(--muted)");
+
+  function downloadCsv() {
+    const esc = (v: unknown) => { const s = String(v ?? ""); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+    const head = ["No. Pesanan", "Order Created", "Funds Released", "Products", "Sales", "Nett Income", "Reason"];
+    const lines = [head.join(",")].concat(sortedData.map((r) => [r.order_no, r.order_date, r.release_date, r.products, r.sales, r.net_income, reasonLabel(r.reason)].map(esc).join(",")));
+    const blob = new Blob(["﻿" + lines.join("\r\n")], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `earning-not-connected_${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  const open = data?.unconnected_orders ?? 0;
+  const cell = { whiteSpace: "nowrap" } as const;
+
+  return (
+    <div className="panel">
+      <h3>{t("Earning not connected to Order Selesai")}</h3>
+      <div className="filterbar" style={{ marginTop: 6, marginBottom: 10, alignItems: "flex-end" }}>
+        <div className="fld" style={{ minWidth: 240 }}>
+          <label>{t("Search")}</label>
+          <input type="text" placeholder={t("Order No. / Product")} value={search} onChange={(e) => setSearch(e.target.value)}
+            style={{ background: "rgba(10,22,40,.5)", border: "1px solid rgba(201,162,39,.2)", borderRadius: 8, padding: "8px 10px", color: "#e8edf8", fontSize: 13, width: "100%" }} />
+        </div>
+        <div className="fld">
+          <label>{t("Reason")}</label>
+          <select value={reason} onChange={(e) => setReason(e.target.value as typeof reason)}>
+            <option value="">{t("All")}</option>
+            <option value="month_missing">{t("Order Completed month not uploaded")}</option>
+            <option value="not_in_file">{t("Not in the uploaded Order Completed")}</option>
+            <option value="unknown">{t("No created date")}</option>
+          </select>
+        </div>
+        <button className="btn-ghost" onClick={downloadCsv} disabled={!sortedData.length}>⬇ {t("Download CSV")}</button>
+      </div>
+
+      <div className="tbl-wrap" style={{ maxHeight: 450 }}>
+        <table className="tbl">
+          <thead><tr>
+            <SortableHeader label={t("Order No.")} sortKey="order_no" currentSort={sortConfig} onRequestSort={requestSort} />
+            <SortableHeader label={t("Order Created")} sortKey="order_date" currentSort={sortConfig} onRequestSort={requestSort} />
+            <SortableHeader label={t("Funds Released")} sortKey="release_date" currentSort={sortConfig} onRequestSort={requestSort} />
+            <th>{t("Products")}</th>
+            <SortableHeader label={t("Sales")} sortKey="sales" currentSort={sortConfig} onRequestSort={requestSort} className="num" />
+            <SortableHeader label={t("Nett Income")} sortKey="net_income" currentSort={sortConfig} onRequestSort={requestSort} className="num" />
+            <th>{t("Reason")}</th>
+          </tr></thead>
+          <tbody>
+            {sortedData.map((r) => (
+              <tr key={r.order_no}>
+                <td style={{ ...cell, fontFamily: "monospace", fontSize: 12 }}>{r.order_no}</td>
+                <td style={cell}>{fmtDate(r.order_date)}</td>
+                <td style={cell}>{fmtDate(r.release_date)}</td>
+                <td style={{ maxWidth: 340, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 12 }} title={r.products || undefined}>{r.products || "—"}</td>
+                <td className="num" style={cell}>{rpFull(r.sales)}</td>
+                <td className="num" style={cell}>{rpFull(r.net_income)}</td>
+                <td style={{ ...cell, fontSize: 11.5, fontWeight: 700, color: reasonColor(r.reason) }}>{reasonLabel(r.reason)}</td>
+              </tr>
+            ))}
+            {sortedData.length === 0 && (
+              <tr><td colSpan={7} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>
+                {open === 0 ? t("Nothing to show — every earning is connected.") : t("No data for these filters")}
+              </td></tr>
             )}
           </tbody>
         </table>
@@ -378,7 +652,7 @@ function ProductProfitTable({ rows, t }: { rows: ProductRow[]; t: (k: string) =>
 type DetailRow = {
   order_no: string | null; buyer_username: string | null;
   sales: number | null; promotion_cost: number | null; refund: number | null;
-  delivery_cost: number | null; affiliate_cost: number | null; marketplace_fee: number | null; tax?: number | null;
+  delivery_cost: number | null; affiliate_cost: number | null; marketplace_fee: number | null;
   net_income: number | null;
 };
 function DayDrillDown({ day, clientId, sel, supabase, onClose }: {
@@ -392,7 +666,7 @@ function DayDrillDown({ day, clientId, sel, supabase, onClose }: {
   useEffect(() => {
     (async () => {
       let q = supabase.from("finance_rows")
-        .select("order_no,buyer_username,sales,promotion_cost,refund,delivery_cost,affiliate_cost,marketplace_fee,tax,net_income")
+        .select("order_no,buyer_username,sales,promotion_cost,refund,delivery_cost,affiliate_cost,marketplace_fee,net_income")
         .eq("client_id", clientId).eq("release_date", day);
       if (sel.year) q = q.eq("year", Number(sel.year));
       if (sel.month) q = q.eq("month", sel.month);
@@ -419,7 +693,7 @@ function DayDrillDown({ day, clientId, sel, supabase, onClose }: {
                 <th className="num">{t("Sales")}</th><th className="num">{t("Promotional Cost")}</th>
                 <th className="num">{t("Refund")}</th><th className="num">{t("Delivery Cost")}</th>
                 <th className="num">{t("Affiliate")}</th><th className="num">{t("Market Place Fee")}</th>
-                <th className="num">Pajak</th><th className="num">{t("Gross Profit")}</th>
+                <th className="num">{t("Gross Profit")}</th>
               </tr></thead>
               <tbody>
                 {rows.map((r, i) => (
@@ -432,11 +706,10 @@ function DayDrillDown({ day, clientId, sel, supabase, onClose }: {
                     <td className="num">{rpFull(Math.abs(r.delivery_cost || 0))}</td>
                     <td className="num">{rpFull(Math.abs(r.affiliate_cost || 0))}</td>
                     <td className="num">{rpFull(Math.abs(r.marketplace_fee || 0))}</td>
-                    <td className="num">{rpFull(Math.abs(r.tax || 0))}</td>
                     <td className="num" style={{ color: (r.net_income || 0) >= 0 ? "#86efac" : "#f87171", fontWeight: 700 }}>{rpFull(r.net_income || 0)}</td>
                   </tr>
                 ))}
-                {rows.length === 0 && <tr><td colSpan={10} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>{t("No transactions")}</td></tr>}
+                {rows.length === 0 && <tr><td colSpan={9} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>{t("No transactions")}</td></tr>}
               </tbody>
             </table>
           </div>
@@ -520,6 +793,12 @@ function Empty() {
   const { t } = useLang();
   return <div style={{ height: 280, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--muted)", fontSize: 13 }}>{t("No data yet")}</div>;
 }
+// round count badge on a tab, like an unread-message notification
+const COUNT_BADGE: React.CSSProperties = {
+  display: "inline-flex", alignItems: "center", justifyContent: "center", minWidth: 20, height: 20, padding: "0 6px",
+  marginLeft: 8, borderRadius: 999, background: "#ef4444", color: "#fff", fontSize: 11, fontWeight: 800, lineHeight: 1,
+  boxShadow: "0 2px 8px rgba(239,68,68,.45)", verticalAlign: "middle",
+};
 function tableTabBtn(active: boolean): React.CSSProperties {
   return {
     padding: "9px 20px", borderRadius: 10, fontSize: 13.5, fontWeight: 700, cursor: "pointer",
@@ -590,7 +869,7 @@ function DailyGrossChart({ data, t }: { data: DailyGrossRow[]; t: (k: string) =>
           <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
           <XAxis dataKey="day" tickFormatter={bucketAxisLabel} tick={axis} axisLine={false} tickLine={false} />
           <YAxis tick={axis} tickFormatter={(v) => rpC(Number(v))} axisLine={false} tickLine={false} width={58} />
-          <Tooltip contentStyle={TIP_STYLE} labelFormatter={(l) => bucketAxisLabel(String(l))}
+          <Tooltip contentStyle={TIP_STYLE} labelFormatter={(l) => bucketTooltipLabel(String(l))}
             formatter={(v, n) => [rpFull(Number(v)), n === "gross_sales" ? t("Gross Sales") : t("Gross Profit")]} />
           <Legend wrapperStyle={{ fontSize: 11 }} iconType="circle" iconSize={8}
             formatter={(v) => (v === "gross_sales" ? t("Gross Sales") : t("Gross Profit"))} />
@@ -618,7 +897,7 @@ function SimpleBarChart({ data, dataKey, top, bottom }: { data: Record<string, u
           <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
           <XAxis dataKey="month" tickFormatter={bucketAxisLabel} tick={axis} axisLine={false} tickLine={false} />
           <YAxis tick={axis} tickFormatter={(v) => rpC(Number(v))} axisLine={false} tickLine={false} width={58} />
-          <Tooltip contentStyle={TIP_STYLE} labelFormatter={(l) => bucketAxisLabel(String(l))} formatter={(v) => [rpFull(Number(v)), ""]} cursor={{ fill: "rgba(201,162,39,0.04)" }} />
+          <Tooltip contentStyle={TIP_STYLE} labelFormatter={(l) => bucketTooltipLabel(String(l))} formatter={(v) => [rpFull(Number(v)), ""]} cursor={{ fill: "rgba(201,162,39,0.04)" }} />
           <Bar dataKey={dataKey} radius={[6, 6, 0, 0]} maxBarSize={104} fill={`url(#${gid})`} />
         </BarChart>
       </ResponsiveContainer>
@@ -663,5 +942,5 @@ function DonutChart({ data, t }: { data: { name: string; value: number }[]; t: (
   );
 }
 
-const overlay: React.CSSProperties = { position: "fixed", inset: 0, background: "rgba(2,6,16,.82)", backdropFilter: "blur(4px)", zIndex: 9000, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "clamp(10px,3vw,30px) clamp(6px,2vw,20px)", overflowY: "auto" };
-const drawer: React.CSSProperties = { width: "min(98vw,1600px)", background: "var(--card,#0d1a36)", border: "1px solid var(--card-border,rgba(201,162,39,.2))", borderRadius: 18, padding: "clamp(12px,3vw,28px)", boxShadow: "0 30px 80px rgba(0,0,0,.7)" };
+const overlay: React.CSSProperties = { position: "fixed", inset: 0, background: "rgba(2,6,16,.82)", backdropFilter: "blur(4px)", zIndex: 9000, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "30px 20px", overflowY: "auto" };
+const drawer: React.CSSProperties = { width: "min(98vw,1600px)", background: "var(--card,#0d1a36)", border: "1px solid var(--card-border,rgba(201,162,39,.2))", borderRadius: 18, padding: 28, boxShadow: "0 30px 80px rgba(0,0,0,.7)" };

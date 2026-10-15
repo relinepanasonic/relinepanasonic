@@ -12,11 +12,9 @@ export const dynamic = "force-dynamic";
 // into every page load.
 const FinanceDashboard = dynamicImport(() => import("./FinanceDashboard"), { ssr: false, loading: () => <Loader center /> });
 const ModalProduct = dynamicImport(() => import("./ModalProduct"), { ssr: false });
-const PajakPanel = dynamicImport(() => import("./PajakPanel"), { ssr: false, loading: () => <Loader center /> });
 
 const TABS = [
-  { v: "dashboard", l: "Finance Dashboard" },
-  { v: "pajak", l: "Pajak" },
+  { v: "dashboard", l: "Earning Dashboard" },
   { v: "modal", l: "Modal Product" },
 ] as const;
 // Finance upload lives on the /upload page — this page is the dashboard plus
@@ -43,11 +41,11 @@ export default function Page() {
     })();
   }, [supabase]);
 
-  const tabs = canManage ? TABS : TABS.filter((x) => x.v !== "modal");
+  const tabs = canManage ? TABS : TABS.filter((x) => x.v === "dashboard");
 
   return (
     <>
-        {(
+        {canManage && (
           <div style={{ display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
             {tabs.map((x) => (
               <button key={x.v} onClick={() => setTab(x.v)} style={tabBtn(tab === x.v)}>{t(x.l)}</button>
@@ -55,7 +53,6 @@ export default function Page() {
           </div>
         )}
         {tab === "dashboard" && <FinanceDashboard clientId={clientId} refreshKey={refreshKey} />}
-        {tab === "pajak" && <PajakPanel clientId={clientId} />}
         {canManage && tab === "modal" && <ModalProduct clientId={clientId} />}
     </>
   );

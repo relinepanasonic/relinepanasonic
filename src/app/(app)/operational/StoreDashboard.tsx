@@ -1,5 +1,6 @@
 "use client";
 
+import { fmtDate, fmtDateTime } from "@/lib/dates";
 import { useEffect, useState, useCallback, useMemo } from "react";
 import dynamic from "next/dynamic";
 import {
@@ -9,9 +10,9 @@ import {
 import { createClient } from "@/lib/supabase/client";
 import Loader from "@/components/Loader";
 import { useLang } from "@/lib/financeI18n";
-import { fmtDate, fmtDateTime } from "@/lib/dates";
 import { useTableSort } from "@/hooks/useTableSort";
 import SortableHeader from "@/components/SortableHeader";
+import MiniSparkline from "@/components/MiniSparkline";
 import type { CityDetailRow } from "./IndonesiaMap";
 
 // d3-geo + topojson-client only matter to this one map — loaded client-side
@@ -45,6 +46,8 @@ type Summary = {
   shipping_option: { option: string; cnt: number }[];
   daily: { tx_date: string; orders: number; gmv: number }[];
 };
+type TopBuyers = { rows: { username: string; orders: number; gmv: number; units: number }[]; total_orders: number; total_gmv: number };
+type MonthlyPoint = { year: number; month: string; orders: number };
 type Link = { city: string | null; store_name: string | null };
 type Filters = { years: number[]; months: string[] };
 const SLA_ORDER = ["0-3 hari", "4-7 hari", "7-14 hari", ">14 hari"];
@@ -56,41 +59,51 @@ export default function StoreDashboard({ clientId, refreshKey }: { clientId: str
   const [links, setLinks] = useState<Link[]>([]);
   const [sel, setSel] = useState({ year: "", month: "", week: "", city: "", store: "" });
   const [d, setD] = useState<Summary | null>(null);
+  const [tb, setTb] = useState<TopBuyers | null>(null);   // top usernames + exact totals (migration 0136)
+  const [mo, setMo] = useState<MonthlyPoint[]>([]);        // orders per month, for the Total Transaction chart
   const [loading, setLoading] = useState(false);
   const [loadErr, setLoadErr] = useState("");
   const [drill, setDrill] = useState<string | null>(null);
+  const [entity, setEntity] = useState<Entity | null>(null); // Top 5 row opened for its transactions
 
   const checkData = useCallback(async () => {
     if (!clientId) return;
     const { data: f } = await supabase.rpc("store_perf_filters");
     setFilters((f as Filters) || { years: [], months: [] });
-
-    // Offer the user's dealers even when nothing is uploaded yet, so the page
-    // opens with empty charts instead of being blocked.
+    // dealers this user may see: those with data + the role-scoped dealer list of the main dashboard,
+    // so the page opens (with empty charts) even before anything is uploaded
     const { data: df } = await supabase.rpc("dashboard_filters");
-    const known = new Set((f as { stores?: { store_name: string }[] } | null)?.stores?.map((x) => x.store_name) ?? []);
+    const known = new Set(((f as { stores?: { store_name: string }[] } | null)?.stores || []).map((x) => x.store_name));
     const extra = (((df as { dealers?: { value: string; city: string | null }[] } | null)?.dealers) || [])
       .filter((x) => !known.has(x.value)).map((x) => ({ city: x.city, store_name: x.value }));
-    setLinks([...(((f as { stores?: { store_name: string; city: string | null }[] })?.stores) || []).map((x) => ({ city: x.city, store_name: x.store_name })), ...extra]);
+    setLinks([...(((f as { stores?: { store_name: string; city: string | null }[] } | null)?.stores) || []).map((x) => ({ city: x.city, store_name: x.store_name })), ...extra]);
   }, [supabase, clientId]);
 
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { checkData(); }, [checkData, refreshKey]);
 
   const load = useCallback(async () => {
-    if (!clientId || !sel.store) { setD(null); return; }
+    if (!clientId || !sel.store) { setD(null); setTb(null); setMo([]); return; }
     setLoading(true);
     setLoadErr("");
     try {
-      const { data, error } = await supabase.rpc("store_perf_summary", {
-        p_year: sel.year ? Number(sel.year) : null,
+      const params = {
+        p_year:  sel.year ? Number(sel.year) : null,
         p_month: sel.month || null,
-        p_week: sel.week || null,
-        p_city: sel.city || null,
+        p_week:  sel.week || null,
+        p_city:  sel.city || null,
         p_store: sel.store,
-      });
+      };
+      const [{ data, error }, { data: tbData }, { data: moData }] = await Promise.all([
+        supabase.rpc("store_perf_summary", params),
+        supabase.rpc("store_perf_top_buyers", { p_client_id: clientId, ...params }),
+        // the chart ignores the Month / Week filter on purpose: it shows every month
+        supabase.rpc("store_perf_monthly", { p_client_id: clientId, p_year: params.p_year, p_city: params.p_city, p_store: params.p_store }),
+      ]);
       if (error) throw error;
       setD(data as Summary);
+      setTb((tbData as TopBuyers) || null);
+      setMo((moData as MonthlyPoint[]) || []);
     } catch (e) {
       const err = e as { message?: string; code?: string };
       setLoadErr(err?.message ? `${err.message} (code: ${err.code || "?"})` : String(e));
@@ -115,13 +128,35 @@ export default function StoreDashboard({ clientId, refreshKey }: { clientId: str
     if (!sel.store && storesForCity.length === 1) setSel((s) => ({ ...s, store: storesForCity[0] }));
   }, [storesForCity, sel.store]);
 
-  // Must run unconditionally, before the hasAnyData/!d early returns below —
+  // Must run unconditionally, before the !d early returns below —
   // safe [] fallback rather than being called after the guard. No
   // initialKey: the daily table's default order is the backend's own
   // date-ascending order, unchanged until the user clicks a header.
   const dailySort = useTableSort<Summary["daily"][number]>(d?.daily ?? []);
+  // orders per month in calendar order (year, then month) for the Total Transaction mini chart
+  const ordersSeries = useMemo(
+    () => [...mo].sort((a, b) => a.year - b.year || MONTH_ORDER.indexOf(a.month) - MONTH_ORDER.indexOf(b.month)).map((x) => x.orders),
+    [mo],
+  );
 
   const k = d?.kpis;
+  // AOV (Average Order Value) = sales / transactions;  UPT (Units Per Transaction) = products / transactions
+  const gmvTotal = tb ? tb.total_gmv : (d?.province_gmv || []).reduce((a, x) => a + x.gmv, 0);
+  const ordersForAvg = tb ? tb.total_orders : (k?.total_transaksi ?? 0);
+  const avgSales = ordersForAvg > 0 ? gmvTotal / ordersForAvg : null;
+  const avgUnits = k && k.total_transaksi > 0 ? k.total_produk / k.total_transaksi : null;
+  const topProvinces: Top5Row[] = (d?.province_gmv || []).slice(0, 5).map((x) => ({
+    name: x.province, orders: x.transactions, sales: x.gmv,
+    pick: { field: "province", value: x.province, label: x.province, orders: x.transactions, sales: x.gmv },
+  }));
+  const topCities: Top5Row[] = [...(d?.city_detail || [])].sort((a, b) => b.gmv - a.gmv).slice(0, 5).map((x) => ({
+    name: x.city, orders: x.transactions, sales: x.gmv,
+    pick: { field: "city", value: x.city, label: x.city, also: { field: "province", value: x.province }, orders: x.transactions, sales: x.gmv },
+  }));
+  const topUsers: Top5Row[] = (tb?.rows || []).map((x) => ({
+    name: x.username, orders: x.orders, sales: x.gmv,
+    pick: { field: "buyer_username", value: x.username, label: x.username, orders: x.orders, sales: x.gmv },
+  }));
   const slaBuckets = SLA_ORDER.map((b) => ({ bucket: b, cnt: d?.sla_buckets.find((x) => x.bucket === b)?.cnt ?? 0 }));
 
   return (
@@ -134,7 +169,7 @@ export default function StoreDashboard({ clientId, refreshKey }: { clientId: str
       {/* filters — City + Dealer only at first; Year/Month/Week auto-reveal once a store is picked */}
       <div className="filterbar">
         <Sel label={t("City")} value={sel.city} onChange={pickCity} opts={cities} all={t("All Cities")} />
-        <Sel label={t("Store")} value={sel.store} onChange={(v) => setSel((s) => ({ ...s, store: v }))} opts={storesForCity} all={t("Pick a store…")} />
+        <Sel label={t("Dealer")} value={sel.store} onChange={(v) => setSel((s) => ({ ...s, store: v }))} opts={storesForCity} all={t("Pick a dealer…")} />
         {sel.store && (
           <>
             <Sel label={t("Year")}  value={sel.year}  onChange={(v) => setSel((s) => ({ ...s, year: v }))}  opts={years.map(String)} all={t("All Years")} />
@@ -151,14 +186,19 @@ export default function StoreDashboard({ clientId, refreshKey }: { clientId: str
           <div className="coming">
             <div className="big">🏬</div>
             <h3 style={{ fontSize: 18, color: "#fff", margin: 0 }}>{t("Choose Store")}</h3>
-            <p style={{ maxWidth: 420, margin: 0 }}>{t("Operational Performance is shown per store — pick a Store above to view its dashboard.")}</p>
+            <p style={{ maxWidth: 420, margin: 0 }}>{t("Demographic is shown per store — pick a Store above to view its dashboard.")}</p>
           </div>
         </div>
       ) : (
       <>
       <div className="kpi-grid kpi-grid-5">
-        <div className="kpi kpi-hero"><div className="kpi-icon">🧾</div><div className="lbl">{t("Total Transaction")}</div><div className="val">{k ? numFull(k.total_transaksi) : "—"}</div><div className="kpi-sub">{t("Unique orders")}</div></div>
-        <div className="kpi"><div className="kpi-icon">📦</div><div className="lbl">{t("Total Product Ordered")}</div><div className="val">{k ? numFull(k.total_produk) : "—"}</div><div className="kpi-sub">{t("Ready to ship")}</div></div>
+        <div className="kpi kpi-hero"><div className="kpi-icon">🧾</div><div className="lbl">{t("Total Transaction")}</div><div className="val">{k ? numFull(k.total_transaksi) : "—"}</div><div className="kpi-sub">{t("Unique orders")}</div><MiniSparkline data={ordersSeries} color={GOLD} /></div>
+        <div className="kpi"><div className="kpi-icon">📦</div><div className="lbl">{t("Total Product Ordered")}</div><div className="val">{k ? numFull(k.total_produk) : "—"}</div><div className="kpi-sub">{t("Ready to ship")}</div>
+          <div style={{ display: "grid", gap: 3, marginTop: 8 }}>
+            <SubStat label={t("Unit per Transaction")} value={avgUnits == null ? "—" : avgUnits.toLocaleString("id-ID", { maximumFractionDigits: 2 })} title="UPT — Units Per Transaction" />
+            <SubStat label={t("AOV")} value={avgSales == null ? "—" : rpFull(avgSales)} title="AOV — Average Order Value" />
+          </div>
+        </div>
         <div className="kpi kpi-roas" style={{ display: "flex", flexDirection: "column", justifyContent: "center" }}>
           <div className="lbl">SLA</div>
           <div style={{ display: "flex", flexDirection: "column", gap: 3, marginTop: 6 }}>
@@ -169,6 +209,13 @@ export default function StoreDashboard({ clientId, refreshKey }: { clientId: str
         </div>
         <div className="kpi kpi-cost"><div className="kpi-icon">✕</div><div className="lbl">{t("Total Cancellations")}</div><div className="val">{k ? numFull(k.total_pembatalan) : "—"}</div><div className="kpi-sub">{t("Orders cancelled")}</div></div>
         <div className="kpi kpi-cost"><div className="kpi-icon">↩️</div><div className="lbl">{t("Total Product Return")}</div><div className="val">{k ? numFull(k.total_return) : "—"}</div><div className="kpi-sub">{t("Units returned")}</div></div>
+      </div>
+
+      {/* Top 5 by sales: province, city / regency, buyer username */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(380px,1fr))", gap: 18, marginBottom: 18 }}>
+        <Top5Table title={t("Top 5 Province by Sales")} nameLabel={t("Province")} rows={topProvinces} onPick={setEntity} t={t} />
+        <Top5Table title={t("Top 5 City / Regency by Sales")} nameLabel={t("City / Regency")} rows={topCities} onPick={setEntity} t={t} />
+        <Top5Table title={t("Top 5 Username by Sales")} nameLabel={t("Username")} rows={topUsers} onPick={setEntity} t={t} />
       </div>
 
       {/* Map + SLA bucket, side by side */}
@@ -221,9 +268,82 @@ export default function StoreDashboard({ clientId, refreshKey }: { clientId: str
       {drill && (
         <DayDrillDown day={drill} clientId={clientId} sel={sel} supabase={supabase} onClose={() => setDrill(null)} />
       )}
+      {entity && (
+        <EntityDrillDown entity={entity} clientId={clientId} sel={sel} supabase={supabase} onClose={() => setEntity(null)} />
+      )}
       </>
       )}
     </>
+  );
+}
+
+/** small stat under a KPI number — deliberately smaller than the main value */
+function SubStat({ label, value, title }: { label: string; value: string; title?: string }) {
+  return (
+    <div title={title} style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
+      <span style={{ fontSize: 10.5, color: "var(--muted)" }}>{label}</span>
+      <span style={{ fontSize: 13, fontWeight: 700, color: "#e8edf8", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{value}</span>
+    </div>
+  );
+}
+
+/* ── Top 5 tables: one look for Province / City / Username, every row clickable ── */
+type Entity = {
+  field: "province" | "city" | "buyer_username"; value: string; label: string;
+  also?: { field: "province"; value: string };   // a city is also matched on its province
+  orders: number; sales: number;
+};
+type Top5Row = { name: string; orders: number; sales: number; pick: Entity };
+const TOP5_ROWS = 5;
+const TOP5_ROW_H = 46; // identical in all three tables
+
+function Top5Table({ title, nameLabel, rows, onPick, t }: { title: string; nameLabel: string; rows: Top5Row[]; onPick: (e: Entity) => void; t: (k: string) => string }) {
+  const max = rows.reduce((m, r) => Math.max(m, r.sales), 0) || 1;
+  const blanks = Math.max(TOP5_ROWS - rows.length, 0);
+  const cellBase: React.CSSProperties = { height: TOP5_ROW_H, padding: "0 10px", verticalAlign: "middle", whiteSpace: "nowrap" };
+  return (
+    <div className="panel" style={{ marginBottom: 0 }}>
+      <style>{`.top5-row{cursor:pointer;transition:background-color .15s}.top5-row:hover td{background:rgba(255,255,255,.045)}`}</style>
+      <h3 style={{ margin: "0 0 12px" }}>{title}</h3>
+      <div className="tbl-wrap" style={{ overflow: "hidden" }}>
+        <table className="tbl" style={{ tableLayout: "fixed", width: "100%" }}>
+          <colgroup><col style={{ width: 46 }} /><col /><col style={{ width: 66 }} /><col style={{ width: 132 }} /></colgroup>
+          <thead><tr>
+            <th style={{ ...cellBase, height: 38 }}>#</th>
+            <th style={{ ...cellBase, height: 38 }}>{nameLabel}</th>
+            <th className="num" style={{ ...cellBase, height: 38 }}>{t("Orders")}</th>
+            <th className="num" style={{ ...cellBase, height: 38 }}>{t("Sales")}</th>
+          </tr></thead>
+          <tbody>
+            {rows.map((r, i) => {
+              const pct = Math.max(Math.round((r.sales / max) * 100), 4);
+              return (
+                <tr key={r.name + i} className="top5-row" onClick={() => onPick(r.pick)} title={t("Click to see the transactions")}
+                  style={{ backgroundImage: `linear-gradient(90deg, rgba(201,162,39,.16) ${pct}%, transparent ${pct}%)` }}>
+                  <td style={cellBase}>
+                    <span style={{
+                      display: "inline-flex", alignItems: "center", justifyContent: "center", width: 24, height: 24, borderRadius: "50%", fontSize: 12, fontWeight: 800,
+                      background: i === 0 ? "linear-gradient(135deg,var(--gold),var(--gold-soft))" : "rgba(255,255,255,.06)",
+                      color: i === 0 ? "var(--navy-deep)" : "var(--muted)",
+                    }}>{i + 1}</span>
+                  </td>
+                  <td style={{ ...cellBase, overflow: "hidden", textOverflow: "ellipsis", fontWeight: 600 }} title={r.name}>{r.name}</td>
+                  <td className="num" style={cellBase}>{numFull(r.orders)}</td>
+                  <td className="num" style={{ ...cellBase, fontWeight: 700 }}>{rpFull(r.sales)}</td>
+                </tr>
+              );
+            })}
+            {Array.from({ length: blanks }).map((_, i) => (
+              <tr key={"blank" + i}>
+                <td style={cellBase}><span style={{ color: "var(--muted)", opacity: 0.4, fontSize: 12 }}>{rows.length + i + 1}</span></td>
+                <td style={{ ...cellBase, color: "var(--muted)", opacity: 0.5 }}>{rows.length === 0 && i === 0 ? t("No data yet") : "—"}</td>
+                <td style={cellBase} /><td style={cellBase} />
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
   );
 }
 
@@ -244,7 +364,6 @@ type DetailRow = {
   total_payment: number | null; order_status: string | null; cancel_return_status: string | null;
 };
 function fmtDT(s: string | null): string {
-  if (!s) return "—";
   return fmtDateTime(s);
 }
 function slaFor(paid: string | null, completed: string | null): string {
@@ -317,6 +436,121 @@ function DayDrillDown({ day, clientId, sel, supabase, onClose }: {
               </tbody>
             </table>
           </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ── Province / City / Username drill-down: that group's transactions, by date ── */
+const ENTITY_PAGE = 500;
+function fmtDTY(s: string | null): string {
+  return fmtDateTime(s);
+}
+function EntityDrillDown({ entity, clientId, sel, supabase, onClose }: {
+  entity: Entity; clientId: string;
+  sel: { year: string; month: string; week: string; city: string; store: string };
+  supabase: ReturnType<typeof createClient>; onClose: () => void;
+}) {
+  const { t } = useLang();
+  const [rows, setRows] = useState<DetailRow[] | null>(null);
+  const [total, setTotal] = useState<number | null>(null);
+  const [newestFirst, setNewestFirst] = useState(true);
+  const [busy, setBusy] = useState(false);
+
+  // same filters as the page, plus this province / city / username; one page of lines at a time
+  const fetchPage = useCallback(async (from: number) => {
+    let q = supabase.from("order_rows")
+      .select("order_no,product_name,variant_name,qty,paid_at,ship_deadline,completed_at,payment_method,shipping_option,city,province,total_payment,order_status,cancel_return_status", { count: "exact" })
+      .eq("client_id", clientId).eq(entity.field, entity.value);
+    if (entity.also) q = q.eq(entity.also.field, entity.also.value);
+    if (sel.year) q = q.eq("year", Number(sel.year));
+    if (sel.month) q = q.eq("month", sel.month);
+    if (sel.week) q = q.eq("week", sel.week);
+    if (sel.city) q = q.eq("dealer_city", sel.city);
+    if (sel.store) q = q.eq("store_name", sel.store);
+    return q.order("completed_at", { ascending: !newestFirst, nullsFirst: false }).order("order_no").order("id")
+      .range(from, from + ENTITY_PAGE - 1);
+  }, [supabase, clientId, entity, sel, newestFirst]);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      setRows(null);
+      const { data, count } = await fetchPage(0);
+      if (!alive) return;
+      setRows((data as DetailRow[]) || []);
+      setTotal(count ?? null);
+    })();
+    return () => { alive = false; };
+  }, [fetchPage]);
+
+  async function loadMore() {
+    if (!rows) return;
+    setBusy(true);
+    const { data } = await fetchPage(rows.length);
+    setRows((prev) => (prev || []).concat((data as DetailRow[]) || []));
+    setBusy(false);
+  }
+
+  const heading = { province: t("Province"), city: t("City / Regency"), buyer_username: t("Username") }[entity.field];
+  return (
+    <div style={overlay} onClick={onClose}>
+      <div style={drawer} onClick={(e) => e.stopPropagation()}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, marginBottom: 6 }}>
+          <div>
+            <div style={{ fontSize: 12, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".5px", fontWeight: 700 }}>{heading}</div>
+            <div style={{ fontSize: 22, fontWeight: 800, color: "#fff" }}>{entity.label}</div>
+          </div>
+          <button className="btn-ghost" onClick={onClose}>✕ {t("Close")}</button>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 12, marginBottom: 14, fontSize: 13, color: "var(--muted)" }}>
+          <span><b style={{ color: "#fff" }}>{numFull(entity.orders)}</b> {t("orders")} · <b style={{ color: GOLD }}>{rpFull(entity.sales)}</b></span>
+          <button className="btn-ghost" style={{ padding: "4px 12px", fontSize: 12 }} onClick={() => setNewestFirst((v) => !v)}>
+            {t("Date")} {newestFirst ? "↓ " + t("Newest first") : "↑ " + t("Oldest first")}
+          </button>
+          {rows && total != null && <span>{t("Showing")} {numFull(rows.length)} {t("of")} {numFull(total)} {t("lines")}</span>}
+        </div>
+        {rows === null ? <Loader center /> : (
+          <>
+            <div className="tbl-wrap" style={{ maxHeight: "66vh" }}>
+              <table className="tbl" style={{ color: "#e8edf8", fontSize: 13.5 }}>
+                <thead><tr>
+                  <th>{t("Completed At")}</th><th>{t("Order No.")}</th><th>{t("Product")}</th><th>{t("Variant")}</th><th className="num">Qty</th>
+                  <th>{t("Paid At")}</th><th>SLA</th><th>{t("Payment Method")}</th><th>{t("Courier")}</th>
+                  <th>{t("City")}</th><th>{t("Province")}</th><th className="num">Total Sales</th><th>{t("Status")}</th>
+                </tr></thead>
+                <tbody>
+                  {rows.map((r, i) => {
+                    const first = i === 0 || rows[i - 1].order_no !== r.order_no; // total + order no only on an order's first line
+                    return (
+                      <tr key={i}>
+                        <td style={{ fontSize: 12.5, whiteSpace: "nowrap" }}>{first ? fmtDTY(r.completed_at) : ""}</td>
+                        <td style={{ fontFamily: "monospace", fontSize: 12.5, whiteSpace: "nowrap" }}>{first ? (r.order_no || "—") : ""}</td>
+                        <td style={{ maxWidth: 240, whiteSpace: "normal" }}>{r.product_name || "—"}</td>
+                        <td style={{ whiteSpace: "nowrap" }}>{r.variant_name || "—"}</td>
+                        <td className="num">{r.qty ?? "—"}</td>
+                        <td style={{ fontSize: 12.5, whiteSpace: "nowrap" }}>{first ? fmtDTY(r.paid_at) : ""}</td>
+                        <td style={{ fontSize: 12.5, whiteSpace: "nowrap", fontWeight: 700, color: GOLD }}>{first ? slaFor(r.paid_at, r.completed_at) : ""}</td>
+                        <td style={{ fontSize: 12.5, whiteSpace: "nowrap" }}>{first ? (r.payment_method || "—") : ""}</td>
+                        <td style={{ fontSize: 12.5, whiteSpace: "nowrap" }}>{first ? (r.shipping_option || "—") : ""}</td>
+                        <td style={{ fontSize: 12.5, whiteSpace: "nowrap" }}>{first ? (r.city || "—") : ""}</td>
+                        <td style={{ fontSize: 12.5, whiteSpace: "nowrap" }}>{first ? (r.province || "—") : ""}</td>
+                        <td className="num">{first ? rpFull(r.total_payment || 0) : ""}</td>
+                        <td style={{ fontSize: 12.5, whiteSpace: "nowrap" }}>{first ? (r.cancel_return_status || r.order_status || "—") : ""}</td>
+                      </tr>
+                    );
+                  })}
+                  {rows.length === 0 && <tr><td colSpan={13} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>{t("No transactions")}</td></tr>}
+                </tbody>
+              </table>
+            </div>
+            {total != null && rows.length < total && (
+              <div style={{ textAlign: "center", marginTop: 12 }}>
+                <button className="btn-ghost" onClick={loadMore} disabled={busy}>{busy ? "…" : t("Load more")}</button>
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>
@@ -398,5 +632,5 @@ function DonutChart({ data, t }: { data: { name: string; value: number }[]; t: (
   );
 }
 
-const overlay: React.CSSProperties = { position: "fixed", inset: 0, background: "rgba(2,6,16,.82)", backdropFilter: "blur(4px)", zIndex: 9000, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "clamp(10px,3vw,30px) clamp(6px,2vw,20px)", overflowY: "auto" };
-const drawer: React.CSSProperties = { width: "min(98vw,1900px)", background: "var(--card,#0d1a36)", border: "1px solid var(--card-border,rgba(201,162,39,.2))", borderRadius: 18, padding: "clamp(12px,3vw,28px)", boxShadow: "0 30px 80px rgba(0,0,0,.7)" };
+const overlay: React.CSSProperties = { position: "fixed", inset: 0, background: "rgba(2,6,16,.82)", backdropFilter: "blur(4px)", zIndex: 9000, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "30px 20px", overflowY: "auto" };
+const drawer: React.CSSProperties = { width: "min(98vw,1900px)", background: "var(--card,#0d1a36)", border: "1px solid var(--card-border,rgba(201,162,39,.2))", borderRadius: 18, padding: 28, boxShadow: "0 30px 80px rgba(0,0,0,.7)" };
