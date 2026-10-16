@@ -63,6 +63,7 @@ export default function StoreDashboard({ clientId, refreshKey }: { clientId: str
   const [mo, setMo] = useState<MonthlyPoint[]>([]);        // orders per month, for the Total Transaction chart
   const [loading, setLoading] = useState(false);
   const [loadErr, setLoadErr] = useState("");
+  const [activeTable, setActiveTable] = useState<"shipped" | "completed">("shipped"); // one table on screen at a time, like Earning
   const [ship, setShip] = useState<Summary["daily"]>([]);   // Order Shipped table (Order.shipping uploads)
   const [drill, setDrill] = useState<{ kind: "completed" | "shipped"; day: string } | null>(null);
   const [entity, setEntity] = useState<Entity | null>(null); // Top 5 row opened for its transactions
@@ -242,7 +243,12 @@ export default function StoreDashboard({ clientId, refreshKey }: { clientId: str
         </Panel>
       </div>
 
-      {/* Order Shipped / Order Completed, one row per day */}
+      {/* Same tab bar as the Earning page: one table on screen at a time */}
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+        <button onClick={() => setActiveTable("shipped")} style={tableTabBtn(activeTable === "shipped")}>{t("Order Shipped")}</button>
+        <button onClick={() => setActiveTable("completed")} style={tableTabBtn(activeTable === "completed")}>{t("Order Completed")}</button>
+      </div>
+      {activeTable === "shipped" ? (
       <div className="panel">
         <h3>{t("Order Shipped")}</h3>
         <div className="hint">{t("Click a row to see that day's shipped orders · date based on the time the shipment was arranged")}</div>
@@ -268,7 +274,7 @@ export default function StoreDashboard({ clientId, refreshKey }: { clientId: str
           </table>
         </div>
       </div>
-
+      ) : (
       <div className="panel">
         <h3>{t("Order Completed")}</h3>
         <div className="hint">{t("Click a row to see that day's completed orders · date based on order completed time")}</div>
@@ -294,6 +300,7 @@ export default function StoreDashboard({ clientId, refreshKey }: { clientId: str
           </table>
         </div>
       </div>
+      )}
 
       {drill && (
         <DayDrillDown kind={drill.kind} day={drill.day} clientId={clientId} sel={sel} supabase={supabase} onClose={() => setDrill(null)} />
@@ -662,4 +669,12 @@ function DonutChart({ data, t }: { data: { name: string; value: number }[]; t: (
 }
 
 const overlay: React.CSSProperties = { position: "fixed", inset: 0, background: "rgba(2,6,16,.82)", backdropFilter: "blur(4px)", zIndex: 9000, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "30px 20px", overflowY: "auto" };
+function tableTabBtn(active: boolean): React.CSSProperties {
+  return {
+    padding: "9px 20px", borderRadius: 10, fontSize: 13.5, fontWeight: 700, cursor: "pointer",
+    border: `1px solid ${active ? "var(--gold)" : "rgba(201,162,39,.2)"}`,
+    background: active ? "linear-gradient(135deg,var(--gold),var(--gold-soft))" : "rgba(10,22,40,.5)",
+    color: active ? "var(--navy-deep)" : "#cdd9f0",
+  };
+}
 const drawer: React.CSSProperties = { width: "min(98vw,1900px)", background: "var(--card,#0d1a36)", border: "1px solid var(--card-border,rgba(201,162,39,.2))", borderRadius: 18, padding: 28, boxShadow: "0 30px 80px rgba(0,0,0,.7)" };
