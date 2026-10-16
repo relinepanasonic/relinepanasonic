@@ -1,6 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
-import { WORKSPACE_COOKIE, isWorkspaceId } from "@/lib/workspace";
+import { WORKSPACE_COOKIE, isWorkspaceId, isPageHidden } from "@/lib/workspace";
 
 // Next.js 16: the old `middleware.ts` convention is renamed to `proxy.ts`.
 // Refreshes the Supabase session on every request and guards protected routes.
@@ -107,6 +107,14 @@ export async function proxy(request: NextRequest) {
     && !isWorkspaceId(request.cookies.get(WORKSPACE_COOKIE)?.value)) {
     const url = request.nextUrl.clone();
     url.pathname = "/welcome";
+    url.search = "";
+    return NextResponse.redirect(url);
+  }
+
+  // A page this workspace does not have (e.g. Earning in Panasonic Gobel) -> dashboard.
+  if (authed && isPageHidden(request.cookies.get(WORKSPACE_COOKIE)?.value, path)) {
+    const url = request.nextUrl.clone();
+    url.pathname = "/";
     url.search = "";
     return NextResponse.redirect(url);
   }

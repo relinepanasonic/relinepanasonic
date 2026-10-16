@@ -2,7 +2,7 @@
 //   gobel = Panasonic Gobel          -> Postgres schema "public"  (existing data)
 //   light = Panasonic Light Solution -> Postgres schema "ws_light" (own empty copy,
 //                                       see Supabase Migration/50-workspaces.sql)
-//   alpha = Alpha Project            -> Postgres schema "ws_alpha" (own empty copy,
+//   alpha = Reline Project 1.0       -> Postgres schema "ws_alpha" (own empty copy,
 //                                       see Supabase Migration/53-workspace-alpha.sql)
 // The chosen workspace is kept in a session cookie ("ws") so every Supabase call
 // (browser, server, API routes) reads/writes that workspace's schema only.
@@ -15,8 +15,20 @@ export const DEFAULT_WORKSPACE: WorkspaceId = "gobel";
 export const WORKSPACES: { id: WorkspaceId; name: string; schema: string; tagline: string }[] = [
   { id: "gobel", name: "Panasonic Gobel",          schema: "public",   tagline: "Panasonic Gobel dealer network" },
   { id: "light", name: "Panasonic Light Solution", schema: "ws_light", tagline: "Panasonic Light Solution business" },
-  { id: "alpha", name: "Alpha Project",            schema: "ws_alpha", tagline: "Alpha Project" },
+  { id: "alpha", name: "Reline Project 1.0",        schema: "ws_alpha", tagline: "Reline Project 1.0" },
 ];
+
+// Pages that do not exist in a workspace (hidden from the menu, direct links go back to the dashboard).
+// Panasonic Gobel keeps its original app: Earning, Demographic and Payout are for the newer workspaces.
+const HIDDEN_PAGES: Record<WorkspaceId, string[]> = {
+  gobel: ["/finance", "/operational", "/payout"],
+  light: [],
+  alpha: [],
+};
+export function isPageHidden(id: string | null | undefined, path: string): boolean {
+  const ws = isWorkspaceId(id) ? id : DEFAULT_WORKSPACE;
+  return HIDDEN_PAGES[ws].some((h) => path === h || path.startsWith(h + "/"));
+}
 
 export function isWorkspaceId(v: string | null | undefined): v is WorkspaceId {
   return v === "gobel" || v === "light" || v === "alpha";

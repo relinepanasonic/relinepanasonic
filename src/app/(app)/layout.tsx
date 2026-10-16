@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { LangProvider, LANGS, useLangContext } from "@/lib/dashLang";
-import { clientWorkspaceId } from "@/lib/workspace";
+import { clientWorkspaceId, isPageHidden } from "@/lib/workspace";
 import { useWorkspace } from "@/lib/useWorkspace";
 
 type Role = "superadmin" | "client_admin" | "branch_manager" | "store_user" | "advertiser" | "pic_panasonic" | "sales";
@@ -101,7 +101,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
     router.refresh();
   }
 
-  const visible = NAV.filter((n) => !n.roles || (role && n.roles.includes(role)));
+  const visible = NAV.filter((n) => (!n.roles || (role && n.roles.includes(role))) && !isPageHidden(workspace.id, n.href));
   const byPriority = [...visible].sort((a, b) => {
     const ia = BOTTOM_PRIORITY.indexOf(a.href), ib = BOTTOM_PRIORITY.indexOf(b.href);
     return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);

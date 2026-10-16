@@ -3,6 +3,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import FinOpsUploadCards from "./FinOpsUploadCards";
+import { isPageHidden } from "@/lib/workspace";
+import { useWorkspaceId } from "@/lib/useWorkspace";
 import { fmtDateTime } from "@/lib/dates";
 import { MONTH_LIST, type DataSource } from "@/lib/parse";
 
@@ -85,6 +87,7 @@ type Batch = {
 };
 
 export default function UploadPage() {
+  const workspaceId = useWorkspaceId();
   const [supabase] = useState(() => createClient());
   const [clientId, setClientId] = useState("");
 
@@ -499,7 +502,9 @@ export default function UploadPage() {
       </div>
 
       {/* ───── Earning + Demographic: own cards ───── */}
-      <FinOpsUploadCards supabase={supabase} clientId={clientId} cities={cities} onDone={() => loadUploads(clientId)} />
+      {!isPageHidden(workspaceId, "/finance") && (
+        <FinOpsUploadCards supabase={supabase} clientId={clientId} cities={cities} onDone={() => loadUploads(clientId)} />
+      )}
 
       {/* ───── Upload Log ───── */}
       <div className="panel" style={{ marginTop: 18 }}>
