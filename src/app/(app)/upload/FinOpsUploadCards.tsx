@@ -58,12 +58,12 @@ export default function FinOpsUploadCards({ supabase, clientId, cities, onDone }
   supabase: Supabase; clientId: string; cities: CityRow[]; onDone: () => void;
 }) {
   return (
-    <div style={{ display: "flex", flexWrap: "wrap", gap: 20, marginTop: 20, alignItems: "flex-start" }}>
-      <div style={{ flex: "1 1 380px", minWidth: 0 }}>
+    <div style={{ display: "flex", flexWrap: "wrap", gap: 20, marginTop: 20, alignItems: "stretch" }}>
+      <div style={{ flex: "1 1 380px", minWidth: 0, display: "flex" }}>
         <UploadCard supabase={supabase} clientId={clientId} cities={cities} onDone={onDone}
           title="Earning" roles="Super Admin | Admin" slots={[EARNING_SLOT]} />
       </div>
-      <div style={{ flex: "1.7 1 640px", minWidth: 0 }}>
+      <div style={{ flex: "1.7 1 640px", minWidth: 0, display: "flex" }}>
         <UploadCard supabase={supabase} clientId={clientId} cities={cities} onDone={onDone}
           title="Demographic" roles="Super Admin | Admin" slots={[SHIPPING_SLOT, COMPLETED_SLOT]} />
       </div>
@@ -128,7 +128,7 @@ function UploadCard({ supabase, clientId, cities, onDone, title, roles, slots }:
   }
 
   return (
-    <div className="panel" style={{ margin: 0 }}>
+    <div className="panel" style={{ margin: 0, flex: 1, display: "flex", flexDirection: "column" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 8, marginBottom: 14 }}>
         <h3 style={{ margin: 0 }}>{title}</h3>
         <span style={{ fontSize: 12, color: "var(--muted)" }}>{roles}</span>
@@ -152,7 +152,7 @@ function UploadCard({ supabase, clientId, cities, onDone, title, roles, slots }:
         </Field>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: `repeat(auto-fit,minmax(min(100%,${slots.length > 1 ? 260 : 320}px),1fr))`, gap: 14, marginBottom: 20 }}>
+      <div style={{ display: "grid", gridTemplateColumns: `repeat(auto-fit,minmax(min(100%,${slots.length > 1 ? 260 : 320}px),1fr))`, gap: 14, marginBottom: 20, flex: 1 }}>
         {slots.map((s) => (
           <div key={s.key} style={{ padding: 16, border: "1px dashed rgba(201,162,39,.35)", borderRadius: 14, background: "rgba(15,32,64,.4)", display: "flex", flexDirection: "column", minWidth: 0 }}>
             <label style={{ fontSize: 12, color: "#cdd9f0", fontWeight: 600, display: "block", marginBottom: 4 }}>
