@@ -1,25 +1,44 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import dynamicImport from "next/dynamic";
 import { createClient } from "@/lib/supabase/client";
-import EarningPanel from "./EarningPanel";
-import PayoutDetailPanel from "./PayoutDetailPanel";
+import NotPaidPanel from "./NotPaidPanel";
+import PaidPanel from "./PaidPanel";
+import DetailPanel from "./DetailPanel";
+import { tabBtn } from "./shared";
 
 export const dynamic = "force-dynamic";
 
-// Payout (Super Admin + Admin):
-//   1. Earning        — daily earnings per dealer with a check box per day;
-//                       "Proceed Payment" saves the ticked days as a payout.
-//   2. Payout Detail  — the SKUs of a payout (qty x Modal) + CSV for the ERP.
+// Harga Beli is the purchase price per product — the same list as Earning's Modal Product (product_costs).
+const HargaBeli = dynamicImport(() => import("../finance/ModalProduct"), { ssr: false });
+
+// Payout (Super Admin + Admin): pay the vendor for the goods of completed orders.
+//   Not Paid       — completed lines not paid yet; tick them, "Pay to Vendor" -> XLS + PDF.
+//   Paid           — the saved payouts.
+//   Detail Payout  — one payout, Summary / Detail.
+//   Harga Beli     — purchase price per product.
 const TABS = [
-  { v: "earning", l: "Earning" },
-  { v: "detail", l: "Payout Detail" },
+  { v: "notpaid", l: "Not Paid" },
+  { v: "paid", l: "Paid" },
+  { v: "detail", l: "Detail Payout" },
+  { v: "price", l: "Harga Beli" },
 ] as const;
 
 export default function Page() {
   const [supabase] = useState(() => createClient());
-  const [tab, setTab] = useState<(typeof TABS)[number]["v"]>("earning");
+  const [clientId, setClientId] = useState("");
+  const [tab, setTab] = useState<(typeof TABS)[number]["v"]>("notpaid");
   const [batchId, setBatchId] = useState<string | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      const { data: cs } = await supabase.from("clients").select("id").order("created_at").limit(1);
+      setClientId((cs as { id: string }[])?.[0]?.id || "");
+    })();
+  }, [supabase]);
+
+  const open = (id: string) => { setBatchId(id); setTab("detail"); };
 
   return (
     <>
@@ -28,19 +47,10 @@ export default function Page() {
           <button key={x.v} onClick={() => setTab(x.v)} style={tabBtn(tab === x.v)}>{x.l}</button>
         ))}
       </div>
-      {tab === "earning" && (
-        <EarningPanel supabase={supabase} onProceeded={(id) => { setBatchId(id); setTab("detail"); }} onOpenPayout={(id) => { setBatchId(id); setTab("detail"); }} />
-      )}
-      {tab === "detail" && (
-        <PayoutDetailPanel supabase={supabase} batchId={batchId} onSelect={setBatchId} onBack={() => setTab("earning")} />
-      )}
+      {tab === "notpaid" && <NotPaidPanel supabase={supabase} clientId={clientId} onPaid={open} />}
+      {tab === "paid" && <PaidPanel supabase={supabase} clientId={clientId} onOpen={open} />}
+      {tab === "detail" && <DetailPanel supabase={supabase} clientId={clientId} batchId={batchId} onSelect={setBatchId} />}
+      {tab === "price" && <HargaBeli clientId={clientId} />}
     </>
   );
 }
-
-const tabBtn = (on: boolean): React.CSSProperties => ({
-  padding: "9px 20px", borderRadius: 10, cursor: "pointer", fontSize: 14, fontWeight: 700,
-  border: on ? "1px solid var(--gold)" : "1px solid rgba(255,255,255,.1)",
-  background: on ? "linear-gradient(135deg,var(--gold),var(--gold-soft))" : "rgba(10,22,40,.5)",
-  color: on ? "var(--navy-deep)" : "#e8edf8",
-});
