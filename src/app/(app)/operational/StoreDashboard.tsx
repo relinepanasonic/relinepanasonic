@@ -208,9 +208,9 @@ export default function StoreDashboard({ clientId, refreshKey }: { clientId: str
         <div className="kpi kpi-roas" style={{ display: "flex", flexDirection: "column", justifyContent: "center" }}>
           <div className="lbl">SLA</div>
           <div style={{ display: "flex", flexDirection: "column", gap: 3, marginTop: 6 }}>
-            <SlaLine label={t("Pay → Ship Deadline")} value={fmtHours(k?.sla_pay_to_deadline_hours ?? null)} />
-            <SlaLine label={t("Ship Deadline → Completed")} value={fmtDays(k?.sla_deadline_to_done_days ?? null)} />
-            <SlaLine label={t("Pay → Completed")} value={fmtDays(k?.sla_pay_to_done_days ?? null)} bold />
+            <SlaLine label={t("Paid - Ship")} value={fmtHours(k?.sla_pay_to_deadline_hours ?? null)} />
+            <SlaLine label={t("Ship - Completed")} value={fmtDays(k?.sla_deadline_to_done_days ?? null)} />
+            <SlaLine label={t("Paid - Completed")} value={fmtDays(k?.sla_pay_to_done_days ?? null)} bold />
           </div>
         </div>
         <div className="kpi kpi-cost"><div className="kpi-icon">✕</div><div className="lbl">{t("Total Cancellations")}</div><div className="val">{k ? numFull(k.total_pembatalan) : "—"}</div><div className="kpi-sub">{t("Orders cancelled")}</div></div>
@@ -342,7 +342,7 @@ function Top5Table({ title, nameLabel, rows, onPick, t }: { title: string; nameL
 
 function SlaLine({ label, value, bold }: { label: string; value: string; bold?: boolean }) {
   return (
-    <div style={{ display: "flex", justifyContent: "space-between", gap: 10, fontSize: bold ? 15 : 12.5 }}>
+    <div style={{ display: "flex", justifyContent: "space-between", gap: 10, fontSize: bold ? 13.5 : 12, whiteSpace: "nowrap" }}>
       <span style={{ color: bold ? "#e8edf8" : "var(--muted)", fontWeight: bold ? 700 : 500 }}>{label}</span>
       <span style={{ color: bold ? GOLD : "#e8edf8", fontWeight: 700 }}>{value}</span>
     </div>
