@@ -11,14 +11,14 @@ export const dynamic = "force-dynamic";
 // FinanceDashboard pulls in recharts; loaded on demand instead of bundled
 // into every page load.
 const FinanceDashboard = dynamicImport(() => import("./FinanceDashboard"), { ssr: false, loading: () => <Loader center /> });
-const ModalProduct = dynamicImport(() => import("./ModalProduct"), { ssr: false });
+const HargaBeli = dynamicImport(() => import("../payout/HargaBeli"), { ssr: false });
 
 const TABS = [
   { v: "dashboard", l: "Earning Dashboard" },
-  { v: "modal", l: "Modal Product" },
+  { v: "modal", l: "Harga Beli" },
 ] as const;
 // Finance upload lives on the /upload page — this page is the dashboard plus
-// cost entry. Modal Product (cost entry): Super Admin, Admin and Dealer Owner.
+// price entry. Harga Beli (purchase price per dealer, with history): Super Admin, Admin and Dealer Owner.
 const MANAGE_ROLES = ["superadmin", "client_admin", "branch_manager"];
 
 export default function Page() {
@@ -53,7 +53,7 @@ export default function Page() {
           </div>
         )}
         {tab === "dashboard" && <FinanceDashboard clientId={clientId} refreshKey={refreshKey} />}
-        {canManage && tab === "modal" && <ModalProduct clientId={clientId} />}
+        {canManage && tab === "modal" && <HargaBeli clientId={clientId} />}
     </>
   );
 }

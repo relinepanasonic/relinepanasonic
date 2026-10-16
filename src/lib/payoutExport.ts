@@ -9,25 +9,31 @@ export type PayoutBatch = {
 };
 export type PayoutLine = {
   order_no: string; shipped_at: string | null; withdraw_at: string | null; completed_at: string | null;
-  product_id: string | null; product_name: string | null; qty: number; harga_beli: number; total: number;
+  product_id: string | null; product_name: string | null; variant_id: string | null; variant_name: string | null;
+  qty: number; harga_beli: number; total: number;
 };
-export type SummaryRow = { product_id: string; product_name: string; qty: number; harga_beli: number; total: number };
+export type SummaryRow = {
+  product_id: string; product_name: string; variant_id: string; variant_name: string; qty: number; harga_beli: number; total: number;
+};
 
-// Summary sheet / page: one row per product (same Product ID and price), quantities and totals added up.
+// Summary sheet / page: one row per product + variant + price, quantities and totals added up.
 export function summarize(lines: PayoutLine[]): SummaryRow[] {
   const m = new Map<string, SummaryRow>();
   for (const l of lines) {
-    const key = `${l.product_id ?? ""}|${l.harga_beli}`;
-    const r = m.get(key) ?? { product_id: l.product_id ?? "", product_name: l.product_name ?? "", qty: 0, harga_beli: Number(l.harga_beli) || 0, total: 0 };
+    const key = `${l.product_id ?? ""}|${l.variant_id ?? "-"}|${l.harga_beli}`;
+    const r = m.get(key) ?? {
+      product_id: l.product_id ?? "", product_name: l.product_name ?? "", variant_id: l.variant_id ?? "-", variant_name: l.variant_name ?? "-",
+      qty: 0, harga_beli: Number(l.harga_beli) || 0, total: 0,
+    };
     r.qty += Number(l.qty) || 0;
     r.total += Number(l.total) || 0;
     m.set(key, r);
   }
-  return [...m.values()].sort((a, b) => a.product_name.localeCompare(b.product_name) || a.product_id.localeCompare(b.product_id));
+  return [...m.values()].sort((a, b) => a.product_name.localeCompare(b.product_name) || a.product_id.localeCompare(b.product_id) || a.variant_name.localeCompare(b.variant_name));
 }
 
-export const SUMMARY_HEAD = ["ID Product", "Nama Prod", "Qty", "Harga Beli", "Total"] as const;
-export const DETAIL_HEAD = ["No Pesanan", "Tgl Kirim", "Tgl Withdraw", "ID Prod", "Nama Prod", "Qty", "Harga Beli", "Total"] as const;
+export const SUMMARY_HEAD = ["ID Product", "Nama Prod", "ID Variasi", "Variasi", "Qty", "Harga Beli", "Total"] as const;
+export const DETAIL_HEAD = ["No Pesanan", "Tgl Kirim", "Tgl Withdraw", "ID Prod", "Nama Prod", "ID Variasi", "Variasi", "Qty", "Harga Beli", "Total"] as const;
 
 export const dateOrDash = (d: string | null) => (d ? fmtDate(d) : "—");
 
@@ -47,15 +53,15 @@ export function buildPayoutXlsx(b: PayoutBatch, lines: PayoutLine[]): Buffer {
   const summaryRows: (string | number)[][] = [
     ...info, [],
     [...SUMMARY_HEAD],
-    ...sum.map((r) => [r.product_id, r.product_name, r.qty, r.harga_beli, r.total]),
-    ["", "TOTAL", sum.reduce((a, r) => a + r.qty, 0), "", sum.reduce((a, r) => a + r.total, 0)],
+    ...sum.map((r) => [r.product_id, r.product_name, r.variant_id, r.variant_name, r.qty, r.harga_beli, r.total]),
+    ["", "TOTAL", "", "", sum.reduce((a, r) => a + r.qty, 0), "", sum.reduce((a, r) => a + r.total, 0)],
   ];
   const detailRows: (string | number)[][] = [
     ...info, [],
     [...DETAIL_HEAD],
     ...lines.map((l) => [l.order_no, l.shipped_at ? fmtDate(l.shipped_at) : "", l.withdraw_at ? fmtDate(l.withdraw_at) : "",
-      l.product_id ?? "", l.product_name ?? "", Number(l.qty), Number(l.harga_beli), Number(l.total)]),
-    ["", "", "", "", "TOTAL", lines.reduce((a, l) => a + Number(l.qty), 0), "", lines.reduce((a, l) => a + Number(l.total), 0)],
+      l.product_id ?? "", l.product_name ?? "", l.variant_id ?? "-", l.variant_name ?? "-", Number(l.qty), Number(l.harga_beli), Number(l.total)]),
+    ["", "", "", "", "TOTAL", "", "", lines.reduce((a, l) => a + Number(l.qty), 0), "", lines.reduce((a, l) => a + Number(l.total), 0)],
   ];
 
   const wb = XLSX.utils.book_new();
@@ -71,7 +77,7 @@ export function buildPayoutXlsx(b: PayoutBatch, lines: PayoutLine[]): Buffer {
     }
     XLSX.utils.book_append_sheet(wb, ws, name);
   };
-  put("Summary", summaryRows, [2, 3, 4], [16, 52, 8, 14, 16]);
-  put("Detail", detailRows, [5, 6, 7], [18, 13, 14, 14, 52, 8, 14, 16]);
+  put("Summary", summaryRows, [4, 5, 6], [16, 48, 16, 20, 8, 14, 16]);
+  put("Detail", detailRows, [7, 8, 9], [18, 13, 14, 14, 48, 16, 20, 8, 14, 16]);
   return XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Buffer;
 }

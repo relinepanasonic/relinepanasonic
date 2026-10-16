@@ -66,17 +66,18 @@ export default function DetailPanel({ supabase, clientId, batchId, onSelect }: {
           {view === "summary" ? (
             <div className="tbl-wrap" style={{ maxHeight: "58vh" }}>
               <table className="tbl day-tbl">
-                <thead><tr><th>ID Product</th><th>Nama Prod</th><th className="num">Qty</th><th className="num">Harga Beli</th><th className="num">Total</th></tr></thead>
+                <thead><tr><th>ID Product</th><th>Nama Prod</th><th>ID Variasi</th><th>Variasi</th><th className="num">Qty</th><th className="num">Harga Beli</th><th className="num">Total</th></tr></thead>
                 <tbody>
                   {sum.map((r, i) => (
                     <tr key={i}>
                       <td style={{ fontFamily: "monospace", fontSize: 12.5 }}>{r.product_id || "—"}</td>
                       <td style={{ maxWidth: 480, overflow: "hidden", textOverflow: "ellipsis" }} title={r.product_name}>{r.product_name}</td>
+                      <td style={{ fontFamily: "monospace", fontSize: 12.5 }}>{r.variant_id}</td><td>{r.variant_name}</td>
                       <td className="num">{num(r.qty)}</td><td className="num">{rp(r.harga_beli)}</td><td className="num">{rp(r.total)}</td>
                     </tr>
                   ))}
                   <tr style={{ fontWeight: 800, borderTop: "2px solid rgba(201,162,39,.4)" }}>
-                    <td></td><td>TOTAL</td><td className="num">{num(sum.reduce((a, r) => a + r.qty, 0))}</td><td></td>
+                    <td></td><td>TOTAL</td><td></td><td></td><td className="num">{num(sum.reduce((a, r) => a + r.qty, 0))}</td><td></td>
                     <td className="num" style={{ color: "var(--gold)" }}>{rp(sum.reduce((a, r) => a + r.total, 0))}</td>
                   </tr>
                 </tbody>
@@ -86,7 +87,7 @@ export default function DetailPanel({ supabase, clientId, batchId, onSelect }: {
             <div className="tbl-wrap" style={{ maxHeight: "58vh" }}>
               <table className="tbl day-tbl">
                 <thead><tr>
-                  <th>No Pesanan</th><th>Tgl Kirim</th><th>Tgl Withdraw</th><th>ID Prod</th><th>Nama Prod</th>
+                  <th>No Pesanan</th><th>Tgl Kirim</th><th>Tgl Withdraw</th><th>ID Prod</th><th>Nama Prod</th><th>ID Variasi</th><th>Variasi</th>
                   <th className="num">Qty</th><th className="num">Harga Beli</th><th className="num">Total</th>
                 </tr></thead>
                 <tbody>
@@ -96,6 +97,7 @@ export default function DetailPanel({ supabase, clientId, batchId, onSelect }: {
                       <td>{dateOrDash(l.shipped_at)}</td><td>{dateOrDash(l.withdraw_at)}</td>
                       <td style={{ fontFamily: "monospace", fontSize: 12.5 }}>{l.product_id || "—"}</td>
                       <td style={{ maxWidth: 420, overflow: "hidden", textOverflow: "ellipsis" }} title={l.product_name || ""}>{l.product_name}</td>
+                      <td style={{ fontFamily: "monospace", fontSize: 12.5 }}>{l.variant_id || "-"}</td><td>{l.variant_name || "-"}</td>
                       <td className="num">{num(l.qty)}</td><td className="num">{rp(l.harga_beli)}</td><td className="num">{rp(l.total)}</td>
                     </tr>
                   ))}

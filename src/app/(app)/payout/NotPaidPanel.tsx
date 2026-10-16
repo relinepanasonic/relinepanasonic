@@ -12,11 +12,11 @@ import { ScopeBar, downloadPayout, num, rp, useScope, type Supabase } from "./sh
 // (Summary / Detail) are downloaded. A line needs a Product ID and a Harga Beli (Harga Beli sub page) to be payable.
 
 type Line = {
-  completed_at: string; order_no: string; name_key: string; product_id: string | null; product_name: string;
-  qty: number; harga_beli: number | null; total: number; payable: boolean;
+  completed_at: string; order_no: string; name_key: string; var_key: string; product_id: string | null; product_name: string;
+  variant_id: string | null; variant_name: string; qty: number; harga_beli: number | null; total: number; payable: boolean;
 };
 const PAGE = 300;
-const keyOf = (l: Pick<Line, "order_no" | "name_key">) => `${l.order_no}||${l.name_key}`;
+const keyOf = (l: Pick<Line, "order_no" | "name_key" | "var_key">) => `${l.order_no}||${l.name_key}||${l.var_key}`;
 
 export default function NotPaidPanel({ supabase, clientId, onPaid }: {
   supabase: Supabase; clientId: string; onPaid: (batchId: string) => void;
@@ -48,7 +48,7 @@ export default function NotPaidPanel({ supabase, clientId, onPaid }: {
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return (rows || []).filter((r) => !q || r.order_no.toLowerCase().includes(q) || (r.product_name || "").toLowerCase().includes(q) || (r.product_id || "").toLowerCase().includes(q));
+    return (rows || []).filter((r) => !q || r.order_no.toLowerCase().includes(q) || (r.product_name || "").toLowerCase().includes(q) || (r.product_id || "").toLowerCase().includes(q) || (r.variant_name || "").toLowerCase().includes(q));
   }, [rows, search]);
   const { sortedData, sortConfig, requestSort } = useTableSort<Line>(filtered);
 
@@ -77,7 +77,7 @@ export default function NotPaidPanel({ supabase, clientId, onPaid }: {
     setBusy(true); setErr(""); setDone(null);
     const { data, error } = await supabase.rpc("payout_create", {
       p_client_id: clientId, p_store: scope.store, p_city: scope.cityOfStore,
-      p_keys: pickedLines.map((r) => ({ order_no: r.order_no, name_key: r.name_key })), p_note: null,
+      p_keys: pickedLines.map((r) => ({ order_no: r.order_no, name_key: r.name_key, var_key: r.var_key })), p_note: null,
     });
     setBusy(false);
     if (error) { setErr(error.message.replace(/^(ALREADY_PAID_OR_UNKNOWN|MISSING_PRICE):\s*/, "")); load(); return; }
@@ -98,7 +98,7 @@ export default function NotPaidPanel({ supabase, clientId, onPaid }: {
       <ScopeBar scope={scope}>
         <div className="fld" style={{ minWidth: 150 }}><label>From</label><input type="date" value={from} onChange={(e) => setFrom(e.target.value)} style={{ colorScheme: "dark" }} /></div>
         <div className="fld" style={{ minWidth: 150 }}><label>To</label><input type="date" value={to} onChange={(e) => setTo(e.target.value)} style={{ colorScheme: "dark" }} /></div>
-        <div className="fld" style={{ minWidth: 220, flex: 1 }}><label>Search</label><input type="text" placeholder="Order No. / Product ID / Product" value={search} onChange={(e) => setSearch(e.target.value)} /></div>
+        <div className="fld" style={{ minWidth: 220, flex: 1 }}><label>Search</label><input type="text" placeholder="Order No. / Product ID / Product / Variant" value={search} onChange={(e) => setSearch(e.target.value)} /></div>
         <button className="btn-ghost" onClick={checkAll} disabled={!payableShown.length}>{allChecked ? "☐ Uncheck All" : "☑ Check All"}</button>
       </ScopeBar>
 
@@ -129,7 +129,7 @@ export default function NotPaidPanel({ supabase, clientId, onPaid }: {
             <thead><tr>
               <th style={{ width: 36 }}><input type="checkbox" checked={allChecked} onChange={checkAll} disabled={!payableShown.length} title="Check all" /></th>
               {H("Date", "completed_at")}{H("No Pesanan", "order_no")}{H("Product ID", "product_id")}{H("Product", "product_name")}
-              {H("Qty", "qty", true)}{H("Harga Beli", "harga_beli", true)}{H("Total", "total", true)}
+              {H("Variant ID", "variant_id")}{H("Variant", "variant_name")}{H("Qty", "qty", true)}{H("Harga Beli", "harga_beli", true)}{H("Total", "total", true)}
             </tr></thead>
             <tbody>
               {sortedData.slice(0, limit).map((r) => {
@@ -141,13 +141,15 @@ export default function NotPaidPanel({ supabase, clientId, onPaid }: {
                     <td style={{ fontFamily: "monospace", fontSize: 12.5 }}>{r.order_no}</td>
                     <td style={{ fontFamily: "monospace", fontSize: 12.5 }}>{r.product_id || "—"}</td>
                     <td style={{ maxWidth: 420, overflow: "hidden", textOverflow: "ellipsis" }} title={r.product_name}>{r.product_name}</td>
+                    <td style={{ fontFamily: "monospace", fontSize: 12.5 }}>{r.variant_id && r.variant_id !== "-" ? r.variant_id : "—"}</td>
+                    <td>{r.variant_name && r.variant_name !== "-" ? r.variant_name : "—"}</td>
                     <td className="num">{num(r.qty)}</td>
                     <td className="num" style={r.harga_beli == null ? { color: "#f87171" } : undefined}>{r.harga_beli == null ? "no price" : rp(r.harga_beli)}</td>
                     <td className="num">{r.payable ? rp(r.total) : "—"}</td>
                   </tr>
                 );
               })}
-              {sortedData.length === 0 && <tr><td colSpan={8} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>Nothing to pay — every completed order of this dealer is paid.</td></tr>}
+              {sortedData.length === 0 && <tr><td colSpan={10} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>Nothing to pay — every completed order of this dealer is paid.</td></tr>}
             </tbody>
           </table>
           {sortedData.length > limit && (

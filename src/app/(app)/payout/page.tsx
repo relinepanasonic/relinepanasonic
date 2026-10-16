@@ -1,23 +1,21 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import dynamicImport from "next/dynamic";
 import { createClient } from "@/lib/supabase/client";
 import NotPaidPanel from "./NotPaidPanel";
 import PaidPanel from "./PaidPanel";
 import DetailPanel from "./DetailPanel";
+import HargaBeli from "./HargaBeli";
 import { tabBtn } from "./shared";
 
 export const dynamic = "force-dynamic";
 
-// Harga Beli is the purchase price per product — the same list as Earning's Modal Product (product_costs).
-const HargaBeli = dynamicImport(() => import("../finance/ModalProduct"), { ssr: false });
 
 // Payout (Super Admin + Admin): pay the vendor for the goods of completed orders.
 //   Not Paid       — completed lines not paid yet; tick them, "Pay to Vendor" -> XLS + PDF.
 //   Paid           — the saved payouts.
 //   Detail Payout  — one payout, Summary / Detail.
-//   Harga Beli     — purchase price per product.
+//   Harga Beli     — purchase price per dealer / product / variant, with a price log.
 const TABS = [
   { v: "notpaid", l: "Not Paid" },
   { v: "paid", l: "Paid" },

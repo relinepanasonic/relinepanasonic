@@ -59,9 +59,9 @@ export function PayoutDocument({ batch, lines }: { batch: PayoutBatch; lines: Pa
         <Text style={s.title}>Payout {batch.payout_no} — Summary</Text>
         <Text style={s.sub}>{subtitle}</Text>
         <Table
-          head={SUMMARY_HEAD} widths={[16, 48, 8, 12, 16]} align={["l", "l", "r", "r", "r"]}
-          rows={sum.map((r) => [r.product_id || "—", r.product_name, rp(r.qty), rp(r.harga_beli), rp(r.total)])}
-          total={["", "TOTAL", rp(sum.reduce((a, r) => a + r.qty, 0)), "", rp(sum.reduce((a, r) => a + r.total, 0))]}
+          head={SUMMARY_HEAD} widths={[13, 36, 13, 14, 6, 8, 10]} align={["l", "l", "l", "l", "r", "r", "r"]}
+          rows={sum.map((r) => [r.product_id || "—", r.product_name, r.variant_id, r.variant_name, rp(r.qty), rp(r.harga_beli), rp(r.total)])}
+          total={["", "TOTAL", "", "", rp(sum.reduce((a, r) => a + r.qty, 0)), "", rp(sum.reduce((a, r) => a + r.total, 0))]}
         />
         {footer}
       </Page>
@@ -69,10 +69,10 @@ export function PayoutDocument({ batch, lines }: { batch: PayoutBatch; lines: Pa
         <Text style={s.title}>Payout {batch.payout_no} — Detail</Text>
         <Text style={s.sub}>{subtitle}</Text>
         <Table
-          head={DETAIL_HEAD} widths={[15, 8, 9, 11, 33, 5, 9, 10]} align={["l", "l", "l", "l", "l", "r", "r", "r"]}
+          head={DETAIL_HEAD} widths={[12, 7, 8, 9, 22, 10, 10, 4, 8, 10]} align={["l", "l", "l", "l", "l", "l", "l", "r", "r", "r"]}
           rows={lines.map((l) => [l.order_no, dateOrDash(l.shipped_at), dateOrDash(l.withdraw_at), l.product_id || "—",
-            l.product_name || "—", rp(l.qty), rp(l.harga_beli), rp(l.total)])}
-          total={["", "", "", "", "TOTAL", rp(lines.reduce((a, l) => a + Number(l.qty), 0)), "", rp(lines.reduce((a, l) => a + Number(l.total), 0))]}
+            l.product_name || "—", l.variant_id || "-", l.variant_name || "-", rp(l.qty), rp(l.harga_beli), rp(l.total)])}
+          total={["", "", "", "", "TOTAL", "", "", rp(lines.reduce((a, l) => a + Number(l.qty), 0)), "", rp(lines.reduce((a, l) => a + Number(l.total), 0))]}
         />
         {footer}
       </Page>
