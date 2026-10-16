@@ -13,7 +13,16 @@ import { GUIDE } from "@/lib/uploadGuides";
 // to download the file from Shopee.
 
 const MONTHS = ["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"];
-const THIS_YEAR = new Date().getFullYear();
+const pad2 = (n: number) => String(n).padStart(2, "0");
+const isoOf = (d: Date) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+// the daily files are normally exported the next morning: default the calendar to yesterday
+const yesterday = () => { const d = new Date(); d.setDate(d.getDate() - 1); return isoOf(d); };
+// Shopee names a one-day export Order.shipping.20261015_20261015.xlsx: take the date from the name
+function dateFromFilename(name: string): string | null {
+  const m = name.match(/(\d{4})(\d{2})(\d{2})_(\d{4})(\d{2})(\d{2})/);
+  if (!m || m.slice(1, 4).join("") !== m.slice(4, 7).join("")) return null;
+  return `${m[1]}-${m[2]}-${m[3]}`;
+}
 
 type Supabase = ReturnType<typeof createClient>;
 type CityRow = { value: string; pic: string | null };
@@ -66,8 +75,7 @@ function UploadCard({ supabase, clientId, cities, onDone, title, roles, slots }:
   supabase: Supabase; clientId: string; cities: CityRow[]; onDone: () => void;
   title: string; roles: string; slots: Slot[];
 }) {
-  const [year, setYear] = useState(THIS_YEAR);
-  const [bulan, setBulan] = useState("");
+  const [date, setDate] = useState(yesterday);
   const [city, setCity] = useState("");
   const [dealer, setDealer] = useState("");
   const [dealers, setDealers] = useState<string[]>([]);
@@ -85,12 +93,13 @@ function UploadCard({ supabase, clientId, cities, onDone, title, roles, slots }:
 
   async function submit() {
     if (!clientId) { setLog(["✗ Workspace not ready."]); return; }
-    if (!bulan || !city || !dealer) { setLog(["✗ Pick Month, City and Dealer first."]); return; }
+    if (!date || !city || !dealer) { setLog(["✗ Pick the Date, City and Dealer first."]); return; }
     const chosen = slots.filter((s) => files[s.key]);
     if (!chosen.length) { setLog(["✗ Choose a file first."]); return; }
     setBusy(true); setLog([]);
+    // the calendar date sets the Year / Month the rows are filed under (week comes from each row's own date)
     const manual = JSON.stringify({
-      year, bulan, city,
+      date, year: Number(date.slice(0, 4)), bulan: MONTHS[Number(date.slice(5, 7)) - 1], city,
       pic_client: cities.find((c) => c.value === city)?.pic || "",
       store_name: dealer,
     });
@@ -125,18 +134,10 @@ function UploadCard({ supabase, clientId, cities, onDone, title, roles, slots }:
         <span style={{ fontSize: 12, color: "var(--muted)" }}>{roles}</span>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 14, marginBottom: 14 }}>
-        <Field label="Year">
-          <input type="number" value={year} onChange={(e) => setYear(Number(e.target.value))} />
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(min(100%,170px),1fr))", gap: 14, marginBottom: 20 }}>
+        <Field label="Date">
+          <input type="date" value={date} onChange={(e) => setDate(e.target.value)} style={{ colorScheme: "dark" }} />
         </Field>
-        <Field label="Bulan">
-          <select value={bulan} onChange={(e) => setBulan(e.target.value)}>
-            <option value="">Month</option>
-            {MONTHS.map((m) => <option key={m}>{m}</option>)}
-          </select>
-        </Field>
-      </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 14, marginBottom: 20 }}>
         <Field label="City">
           <select value={city} onChange={(e) => pickCity(e.target.value)}>
             <option value="">Select city…</option>
@@ -158,7 +159,12 @@ function UploadCard({ supabase, clientId, cities, onDone, title, roles, slots }:
               {s.fileLabel} <span style={{ color: "var(--muted)", fontWeight: 400, fontSize: 11 }}>{s.fileHint}</span>
             </label>
             <input type="file" accept=".xlsx,.xls" className="file-gold" style={{ fontSize: 12, display: "block", width: "100%" }}
-              onChange={(e) => setFiles((f) => ({ ...f, [s.key]: e.target.files?.[0] ?? null }))} />
+              onChange={(e) => {
+                const f = e.target.files?.[0] ?? null;
+                setFiles((x) => ({ ...x, [s.key]: f }));
+                const d = f ? dateFromFilename(f.name) : null;
+                if (d) setDate(d); // a one-day export tells us its own date
+              }} />
             {files[s.key] && <p style={{ marginTop: 6, fontSize: 11, color: "var(--gold)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>✓ {files[s.key]!.name}</p>}
             {s.guide && <ImageGuideModal image={s.guide} align="right" />}
           </div>

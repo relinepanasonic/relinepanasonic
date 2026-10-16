@@ -42,6 +42,7 @@ const BADGES: { key: string; label: string; color: string }[] = [
   { key: "group",  label: "Group Ads",  color: "#ec4899" },
   { key: "finance", label: "Earning",   color: "#14b8a6" },
   { key: "orders",  label: "Demographic", color: "#06b6d4" },
+  { key: "orders_ship", label: "Demographic · Shipping", color: "#0ea5e9" },
 ];
 function subKey(u: UploadRow): string {
   if (u.source !== "ads") return u.source;
