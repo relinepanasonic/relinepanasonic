@@ -548,14 +548,13 @@ export default function UploadPage() {
                   <td>
                     <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
                       {BADGES.map((s) => {
-                        const present = !!b.bySource[s.key];
+                        if (!b.bySource[s.key]) return null; // only what was uploaded: no grey placeholders
                         const color = s.color;
                         return (
                           <span key={s.key} style={{
                             fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 999,
-                            background: present ? color + "22" : "rgba(255,255,255,.05)",
-                            color: present ? color : "var(--muted)",
-                            border: `1px solid ${present ? color + "44" : "rgba(255,255,255,.1)"}`,
+                            background: color + "22", color,
+                            border: `1px solid ${color + "44"}`,
                           }}>
                             {s.label}
                           </span>

@@ -354,12 +354,12 @@ type DayRow = {
   tx_date: string; orders: number; units: number; gmv: number; aov: number; return_qty: number; subtotal: number;
   est_shipping_fee: number; return_shipping_fee: number; buyer_shipping_fee: number; est_shipping_cost: number;
 };
-type DayOrder = {
-  order_no: string; total_payment: number | null; units: number; return_qty: number; subtotal: number;
+type DayLine = {
+  order_no: string; first_in_order: boolean; product_id: string | null; product_name: string | null; variant_name: string | null;
+  qty: number; return_qty: number; subtotal: number; total_payment: number | null;
   est_shipping_fee: number; return_shipping_fee: number; buyer_shipping_fee: number; est_shipping_cost: number;
   paid_at: string | null; ship_deadline: string | null; shipped_at: string | null; completed_at: string | null;
   payment_method: string | null; shipping_option: string | null; city: string | null; province: string | null; status: string | null;
-  products: { product_id: string | null; product_name: string | null; variant_name: string | null; qty: number | null }[];
 };
 type DetailRow = {
   order_no: string | null; product_name: string | null; variant_name: string | null; qty: number | null;
@@ -427,21 +427,24 @@ function DayDrillDown({ kind, day, clientId, sel, supabase, onClose }: {
   supabase: ReturnType<typeof createClient>; onClose: () => void;
 }) {
   const { t } = useLang();
-  const [rows, setRows] = useState<DayOrder[] | null>(null);
-  const timeOf = (r: DayOrder) => (kind === "shipped" ? r.shipped_at : r.completed_at) ?? null;
+  const [rows, setRows] = useState<DayLine[] | null>(null);
+  const timeOf = (r: DayLine) => (kind === "shipped" ? r.shipped_at : r.completed_at) ?? null;
 
   useEffect(() => {
     (async () => {
-      // the SQL function also fills each product's Shopee Product ID from the Earning report
-      const { data } = await supabase.rpc("store_perf_day_orders", {
+      // the SQL function fills each line's Shopee Product ID from the Earning report / product catalog
+      const { data } = await supabase.rpc("store_perf_day_lines", {
         p_client_id: clientId, p_kind: kind, p_day: day,
         p_year: sel.year ? Number(sel.year) : null, p_month: sel.month || null, p_week: sel.week || null,
         p_city: sel.city || null, p_store: sel.store || null,
       });
-      setRows((data as DayOrder[]) || []);
+      setRows((data as DayLine[]) || []);
     })();
   }, [kind, day, clientId, sel, supabase]);
 
+  // ONE ROW PER PRODUCT. Order-level figures (total payment, shipping fees, times, courier, ...) belong to
+  // the whole order, so they are written on its first line only: summing a column never double counts.
+  const dim = { color: "var(--muted)" };
   return (
     <div style={overlay} onClick={onClose}>
       <div style={drawer} onClick={(e) => e.stopPropagation()}>
@@ -451,51 +454,46 @@ function DayDrillDown({ kind, day, clientId, sel, supabase, onClose }: {
         </div>
         {rows === null ? <Loader center /> : (
           <div className="tbl-wrap" style={{ maxHeight: "72vh" }}>
-            <table className="tbl" style={{ color: "#e8edf8", fontSize: 13.5 }}>
+            <table className="tbl day-tbl" style={{ color: "#e8edf8" }}>
               <thead><tr>
-                <th>{t("Order No.")}</th><th>{t("Product ID")}</th><th>{t("Product")}</th>
-                <th className="num">{t("Total Product Sold")}</th><th className="num">{t("Return Qty")}</th>
-                <th className="num">{t("Subtotal Pesanan")}</th><th className="num">{t("Total Payment")}</th>
+                <th>{t("Order No.")}</th><th>{t("Product ID")}</th><th>{t("Product")}</th><th>{t("Variant")}</th>
+                <th className="num">Qty</th><th className="num">{t("Return Qty")}</th><th className="num">{t("Subtotal Pesanan")}</th>
+                <th className="num">{t("Total Payment")}</th>
                 <th className="num">{t("Estimasi Potongan Biaya Pengiriman")}</th><th className="num">{t("Ongkos Kirim Pengembalian Barang")}</th>
                 <th className="num">{t("Ongkos Kirim Dibayar oleh Pembeli")}</th><th className="num">{t("Perkiraan Ongkos Kirim")}</th>
                 <th>{t("Paid At")}</th><th>{kind === "shipped" ? t("Shipped At") : t("Completed At")}</th><th>SLA</th>
                 <th>{t("Payment Method")}</th><th>{t("Courier")}</th><th>{t("City")}</th><th>{t("Province")}</th><th>{t("Status")}</th>
               </tr></thead>
               <tbody>
-                {rows.map((r) => (
-                  <tr key={r.order_no}>
-                    <td style={{ fontFamily: "monospace", fontSize: 12.5, whiteSpace: "nowrap", verticalAlign: "top" }}>{r.order_no}</td>
-                    {/* one line per product in both columns (fixed line height keeps ID and name aligned) */}
-                    <td style={{ whiteSpace: "nowrap", verticalAlign: "top" }}>
-                      {r.products.map((p, i) => (
-                        <div key={i} style={{ height: 22, lineHeight: "22px", fontFamily: "monospace", fontSize: 12.5, color: GOLD }}>{p.product_id || "—"}</div>
-                      ))}
-                    </td>
-                    <td style={{ whiteSpace: "nowrap", verticalAlign: "top", maxWidth: 380 }}>
-                      {r.products.map((p, i) => {
-                        const label = `${p.product_name || "—"}${p.variant_name ? ` (${p.variant_name})` : ""}${p.qty != null ? ` ×${p.qty}` : ""}`;
-                        return <div key={i} title={label} style={{ height: 22, lineHeight: "22px", overflow: "hidden", textOverflow: "ellipsis" }}>{label}</div>;
-                      })}
-                    </td>
-                    <td className="num">{numFull(r.units)}</td>
-                    <td className="num">{numFull(r.return_qty)}</td>
-                    <td className="num">{rpFull(r.subtotal)}</td>
-                    <td className="num">{rpFull(r.total_payment || 0)}</td>
-                    <td className="num">{rpFull(r.est_shipping_fee)}</td>
-                    <td className="num">{rpFull(r.return_shipping_fee)}</td>
-                    <td className="num">{rpFull(r.buyer_shipping_fee)}</td>
-                    <td className="num">{rpFull(r.est_shipping_cost)}</td>
-                    <td style={{ fontSize: 12.5, whiteSpace: "nowrap" }}>{fmtDT(r.paid_at)}</td>
-                    <td style={{ fontSize: 12.5, whiteSpace: "nowrap" }}>{fmtDT(timeOf(r))}</td>
-                    <td style={{ fontSize: 12.5, whiteSpace: "nowrap", fontWeight: 700, color: GOLD }}>{slaFor(r.paid_at, timeOf(r))}</td>
-                    <td style={{ fontSize: 12.5, whiteSpace: "nowrap" }}>{r.payment_method || "—"}</td>
-                    <td style={{ fontSize: 12.5, whiteSpace: "nowrap" }}>{r.shipping_option || "—"}</td>
-                    <td style={{ fontSize: 12.5, whiteSpace: "nowrap" }}>{r.city || "—"}</td>
-                    <td style={{ fontSize: 12.5, whiteSpace: "nowrap" }}>{r.province || "—"}</td>
-                    <td style={{ fontSize: 12.5, whiteSpace: "nowrap" }}>{r.status || "—"}</td>
-                  </tr>
-                ))}
-                {rows.length === 0 && <tr><td colSpan={19} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>{t("No transactions")}</td></tr>}
+                {rows.map((r, i) => {
+                  const f = r.first_in_order;
+                  const order = (v: React.ReactNode) => (f ? v : <span style={dim}>·</span>);
+                  return (
+                    <tr key={i} style={f && i > 0 ? { borderTop: "2px solid rgba(201,162,39,.25)" } : undefined}>
+                      <td style={{ fontFamily: "monospace", fontSize: 12.5 }}>{f ? r.order_no : <span style={dim}>{r.order_no}</span>}</td>
+                      <td style={{ fontFamily: "monospace", fontSize: 12.5, color: r.product_id ? GOLD : "var(--muted)" }}>{r.product_id || "—"}</td>
+                      <td style={{ maxWidth: 380, overflow: "hidden", textOverflow: "ellipsis" }} title={r.product_name || ""}>{r.product_name || "—"}</td>
+                      <td>{r.variant_name || "—"}</td>
+                      <td className="num">{numFull(r.qty)}</td>
+                      <td className="num">{numFull(r.return_qty)}</td>
+                      <td className="num">{rpFull(r.subtotal)}</td>
+                      <td className="num">{order(rpFull(r.total_payment || 0))}</td>
+                      <td className="num">{order(rpFull(r.est_shipping_fee))}</td>
+                      <td className="num">{order(rpFull(r.return_shipping_fee))}</td>
+                      <td className="num">{order(rpFull(r.buyer_shipping_fee))}</td>
+                      <td className="num">{order(rpFull(r.est_shipping_cost))}</td>
+                      <td style={{ fontSize: 12.5 }}>{order(fmtDT(r.paid_at))}</td>
+                      <td style={{ fontSize: 12.5 }}>{order(fmtDT(timeOf(r)))}</td>
+                      <td style={{ fontSize: 12.5, fontWeight: 700, color: GOLD }}>{order(slaFor(r.paid_at, timeOf(r)))}</td>
+                      <td style={{ fontSize: 12.5 }}>{order(r.payment_method || "—")}</td>
+                      <td style={{ fontSize: 12.5 }}>{order(r.shipping_option || "—")}</td>
+                      <td style={{ fontSize: 12.5 }}>{order(r.city || "—")}</td>
+                      <td style={{ fontSize: 12.5 }}>{order(r.province || "—")}</td>
+                      <td style={{ fontSize: 12.5 }}>{order(r.status || "—")}</td>
+                    </tr>
+                  );
+                })}
+                {rows.length === 0 && <tr><td colSpan={20} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>{t("No transactions")}</td></tr>}
               </tbody>
             </table>
           </div>

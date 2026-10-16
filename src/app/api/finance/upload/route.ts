@@ -165,6 +165,19 @@ export async function POST(req: NextRequest) {
       }
       skuInserted += slice.length;
     }
+
+    // Remember each product's Shopee Product ID by name (survives deleting this upload), so the
+    // Demographic pop-up can fill the Product ID of orders that Earning has not released yet.
+    // Best effort: a catalog problem must never fail the upload itself.
+    const byName = new Map<string, { client_id: string; nama_produk: string; kode_produk: string }>();
+    for (const s of skuRows) {
+      const name = (s.nama_produk || "").trim();
+      if (name && s.kode_produk) byName.set(name.toLowerCase(), { client_id: clientId, nama_produk: name, kode_produk: String(s.kode_produk) });
+    }
+    const catalog = Array.from(byName.values());
+    for (let i = 0; i < catalog.length; i += CHUNK) {
+      await admin.from("product_catalog").upsert(catalog.slice(i, i + CHUNK), { onConflict: "client_id,name_key" });
+    }
   }
 
   await admin.from("uploads").update({ row_count: inserted }).eq("id", upload.id);
