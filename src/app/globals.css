@@ -307,5 +307,7 @@ table.tbl-sticky2{width:max-content;min-width:100%}
 
 /* Order Shipped / Order Completed (Demographic): every value on ONE line, headers may wrap to fit all 10 columns */
 .day-tbl td { white-space: nowrap; padding: 12px 10px; font-size: 13px; }
-.day-tbl th { white-space: normal; line-height: 1.25; padding: 10px 8px; font-size: 11px; vertical-align: middle; }
+/* !important: SortableHeader sets white-space: nowrap inline. Headers wrap to 2-3 lines so all 10 columns fit. */
+.day-tbl th { white-space: normal !important; line-height: 1.25; padding: 10px 8px; font-size: 11px; vertical-align: middle; min-width: 74px; max-width: 150px; }
+.day-tbl .sortable-th-inner { gap: 4px; }
 .day-tbl td.num, .day-tbl th.num { text-align: right; }
