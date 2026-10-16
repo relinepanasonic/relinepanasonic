@@ -181,7 +181,7 @@ const ID_DICT: Record<string, string> = {
   "Payment Method": "Metode Bayar", "Shipping Service": "Jasa Kirim",
   "Daily Transaction Detail": "Detail Transaksi per Hari",
   "Order Shipped": "Pesanan Dikirim", "Shipped At": "Waktu Dikirim", "Product ID": "ID Produk",
-  "Return Qty": "Jumlah Retur", "Total Payment": "Total Pembayaran",
+  "Return Qty": "Jumlah Retur", "Variant ID": "ID Variasi", "Total Payment": "Total Pembayaran",
   "Click a row to see that day's shipped orders by No. Pesanan · date based on the time the shipment was arranged · an order that is already completed is not listed here": "Klik baris untuk melihat pesanan yang dikirim hari itu per No. Pesanan · tanggal berdasarkan waktu pengiriman diatur · pesanan yang sudah selesai tidak ditampilkan di sini",
   "Click a row to see that day's completed orders by No. Pesanan · date based on order completed time": "Klik baris untuk melihat pesanan selesai hari itu per No. Pesanan · tanggal berdasarkan waktu pesanan selesai",
   "Click a row to see that day's shipped orders · date based on the time the shipment was arranged": "Klik baris untuk melihat pesanan yang dikirim hari itu · tanggal berdasarkan waktu pengiriman diatur",

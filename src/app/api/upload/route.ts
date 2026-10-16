@@ -2,6 +2,7 @@ import { NextRequest, NextResponse, after } from "next/server";
 import * as XLSX from "xlsx";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { parseProductList } from "@/lib/parseProductList";
 import { currentSchema } from "@/lib/workspace-server";
 import { mapRow, bqCol, type DataSource, type ManualFields } from "@/lib/parse";
 
@@ -233,6 +234,21 @@ export async function POST(req: NextRequest) {
     .from("uploads")
     .update({ row_count: inserted })
     .eq("id", upload.id);
+
+  // SPOS also lists every Product ID / Variant ID with its names: keep them in the product list that Harga Beli,
+  // Payout and the Demographic pop-up use. Best effort - the SPOS upload itself never fails because of it.
+  if (source === "spos") {
+    try {
+      const rawMatrix = XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, raw: true, defval: "" });
+      const list = parseProductList(rawMatrix).rows;
+      const now = new Date().toISOString();
+      for (let i = 0; i < list.length; i += 1000) {
+        await admin.from("product_variants").upsert(
+          list.slice(i, i + 1000).map((r) => ({ client_id: clientId, ...r, nama_produk: r.nama_produk || null, updated_at: now })),
+          { onConflict: "client_id,kode_produk,kode_variasi" });
+      }
+    } catch { /* product list is optional */ }
+  }
 
   // Refresh the dashboard's cached "All Time" snapshot after the response
   // is sent — recomputing it live on every page load doesn't scale as

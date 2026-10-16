@@ -125,7 +125,14 @@ export function parseAdGroupMatrix(matrix: unknown[][]): ParsedAdGroup {
   const iCart    = col("add to cart", "keranjang", "masuk keranjang");
   const iOmzet   = col("omzet penjualan", "omzet");
   const iPenjL   = col("penjualan langsung");
-  const iBiaya   = col("biaya", "cost");
+  // "Biaya per Konversi" / "Biaya per Konversi Langsung" come BEFORE "Biaya" in the file: take the column that is exactly
+  // "Biaya" (the ad spend); only if there is none, the first cost-like column that is not a per-conversion figure.
+  const iBiaya = (() => {
+    const h = header.map(lc);
+    const exact = h.findIndex((c) => c === "biaya" || c === "cost" || c === "expense");
+    if (exact !== -1) return exact;
+    return h.findIndex((c) => (c.includes("biaya") || c.includes("cost")) && !c.includes("per ") && !c.includes("persentase"));
+  })();
   const iRoasL   = col("efektivitas langsung", "efektifitas langsung", "roas langsung");
   const iRoas    = colExcept(header, "efektifitas iklan", iRoasL) !== -1
     ? colExcept(header, "efektifitas iklan", iRoasL)

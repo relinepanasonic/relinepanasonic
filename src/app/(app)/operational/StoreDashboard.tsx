@@ -364,7 +364,7 @@ type DayRow = {
   est_shipping_fee: number; return_shipping_fee: number; buyer_shipping_fee: number; est_shipping_cost: number;
 };
 type DayLine = {
-  order_no: string; first_in_order: boolean; product_id: string | null; product_name: string | null; variant_name: string | null;
+  order_no: string; first_in_order: boolean; product_id: string | null; product_name: string | null; variant_id?: string | null; variant_name: string | null;
   qty: number; return_qty: number; subtotal: number; total_payment: number | null;
   est_shipping_fee: number; return_shipping_fee: number; buyer_shipping_fee: number; est_shipping_cost: number;
   paid_at: string | null; ship_deadline: string | null; shipped_at: string | null; completed_at: string | null;
@@ -465,7 +465,7 @@ function DayDrillDown({ kind, day, clientId, sel, supabase, onClose }: {
           <div className="tbl-wrap" style={{ maxHeight: "72vh" }}>
             <table className="tbl day-tbl" style={{ color: "#e8edf8" }}>
               <thead><tr>
-                <th>{t("Order No.")}</th><th>{t("Product ID")}</th><th>{t("Product")}</th><th>{t("Variant")}</th>
+                <th>{t("Order No.")}</th><th>{t("Product ID")}</th><th>{t("Product")}</th><th>{t("Variant ID")}</th><th>{t("Variant")}</th>
                 <th className="num">Qty</th><th className="num">{t("Return Qty")}</th><th className="num">{t("Subtotal Pesanan")}</th>
                 <th className="num">{t("Total Payment")}</th>
                 <th className="num">{t("Estimasi Potongan Biaya Pengiriman")}</th><th className="num">{t("Ongkos Kirim Pengembalian Barang")}</th>
@@ -482,6 +482,7 @@ function DayDrillDown({ kind, day, clientId, sel, supabase, onClose }: {
                       <td style={{ fontFamily: "monospace", fontSize: 12.5 }}>{f ? r.order_no : <span style={dim}>{r.order_no}</span>}</td>
                       <td style={{ fontFamily: "monospace", fontSize: 12.5, color: r.product_id ? GOLD : "var(--muted)" }}>{r.product_id || "—"}</td>
                       <td style={{ maxWidth: 380, overflow: "hidden", textOverflow: "ellipsis" }} title={r.product_name || ""}>{r.product_name || "—"}</td>
+                      <td style={{ fontFamily: "monospace", fontSize: 12.5, color: r.variant_id ? GOLD : "var(--muted)" }}>{r.variant_id || "—"}</td>
                       <td>{r.variant_name || "—"}</td>
                       <td className="num">{numFull(r.qty)}</td>
                       <td className="num" style={redIf(r.return_qty)}>{numFull(r.return_qty)}</td>
@@ -502,7 +503,7 @@ function DayDrillDown({ kind, day, clientId, sel, supabase, onClose }: {
                     </tr>
                   );
                 })}
-                {rows.length === 0 && <tr><td colSpan={20} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>{t("No transactions")}</td></tr>}
+                {rows.length === 0 && <tr><td colSpan={21} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>{t("No transactions")}</td></tr>}
               </tbody>
             </table>
           </div>

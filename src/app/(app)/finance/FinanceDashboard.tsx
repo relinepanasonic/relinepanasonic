@@ -73,6 +73,7 @@ type FinanceProductRow = {
   kode_produk: string; nama_produk: string | null; orders: number; sales: number;
   promotion_cost: number; refund: number; delivery_cost: number; affiliate_cost: number;
   marketplace_fee: number; pajak: number; other: number; net_income: number;
+  ads_cost: number; // ad spend of this Product ID (the 3 ads uploads; per product, not per variant)
   // from the Order Completed upload (migration 0131); units null = none of this product's orders found there
   units: number | null; units_orders: number; sales_with_units: number;
 };
@@ -212,12 +213,12 @@ export default function FinanceDashboard({ clientId, refreshKey, extraSections =
     <div className="fin-compact">
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
         <button onClick={() => setSection("dashboard")} style={tableTabBtn(section === "dashboard")}>{t("Dashboard")}</button>
-        <button onClick={() => setSection("profit")} style={tableTabBtn(section === "profit")}>Detail Product Profit</button>
         <button onClick={() => setSection("transaksi")} style={tableTabBtn(section === "transaksi")}>{t("Withdraw Detail")}</button>
         <button onClick={() => setSection("notpaid")} style={tableTabBtn(section === "notpaid")}>{t("Not Paid Order")}</button>
         <button onClick={() => setSection("unconnected")} style={tableTabBtn(section === "unconnected")}>
           {t("Not Connected")}{uc && uc.unconnected_orders > 0 && <span style={COUNT_BADGE}>{uc.unconnected_orders > 99 ? "99+" : uc.unconnected_orders}</span>}
         </button>
+        <button onClick={() => setSection("profit")} style={tableTabBtn(section === "profit")}>Detail Product Profit</button>
         {extraSections.map((x) => <button key={x.key} onClick={() => setSection(x.key)} style={tableTabBtn(section === x.key)}>{x.label}</button>)}
       </div>
       {extraSections.find((x) => x.key === section)?.node ?? (
@@ -421,6 +422,7 @@ function ProductProfitTable({ data, t }: { data: FinanceProducts | null; t: (k: 
             <SortableHeader label={t("Units Sold")} sortKey="units" currentSort={sortConfig} onRequestSort={requestSort} className="num" />
             <SortableHeader label={t("Units / Order")} sortKey="units_per_order" currentSort={sortConfig} onRequestSort={requestSort} className="num" />
             <SortableHeader label={t("Sales")} sortKey="sales" currentSort={sortConfig} onRequestSort={requestSort} className="num" />
+            <SortableHeader label={t("Ads Cost")} sortKey="ads_cost" currentSort={sortConfig} onRequestSort={requestSort} className="num" />
             <SortableHeader label={t("Promotional Cost")} sortKey="promotion_cost" currentSort={sortConfig} onRequestSort={requestSort} className="num" />
             <SortableHeader label={t("Refund")} sortKey="refund" currentSort={sortConfig} onRequestSort={requestSort} className="num" />
             <SortableHeader label={t("Delivery Cost")} sortKey="delivery_cost" currentSort={sortConfig} onRequestSort={requestSort} className="num" />
@@ -444,6 +446,7 @@ function ProductProfitTable({ data, t }: { data: FinanceProducts | null; t: (k: 
                 </td>
                 <td className="num" style={cell}>{r.units_per_order == null ? "—" : r.units_per_order.toLocaleString("id-ID", { maximumFractionDigits: 1 })}</td>
                 <td className="num" style={cell}>{rpFull(r.sales)}</td>
+                <td className="num" style={cell}>{rpFull(r.ads_cost)}</td>
                 <td className="num" style={cell}>{rpFull(r.promotion_cost)}</td>
                 <td className="num" style={cell}>{rpFull(r.refund)}</td>
                 <td className="num" style={cell}>{rpFull(r.delivery_cost)}</td>
@@ -456,7 +459,7 @@ function ProductProfitTable({ data, t }: { data: FinanceProducts | null; t: (k: 
               </tr>
             ))}
             {sortedData.length === 0 && (
-              <tr><td colSpan={15} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>
+              <tr><td colSpan={16} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>
                 {total > 0 && withDetail === 0
                   ? t("No per-product data for this period. Upload the newer Shopee Penghasilan income report to see products here.")
                   : t("No data for these filters")}
