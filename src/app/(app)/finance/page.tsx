@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import dynamicImport from "next/dynamic";
 import { createClient } from "@/lib/supabase/client";
 import Loader from "@/components/Loader";
-import { useLang } from "@/lib/financeI18n";
 
 export const dynamic = "force-dynamic";
 
@@ -13,19 +12,14 @@ export const dynamic = "force-dynamic";
 const FinanceDashboard = dynamicImport(() => import("./FinanceDashboard"), { ssr: false, loading: () => <Loader center /> });
 const HargaBeli = dynamicImport(() => import("../payout/HargaBeli"), { ssr: false });
 
-const TABS = [
-  { v: "dashboard", l: "Earning Dashboard" },
-  { v: "modal", l: "Harga Beli" },
-] as const;
-// Finance upload lives on the /upload page — this page is the dashboard plus
-// price entry. Harga Beli (purchase price per dealer, with history): Super Admin, Admin and Dealer Owner.
+// Earning sub pages (one bar): Dashboard | Detail Product Profit | Withdraw Detail | Not Paid Order | Not Connected,
+// plus Harga Beli for Super Admin, Admin and Dealer Owner (purchase price per dealer, with history).
+// Finance upload lives on the /upload page.
 const MANAGE_ROLES = ["superadmin", "client_admin", "branch_manager"];
 
 export default function Page() {
-  const { t } = useLang();
   const [supabase] = useState(() => createClient());
   const [clientId, setClientId] = useState("");
-  const [tab, setTab] = useState<(typeof TABS)[number]["v"]>("dashboard");
   const [refreshKey] = useState(0);
   const [canManage, setCanManage] = useState(false);
 
@@ -41,26 +35,10 @@ export default function Page() {
     })();
   }, [supabase]);
 
-  const tabs = canManage ? TABS : TABS.filter((x) => x.v === "dashboard");
-
   return (
-    <>
-        {canManage && (
-          <div style={{ display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
-            {tabs.map((x) => (
-              <button key={x.v} onClick={() => setTab(x.v)} style={tabBtn(tab === x.v)}>{t(x.l)}</button>
-            ))}
-          </div>
-        )}
-        {tab === "dashboard" && <FinanceDashboard clientId={clientId} refreshKey={refreshKey} />}
-        {canManage && tab === "modal" && <HargaBeli clientId={clientId} />}
-    </>
+    <FinanceDashboard
+      clientId={clientId} refreshKey={refreshKey}
+      extraSections={canManage ? [{ key: "harga", label: "Harga Beli", node: <HargaBeli clientId={clientId} /> }] : []}
+    />
   );
 }
-
-const tabBtn = (on: boolean): React.CSSProperties => ({
-  padding: "9px 20px", borderRadius: 10, cursor: "pointer", fontSize: 14, fontWeight: 700,
-  border: on ? "1px solid var(--gold)" : "1px solid rgba(255,255,255,.1)",
-  background: on ? "linear-gradient(135deg,var(--gold),var(--gold-soft))" : "rgba(10,22,40,.5)",
-  color: on ? "var(--navy-deep)" : "#e8edf8",
-});

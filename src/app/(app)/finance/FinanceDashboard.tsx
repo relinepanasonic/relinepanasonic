@@ -103,7 +103,10 @@ type ProductDetail = {
 type Link = { city: string | null; store_name: string | null };
 type FinanceFilters = { years: number[]; months: string[]; stores?: { store_name: string; city: string | null }[] };
 
-export default function FinanceDashboard({ clientId, refreshKey }: { clientId: string; refreshKey: number }) {
+// extraSections: more sub pages the page itself provides (e.g. Harga Beli); they replace the whole body while open.
+export default function FinanceDashboard({ clientId, refreshKey, extraSections = [] }: {
+  clientId: string; refreshKey: number; extraSections?: { key: string; label: string; node: React.ReactNode }[];
+}) {
   const { t } = useLang();
   const [supabase] = useState(() => createClient());
   const [filters, setFilters] = useState<FinanceFilters>({ years: [], months: [] });
@@ -114,7 +117,7 @@ export default function FinanceDashboard({ clientId, refreshKey }: { clientId: s
   const [fp, setFp] = useState<FinanceProducts | null>(null);
   const [loading, setLoading] = useState(false);
   const [drill, setDrill] = useState<string | null>(null);
-  const [activeTable, setActiveTable] = useState<"transaksi" | "profit" | "notpaid" | "unconnected">("profit");
+  const [section, setSection] = useState<string>("dashboard"); // sub pages: dashboard | profit | transaksi | notpaid | unconnected | extras
   const [np, setNp] = useState<NotPaidData | null>(null);
   const [uc, setUc] = useState<UnconnectedData | null>(null);
   const [dailyPajak, setDailyPajak] = useState<Record<string, number>>({});
@@ -207,6 +210,18 @@ export default function FinanceDashboard({ clientId, refreshKey }: { clientId: s
 
   return (
     <div className="fin-compact">
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+        <button onClick={() => setSection("dashboard")} style={tableTabBtn(section === "dashboard")}>{t("Dashboard")}</button>
+        <button onClick={() => setSection("profit")} style={tableTabBtn(section === "profit")}>Detail Product Profit</button>
+        <button onClick={() => setSection("transaksi")} style={tableTabBtn(section === "transaksi")}>{t("Withdraw Detail")}</button>
+        <button onClick={() => setSection("notpaid")} style={tableTabBtn(section === "notpaid")}>{t("Not Paid Order")}</button>
+        <button onClick={() => setSection("unconnected")} style={tableTabBtn(section === "unconnected")}>
+          {t("Not Connected")}{uc && uc.unconnected_orders > 0 && <span style={COUNT_BADGE}>{uc.unconnected_orders > 99 ? "99+" : uc.unconnected_orders}</span>}
+        </button>
+        {extraSections.map((x) => <button key={x.key} onClick={() => setSection(x.key)} style={tableTabBtn(section === x.key)}>{x.label}</button>)}
+      </div>
+      {extraSections.find((x) => x.key === section)?.node ?? (
+      <>
       {/* filters — City + Dealer only at first; Year/Month/Week auto-reveal once a store is picked */}
       <div className="filterbar">
         <Sel label={t("City")} value={sel.city} onChange={pickCity} opts={cities} all={t("All Cities")} />
@@ -235,6 +250,8 @@ export default function FinanceDashboard({ clientId, refreshKey }: { clientId: s
       {/* Row 1: Gross Sales -> Nett Profit (the P&L walk). Row 2: the 5 cost
           lines that get subtracted along the way. Was briefly one row of 10
           (kpi-grid-10) to save height, split back to 2x5 per request. */}
+      {section === "dashboard" && (
+      <>
       <div className="kpi-grid kpi-grid-5">
         <div className="kpi kpi-hero"><div className="kpi-icon">💰</div><div className="lbl">{t("Gross Sales")}</div><div className="val">{k ? rpC(k.sales) : "—"}</div><MiniSparkline data={salesSeries} color={GOLD} /></div>
         <div className="kpi kpi-roas"><div className="kpi-icon">📈</div><div className="lbl">{t("Gross Profit")}</div><div className="val">{k ? rpC(k.gross_profit) : "—"}</div><MiniSparkline data={profitSeries} color={GOLD} /></div>
@@ -285,31 +302,23 @@ export default function FinanceDashboard({ clientId, refreshKey }: { clientId: s
         </Panel>
       </div>
 
-      {/* Two big tables were stacking vertically (~400px+ each) even with
-          their own maxHeight — tabbed instead of stacked so only one is
-          ever on screen at a time. */}
-      <div className="tbl-tabs">
-        <button onClick={() => setActiveTable("profit")} style={tableTabBtn(activeTable === "profit")}>Detail Product Profit</button>
-        <button onClick={() => setActiveTable("transaksi")} style={tableTabBtn(activeTable === "transaksi")}>{t("Withdraw Detail")}</button>
-        <button onClick={() => setActiveTable("notpaid")} style={tableTabBtn(activeTable === "notpaid")}>
-          {t("Not Paid Order")}
-        </button>
-        <button onClick={() => setActiveTable("unconnected")} style={tableTabBtn(activeTable === "unconnected")}>
-          {t("Not Connected")}{uc && uc.unconnected_orders > 0 && <span style={COUNT_BADGE}>{uc.unconnected_orders > 99 ? "99+" : uc.unconnected_orders}</span>}
-        </button>
-      </div>
-      {activeTable === "transaksi" ? (
-        <DailyTransactionTable rows={dailyRows} onRowClick={setDrill} t={t} />
-      ) : activeTable === "profit" ? (
-        <ProductProfitTable data={fp} t={t} />
-      ) : activeTable === "notpaid" ? (
-        <NotPaidTable data={np} t={t} />
-      ) : (
-        <NotConnectedTable data={uc} t={t} />
+      </>
       )}
+
+      {section === "transaksi" ? (
+        <DailyTransactionTable rows={dailyRows} onRowClick={setDrill} t={t} />
+      ) : section === "profit" ? (
+        <ProductProfitTable data={fp} t={t} />
+      ) : section === "notpaid" ? (
+        <NotPaidTable data={np} t={t} />
+      ) : section === "unconnected" ? (
+        <NotConnectedTable data={uc} t={t} />
+      ) : null}
 
       {drill && (
         <DayDrillDown day={drill} clientId={clientId} sel={sel} supabase={supabase} onClose={() => setDrill(null)} />
+      )}
+      </>
       )}
       </>
       )}

@@ -63,7 +63,7 @@ export default function StoreDashboard({ clientId, refreshKey }: { clientId: str
   const [mo, setMo] = useState<MonthlyPoint[]>([]);        // orders per month, for the Total Transaction chart
   const [loading, setLoading] = useState(false);
   const [loadErr, setLoadErr] = useState("");
-  const [activeTable, setActiveTable] = useState<"shipped" | "completed">("shipped"); // one table on screen at a time, like Earning
+  const [section, setSection] = useState<"dashboard" | "shipped" | "completed">("dashboard"); // sub pages: the dashboard, and each table on its own
   const [ship, setShip] = useState<DayRow[]>([]);   // Order Shipped table (Order.shipping uploads)
   const [done, setDone] = useState<DayRow[]>([]);   // Order Completed table (Order.completed uploads)
   const [drill, setDrill] = useState<{ kind: "completed" | "shipped"; day: string } | null>(null);
@@ -173,6 +173,11 @@ export default function StoreDashboard({ clientId, refreshKey }: { clientId: str
         </div>
       )}
       {/* filters — City + Dealer only at first; Year/Month/Week auto-reveal once a store is picked */}
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+        <button onClick={() => setSection("dashboard")} style={tableTabBtn(section === "dashboard")}>{t("Dashboard")}</button>
+        <button onClick={() => setSection("shipped")} style={tableTabBtn(section === "shipped")}>{t("Order Shipped")}</button>
+        <button onClick={() => setSection("completed")} style={tableTabBtn(section === "completed")}>{t("Order Completed")}</button>
+      </div>
       <div className="filterbar">
         <Sel label={t("City")} value={sel.city} onChange={pickCity} opts={cities} all={t("All Cities")} />
         <Sel label={t("Dealer")} value={sel.store} onChange={(v) => setSel((s) => ({ ...s, store: v }))} opts={storesForCity} all={t("Pick a dealer…")} />
@@ -196,6 +201,8 @@ export default function StoreDashboard({ clientId, refreshKey }: { clientId: str
           </div>
         </div>
       ) : (
+      <>
+      {section === "dashboard" && (
       <>
       <div className="kpi-grid kpi-grid-5">
         <div className="kpi kpi-hero"><div className="kpi-icon">🧾</div><div className="lbl">{t("Total Transaction")}</div><div className="val">{k ? numFull(k.total_transaksi) : "—"}</div><div className="kpi-sub">{t("Unique orders")}</div><MiniSparkline data={ordersSeries} color={GOLD} /></div>
@@ -244,19 +251,19 @@ export default function StoreDashboard({ clientId, refreshKey }: { clientId: str
         </Panel>
       </div>
 
-      {/* Same tab bar as the Earning page: one table on screen at a time */}
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
-        <button onClick={() => setActiveTable("shipped")} style={tableTabBtn(activeTable === "shipped")}>{t("Order Shipped")}</button>
-        <button onClick={() => setActiveTable("completed")} style={tableTabBtn(activeTable === "completed")}>{t("Order Completed")}</button>
-      </div>
-      <DayTable
-        title={t(activeTable === "shipped" ? "Order Shipped" : "Order Completed")}
-        hint={t(activeTable === "shipped"
-          ? "Click a row to see that day's shipped orders by No. Pesanan · date based on the time the shipment was arranged · an order that is already completed is not listed here"
-          : "Click a row to see that day's completed orders by No. Pesanan · date based on order completed time")}
-        rows={activeTable === "shipped" ? ship : done}
-        onRowClick={(day) => setDrill({ kind: activeTable, day })} t={t}
-      />
+      </>
+      )}
+
+      {section !== "dashboard" && (
+        <DayTable
+          title={t(section === "shipped" ? "Order Shipped" : "Order Completed")}
+          hint={t(section === "shipped"
+            ? "Click a row to see that day's shipped orders by No. Pesanan · date based on the time the shipment was arranged · an order that is already completed is not listed here"
+            : "Click a row to see that day's completed orders by No. Pesanan · date based on order completed time")}
+          rows={section === "shipped" ? ship : done}
+          onRowClick={(day) => setDrill({ kind: section, day })} t={t}
+        />
+      )}
 
       {drill && (
         <DayDrillDown kind={drill.kind} day={drill.day} clientId={clientId} sel={sel} supabase={supabase} onClose={() => setDrill(null)} />
