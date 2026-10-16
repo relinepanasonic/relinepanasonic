@@ -31,6 +31,11 @@ export interface OrderRow {
   province: string | null;
   completed_at: string | null;     // Waktu Pesanan Selesai (AX)
   shipped_at: string | null;       // Waktu Pengiriman Diatur (only in the Order.shipping export)
+  subtotal_pesanan: number | null;    // Subtotal Pesanan (per product line)
+  est_shipping_fee: number | null;    // Estimasi Potongan Biaya Pengiriman (order-level)
+  return_shipping_fee: number | null; // Ongkos Kirim Pengembalian Barang (order-level)
+  buyer_shipping_fee: number | null;  // Ongkos Kirim Dibayar oleh Pembeli (order-level)
+  est_shipping_cost: number | null;   // Perkiraan Ongkos Kirim (order-level)
   raw: Record<string, unknown>;
 }
 
@@ -77,6 +82,11 @@ export function parseOrdersMatrix(matrix: unknown[][]): OrderRow[] {
   const iProvince = idx("Provinsi");
   const iCompleted = idx("Waktu Pesanan Selesai");
   const iShipped = idx("Waktu Pengiriman Diatur");
+  const iSubtotal = idx("Subtotal Pesanan");
+  const iEstFee = idx("Estimasi Potongan Biaya Pengiriman");
+  const iReturnFee = idx("Ongkos Kirim Pengembalian Barang");
+  const iBuyerFee = idx("Ongkos Kirim Dibayar oleh Pembeli");
+  const iEstCost = idx("Perkiraan Ongkos Kirim");
 
   if (iOrderNo < 0 || iCompleted < 0) return []; // not this export type
 
@@ -107,6 +117,11 @@ export function parseOrdersMatrix(matrix: unknown[][]): OrderRow[] {
       province: str(row[iProvince]),
       completed_at: asTimestamp(row[iCompleted]),
       shipped_at: iShipped < 0 ? null : asTimestamp(row[iShipped]),
+      subtotal_pesanan: iSubtotal < 0 ? null : toNum(row[iSubtotal]),
+      est_shipping_fee: iEstFee < 0 ? null : toNum(row[iEstFee]),
+      return_shipping_fee: iReturnFee < 0 ? null : toNum(row[iReturnFee]),
+      buyer_shipping_fee: iBuyerFee < 0 ? null : toNum(row[iBuyerFee]),
+      est_shipping_cost: iEstCost < 0 ? null : toNum(row[iEstCost]),
       raw,
     });
   }

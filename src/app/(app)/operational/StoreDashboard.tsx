@@ -64,7 +64,8 @@ export default function StoreDashboard({ clientId, refreshKey }: { clientId: str
   const [loading, setLoading] = useState(false);
   const [loadErr, setLoadErr] = useState("");
   const [activeTable, setActiveTable] = useState<"shipped" | "completed">("shipped"); // one table on screen at a time, like Earning
-  const [ship, setShip] = useState<Summary["daily"]>([]);   // Order Shipped table (Order.shipping uploads)
+  const [ship, setShip] = useState<DayRow[]>([]);   // Order Shipped table (Order.shipping uploads)
+  const [done, setDone] = useState<DayRow[]>([]);   // Order Completed table (Order.completed uploads)
   const [drill, setDrill] = useState<{ kind: "completed" | "shipped"; day: string } | null>(null);
   const [entity, setEntity] = useState<Entity | null>(null); // Top 5 row opened for its transactions
 
@@ -85,7 +86,7 @@ export default function StoreDashboard({ clientId, refreshKey }: { clientId: str
   useEffect(() => { checkData(); }, [checkData, refreshKey]);
 
   const load = useCallback(async () => {
-    if (!clientId || !sel.store) { setD(null); setTb(null); setMo([]); setShip([]); return; }
+    if (!clientId || !sel.store) { setD(null); setTb(null); setMo([]); setShip([]); setDone([]); return; }
     setLoading(true);
     setLoadErr("");
     try {
@@ -96,18 +97,20 @@ export default function StoreDashboard({ clientId, refreshKey }: { clientId: str
         p_city:  sel.city || null,
         p_store: sel.store,
       };
-      const [{ data, error }, { data: tbData }, { data: moData }, { data: shipData }] = await Promise.all([
+      const [{ data, error }, { data: tbData }, { data: moData }, { data: shipData }, { data: doneData }] = await Promise.all([
         supabase.rpc("store_perf_summary", params),
         supabase.rpc("store_perf_top_buyers", { p_client_id: clientId, ...params }),
         // the chart ignores the Month / Week filter on purpose: it shows every month
         supabase.rpc("store_perf_monthly", { p_client_id: clientId, p_year: params.p_year, p_city: params.p_city, p_store: params.p_store }),
-        supabase.rpc("store_perf_shipped_daily", { p_client_id: clientId, ...params }),
+        supabase.rpc("store_perf_day_table", { p_client_id: clientId, p_kind: "shipped", ...params }),
+        supabase.rpc("store_perf_day_table", { p_client_id: clientId, p_kind: "completed", ...params }),
       ]);
       if (error) throw error;
       setD(data as Summary);
       setTb((tbData as TopBuyers) || null);
       setMo((moData as MonthlyPoint[]) || []);
-      setShip((shipData as Summary["daily"]) || []);
+      setShip((shipData as DayRow[]) || []);
+      setDone((doneData as DayRow[]) || []);
     } catch (e) {
       const err = e as { message?: string; code?: string };
       setLoadErr(err?.message ? `${err.message} (code: ${err.code || "?"})` : String(e));
@@ -136,8 +139,6 @@ export default function StoreDashboard({ clientId, refreshKey }: { clientId: str
   // safe [] fallback rather than being called after the guard. No
   // initialKey: the daily table's default order is the backend's own
   // date-ascending order, unchanged until the user clicks a header.
-  const dailySort = useTableSort<Summary["daily"][number]>(d?.daily ?? []);
-  const shipSort = useTableSort<Summary["daily"][number]>(ship);
   // orders per month in calendar order (year, then month) for the Total Transaction mini chart
   const ordersSeries = useMemo(
     () => [...mo].sort((a, b) => a.year - b.year || MONTH_ORDER.indexOf(a.month) - MONTH_ORDER.indexOf(b.month)).map((x) => x.orders),
@@ -248,59 +249,14 @@ export default function StoreDashboard({ clientId, refreshKey }: { clientId: str
         <button onClick={() => setActiveTable("shipped")} style={tableTabBtn(activeTable === "shipped")}>{t("Order Shipped")}</button>
         <button onClick={() => setActiveTable("completed")} style={tableTabBtn(activeTable === "completed")}>{t("Order Completed")}</button>
       </div>
-      {activeTable === "shipped" ? (
-      <div className="panel">
-        <h3>{t("Order Shipped")}</h3>
-        <div className="hint">{t("Click a row to see that day's shipped orders · date based on the time the shipment was arranged")}</div>
-        <div className="tbl-wrap" style={{ maxHeight: 440 }}>
-          <table className="tbl">
-            <thead><tr>
-              <SortableHeader label={t("Date")} sortKey="tx_date" currentSort={shipSort.sortConfig} onRequestSort={shipSort.requestSort} />
-              <SortableHeader label={t("Orders")} sortKey="orders" currentSort={shipSort.sortConfig} onRequestSort={shipSort.requestSort} className="num" />
-              <SortableHeader label="GMV" sortKey="gmv" currentSort={shipSort.sortConfig} onRequestSort={shipSort.requestSort} className="num" />
-            </tr></thead>
-            <tbody>
-              {shipSort.sortedData.map((r) => (
-                <tr key={r.tx_date} style={{ cursor: "pointer" }} onClick={() => setDrill({ kind: "shipped", day: r.tx_date })}>
-                  <td style={{ fontWeight: 600 }}>{fmtDate(r.tx_date)}</td>
-                  <td className="num">{r.orders}</td>
-                  <td className="num">{rpFull(r.gmv)}</td>
-                </tr>
-              ))}
-              {shipSort.sortedData.length === 0 && (
-                <tr><td colSpan={3} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>{t("No data for these filters")}</td></tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-      ) : (
-      <div className="panel">
-        <h3>{t("Order Completed")}</h3>
-        <div className="hint">{t("Click a row to see that day's completed orders · date based on order completed time")}</div>
-        <div className="tbl-wrap" style={{ maxHeight: 440 }}>
-          <table className="tbl">
-            <thead><tr>
-              <SortableHeader label={t("Date")} sortKey="tx_date" currentSort={dailySort.sortConfig} onRequestSort={dailySort.requestSort} />
-              <SortableHeader label={t("Orders")} sortKey="orders" currentSort={dailySort.sortConfig} onRequestSort={dailySort.requestSort} className="num" />
-              <SortableHeader label="GMV" sortKey="gmv" currentSort={dailySort.sortConfig} onRequestSort={dailySort.requestSort} className="num" />
-            </tr></thead>
-            <tbody>
-              {dailySort.sortedData.map((r) => (
-                <tr key={r.tx_date} style={{ cursor: "pointer" }} onClick={() => setDrill({ kind: "completed", day: r.tx_date })}>
-                  <td style={{ fontWeight: 600 }}>{fmtDate(r.tx_date)}</td>
-                  <td className="num">{r.orders}</td>
-                  <td className="num">{rpFull(r.gmv)}</td>
-                </tr>
-              ))}
-              {dailySort.sortedData.length === 0 && (
-                <tr><td colSpan={3} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>{t("No data for these filters")}</td></tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-      )}
+      <DayTable
+        title={t(activeTable === "shipped" ? "Order Shipped" : "Order Completed")}
+        hint={t(activeTable === "shipped"
+          ? "Click a row to see that day's shipped orders by No. Pesanan · date based on the time the shipment was arranged · an order that is already completed is not listed here"
+          : "Click a row to see that day's completed orders by No. Pesanan · date based on order completed time")}
+        rows={activeTable === "shipped" ? ship : done}
+        onRowClick={(day) => setDrill({ kind: activeTable, day })} t={t}
+      />
 
       {drill && (
         <DayDrillDown kind={drill.kind} day={drill.day} clientId={clientId} sel={sel} supabase={supabase} onClose={() => setDrill(null)} />
@@ -394,6 +350,17 @@ function SlaLine({ label, value, bold }: { label: string; value: string; bold?: 
 }
 
 /* ── day drill-down overlay ── */
+type DayRow = {
+  tx_date: string; orders: number; units: number; gmv: number; aov: number; return_qty: number; subtotal: number;
+  est_shipping_fee: number; return_shipping_fee: number; buyer_shipping_fee: number; est_shipping_cost: number;
+};
+type DayOrder = {
+  order_no: string; total_payment: number | null; units: number; return_qty: number; subtotal: number;
+  est_shipping_fee: number; return_shipping_fee: number; buyer_shipping_fee: number; est_shipping_cost: number;
+  paid_at: string | null; ship_deadline: string | null; shipped_at: string | null; completed_at: string | null;
+  payment_method: string | null; shipping_option: string | null; city: string | null; province: string | null; status: string | null;
+  products: { product_id: string | null; product_name: string | null; variant_name: string | null; qty: number | null }[];
+};
 type DetailRow = {
   order_no: string | null; product_name: string | null; variant_name: string | null; qty: number | null;
   paid_at: string | null; ship_deadline: string | null; completed_at: string | null;
@@ -409,23 +376,69 @@ function slaFor(paid: string | null, completed: string | null): string {
   const h = (new Date(completed.replace(" ", "T")).getTime() - new Date(paid.replace(" ", "T")).getTime()) / 3600000;
   return Number.isFinite(h) ? fmtHours(h) : "—";
 }
+/* ── Order Shipped / Order Completed: one row per day ── */
+function DayTable({ title, hint, rows, onRowClick, t }: {
+  title: string; hint: string; rows: DayRow[]; onRowClick: (day: string) => void; t: (k: string) => string;
+}) {
+  const { sortedData, sortConfig, requestSort } = useTableSort<DayRow>(rows);
+  const H = (label: string, key: keyof DayRow, num = true) =>
+    <SortableHeader label={t(label)} sortKey={key} currentSort={sortConfig} onRequestSort={requestSort} className={num ? "num" : undefined} />;
+  return (
+    <div className="panel">
+      <h3>{title}</h3>
+      <div className="hint">{hint}</div>
+      <div className="tbl-wrap" style={{ maxHeight: 440 }}>
+        <table className="tbl">
+          <thead><tr>
+            {H("Date", "tx_date", false)}{H("Total Transaction", "orders")}{H("Total Product Sold", "units")}{H("AOV", "aov")}
+            {H("Return Qty", "return_qty")}{H("Subtotal Pesanan", "subtotal")}
+            {H("Estimasi Potongan Biaya Pengiriman", "est_shipping_fee")}{H("Ongkos Kirim Pengembalian Barang", "return_shipping_fee")}
+            {H("Ongkos Kirim Dibayar oleh Pembeli", "buyer_shipping_fee")}{H("Perkiraan Ongkos Kirim", "est_shipping_cost")}
+          </tr></thead>
+          <tbody>
+            {sortedData.map((r) => (
+              <tr key={r.tx_date} style={{ cursor: "pointer" }} onClick={() => onRowClick(r.tx_date)}>
+                <td style={{ fontWeight: 600 }}>{fmtDate(r.tx_date)}</td>
+                <td className="num">{numFull(r.orders)}</td>
+                <td className="num">{numFull(r.units)}</td>
+                <td className="num">{rpFull(r.aov)}</td>
+                <td className="num">{numFull(r.return_qty)}</td>
+                <td className="num">{rpFull(r.subtotal)}</td>
+                <td className="num">{rpFull(r.est_shipping_fee)}</td>
+                <td className="num">{rpFull(r.return_shipping_fee)}</td>
+                <td className="num">{rpFull(r.buyer_shipping_fee)}</td>
+                <td className="num">{rpFull(r.est_shipping_cost)}</td>
+              </tr>
+            ))}
+            {sortedData.length === 0 && (
+              <tr><td colSpan={10} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>{t("No data for these filters")}</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+/* ── pop-up of one day: one row per No. Pesanan, its products underneath the Product column ── */
 function DayDrillDown({ kind, day, clientId, sel, supabase, onClose }: {
   kind: "completed" | "shipped"; day: string; clientId: string;
   sel: { year: string; month: string; week: string; city: string; store: string };
   supabase: ReturnType<typeof createClient>; onClose: () => void;
 }) {
   const { t } = useLang();
-  const [rows, setRows] = useState<DetailRow[] | null>(null);
+  const [rows, setRows] = useState<DayOrder[] | null>(null);
+  const timeOf = (r: DayOrder) => (kind === "shipped" ? r.shipped_at : r.completed_at) ?? null;
 
   useEffect(() => {
     (async () => {
-      // the SQL function also fills each line's Shopee Product ID from the Earning report
-      const { data } = await supabase.rpc("store_perf_order_lines", {
+      // the SQL function also fills each product's Shopee Product ID from the Earning report
+      const { data } = await supabase.rpc("store_perf_day_orders", {
         p_client_id: clientId, p_kind: kind, p_day: day,
         p_year: sel.year ? Number(sel.year) : null, p_month: sel.month || null, p_week: sel.week || null,
         p_city: sel.city || null, p_store: sel.store || null,
       });
-      setRows((data as DetailRow[]) || []);
+      setRows((data as DayOrder[]) || []);
     })();
   }, [kind, day, clientId, sel, supabase]);
 
@@ -440,35 +453,45 @@ function DayDrillDown({ kind, day, clientId, sel, supabase, onClose }: {
           <div className="tbl-wrap" style={{ maxHeight: "72vh" }}>
             <table className="tbl" style={{ color: "#e8edf8", fontSize: 13.5 }}>
               <thead><tr>
-                <th>{t("Order No.")}</th><th>{t("Product ID")}</th><th>{t("Product")}</th><th>{t("Variant")}</th><th className="num">Qty</th>
-                <th>{t("Paid At")}</th><th>{t("Ship Deadline")}</th><th>{kind === "shipped" ? t("Shipped At") : t("Completed At")}</th><th>SLA</th>
-                <th>{t("Payment Method")}</th><th>{t("Courier")}</th><th>{t("City")}</th><th>{t("Province")}</th>
-                <th className="num">Total Sales</th><th>{t("Status")}</th>
+                <th>{t("Order No.")}</th><th>{t("Product ID")} · {t("Product")}</th>
+                <th className="num">{t("Total Product Sold")}</th><th className="num">{t("Return Qty")}</th>
+                <th className="num">{t("Subtotal Pesanan")}</th><th className="num">{t("Total Payment")}</th>
+                <th className="num">{t("Estimasi Potongan Biaya Pengiriman")}</th><th className="num">{t("Ongkos Kirim Pengembalian Barang")}</th>
+                <th className="num">{t("Ongkos Kirim Dibayar oleh Pembeli")}</th><th className="num">{t("Perkiraan Ongkos Kirim")}</th>
+                <th>{t("Paid At")}</th><th>{kind === "shipped" ? t("Shipped At") : t("Completed At")}</th><th>SLA</th>
+                <th>{t("Payment Method")}</th><th>{t("Courier")}</th><th>{t("City")}</th><th>{t("Province")}</th><th>{t("Status")}</th>
               </tr></thead>
               <tbody>
-                {rows.map((r, i) => {
-                  const showOrderNo = i === 0 || rows[i - 1].order_no !== r.order_no;
-                  return (
-                    <tr key={i}>
-                      <td style={{ fontFamily: "monospace", fontSize: 12.5, whiteSpace: "nowrap" }}>{showOrderNo ? (r.order_no || "—") : ""}</td>
-                      <td style={{ fontFamily: "monospace", fontSize: 12.5, whiteSpace: "nowrap" }}>{r.product_id || "—"}</td>
-                      <td style={{ maxWidth: 220, whiteSpace: "normal" }}>{r.product_name || "—"}</td>
-                      <td style={{ whiteSpace: "nowrap" }}>{r.variant_name || "—"}</td>
-                      <td className="num">{r.qty ?? "—"}</td>
-                      <td style={{ fontSize: 12.5, whiteSpace: "nowrap" }}>{fmtDT(r.paid_at)}</td>
-                      <td style={{ fontSize: 12.5, whiteSpace: "nowrap" }}>{fmtDT(r.ship_deadline)}</td>
-                      <td style={{ fontSize: 12.5, whiteSpace: "nowrap" }}>{fmtDT((kind === "shipped" ? r.shipped_at : r.completed_at) ?? null)}</td>
-                      <td style={{ fontSize: 12.5, whiteSpace: "nowrap", fontWeight: 700, color: GOLD }}>{slaFor(r.paid_at, (kind === "shipped" ? r.shipped_at : r.completed_at) ?? null)}</td>
-                      <td style={{ fontSize: 12.5, whiteSpace: "nowrap" }}>{r.payment_method || "—"}</td>
-                      <td style={{ fontSize: 12.5, whiteSpace: "nowrap" }}>{r.shipping_option || "—"}</td>
-                      <td style={{ fontSize: 12.5, whiteSpace: "nowrap" }}>{r.city || "—"}</td>
-                      <td style={{ fontSize: 12.5, whiteSpace: "nowrap" }}>{r.province || "—"}</td>
-                      <td className="num">{rpFull(r.total_payment || 0)}</td>
-                      <td style={{ fontSize: 12.5, whiteSpace: "nowrap" }}>{r.cancel_return_status || r.order_status || "—"}</td>
-                    </tr>
-                  );
-                })}
-                {rows.length === 0 && <tr><td colSpan={15} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>{t("No transactions")}</td></tr>}
+                {rows.map((r) => (
+                  <tr key={r.order_no}>
+                    <td style={{ fontFamily: "monospace", fontSize: 12.5, whiteSpace: "nowrap", verticalAlign: "top" }}>{r.order_no}</td>
+                    <td style={{ minWidth: 260, whiteSpace: "normal" }}>
+                      {r.products.map((p, i) => (
+                        <div key={i} style={{ marginBottom: i < r.products.length - 1 ? 4 : 0 }}>
+                          <span style={{ fontFamily: "monospace", fontSize: 12, color: GOLD }}>{p.product_id || "—"}</span>
+                          {" · "}{p.product_name || "—"}{p.variant_name ? ` (${p.variant_name})` : ""}{p.qty != null ? ` ×${p.qty}` : ""}
+                        </div>
+                      ))}
+                    </td>
+                    <td className="num">{numFull(r.units)}</td>
+                    <td className="num">{numFull(r.return_qty)}</td>
+                    <td className="num">{rpFull(r.subtotal)}</td>
+                    <td className="num">{rpFull(r.total_payment || 0)}</td>
+                    <td className="num">{rpFull(r.est_shipping_fee)}</td>
+                    <td className="num">{rpFull(r.return_shipping_fee)}</td>
+                    <td className="num">{rpFull(r.buyer_shipping_fee)}</td>
+                    <td className="num">{rpFull(r.est_shipping_cost)}</td>
+                    <td style={{ fontSize: 12.5, whiteSpace: "nowrap" }}>{fmtDT(r.paid_at)}</td>
+                    <td style={{ fontSize: 12.5, whiteSpace: "nowrap" }}>{fmtDT(timeOf(r))}</td>
+                    <td style={{ fontSize: 12.5, whiteSpace: "nowrap", fontWeight: 700, color: GOLD }}>{slaFor(r.paid_at, timeOf(r))}</td>
+                    <td style={{ fontSize: 12.5, whiteSpace: "nowrap" }}>{r.payment_method || "—"}</td>
+                    <td style={{ fontSize: 12.5, whiteSpace: "nowrap" }}>{r.shipping_option || "—"}</td>
+                    <td style={{ fontSize: 12.5, whiteSpace: "nowrap" }}>{r.city || "—"}</td>
+                    <td style={{ fontSize: 12.5, whiteSpace: "nowrap" }}>{r.province || "—"}</td>
+                    <td style={{ fontSize: 12.5, whiteSpace: "nowrap" }}>{r.status || "—"}</td>
+                  </tr>
+                ))}
+                {rows.length === 0 && <tr><td colSpan={18} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>{t("No transactions")}</td></tr>}
               </tbody>
             </table>
           </div>

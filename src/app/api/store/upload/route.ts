@@ -114,6 +114,11 @@ export async function POST(req: NextRequest) {
     city: r.city,
     province: r.province,
     completed_at: r.completed_at,
+    subtotal_pesanan: r.subtotal_pesanan,
+    est_shipping_fee: r.est_shipping_fee,
+    return_shipping_fee: r.return_shipping_fee,
+    buyer_shipping_fee: r.buyer_shipping_fee,
+    est_shipping_cost: r.est_shipping_cost,
   }));
 
   const CHUNK = 500;
