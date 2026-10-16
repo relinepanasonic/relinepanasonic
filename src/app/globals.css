@@ -304,3 +304,8 @@ table.tbl-sticky2{width:max-content;min-width:100%}
 /* Upload page file pickers: gold text, including the "Choose File" button */
 .file-gold, .file-gold::file-selector-button { color: var(--gold); }
 .file-gold::file-selector-button { background: transparent; border: 1px solid rgba(201,162,39,.5); border-radius: 6px; padding: 3px 10px; margin-right: 10px; cursor: pointer; font: inherit; }
+
+/* Order Shipped / Order Completed (Demographic): every value on ONE line, headers may wrap to fit all 10 columns */
+.day-tbl td { white-space: nowrap; padding: 12px 10px; font-size: 13px; }
+.day-tbl th { white-space: normal; line-height: 1.25; padding: 10px 8px; font-size: 11px; vertical-align: middle; }
+.day-tbl td.num, .day-tbl th.num { text-align: right; }

@@ -388,7 +388,7 @@ function DayTable({ title, hint, rows, onRowClick, t }: {
       <h3>{title}</h3>
       <div className="hint">{hint}</div>
       <div className="tbl-wrap" style={{ maxHeight: 440 }}>
-        <table className="tbl">
+        <table className="tbl day-tbl">
           <thead><tr>
             {H("Date", "tx_date", false)}{H("Total Transaction", "orders")}{H("Total Product Sold", "units")}{H("AOV", "aov")}
             {H("Return Qty", "return_qty")}{H("Subtotal Pesanan", "subtotal")}
