@@ -21,8 +21,8 @@ type Line = {
 const PAGE = 300;
 const keyOf = (l: Pick<Line, "store_name" | "order_no" | "name_key" | "var_key">) => `${l.store_name}||${l.order_no}||${l.name_key}||${l.var_key}`;
 
-export default function NotPaidPanel({ supabase, clientId, onPaid, onGoPrice }: {
-  supabase: Supabase; clientId: string; onPaid: (batchId: string) => void; onGoPrice: () => void;
+export default function NotPaidPanel({ supabase, clientId, onPaid }: {
+  supabase: Supabase; clientId: string; onPaid: (batchId: string) => void;
 }) {
   const v = useVendors(supabase, clientId);
   const [from, setFrom] = useState("");
@@ -56,8 +56,6 @@ export default function NotPaidPanel({ supabase, clientId, onPaid, onGoPrice }: 
 
   const payableShown = useMemo(() => sortedData.filter((r) => r.payable), [sortedData]);
   const allChecked = payableShown.length > 0 && payableShown.every((r) => picked.has(keyOf(r)));
-  const noId = (rows || []).filter((r) => r.reason === "no_id").length;
-  const noPrice = (rows || []).filter((r) => r.reason === "no_price").length;
   const pickedLines = useMemo(() => (rows || []).filter((r) => picked.has(keyOf(r))), [rows, picked]);
   const pickedQty = pickedLines.reduce((a, r) => a + Number(r.qty), 0);
   const pickedTotal = pickedLines.reduce((a, r) => a + Number(r.total), 0);
@@ -130,15 +128,6 @@ export default function NotPaidPanel({ supabase, clientId, onPaid, onGoPrice }: 
         </div>
       )}
       {err && <div style={{ color: "#f87171", marginBottom: 12, fontSize: 13 }}>✗ {err}</div>}
-      {(noId > 0 || noPrice > 0) && !loading && (
-        <div style={{ color: "#fbbf24", marginBottom: 10, fontSize: 12.5 }}>
-          ⚠ {noPrice > 0 && <>{noPrice} line{noPrice > 1 ? "s have" : " has"} no Harga Beli yet. </>}
-          {noId > 0 && <>{noId} line{noId > 1 ? "s have" : " has"} no Product ID (the product is in neither an Earning file nor the SPOS product list). </>}
-          Those lines cannot be ticked — a payout needs a price.{" "}
-          <button className="btn-gold" onClick={onGoPrice} style={{ padding: "4px 14px", fontSize: 12.5, marginLeft: 6 }}>Set the prices in Harga Beli</button>
-        </div>
-      )}
-
       {v.vendors && v.vendors.length === 0 ? <NoVendors /> : !v.vendorId ? (
         <div style={{ textAlign: "center", color: "var(--muted)", padding: 30 }}>Pick a vendor to see its unpaid orders.</div>
       ) : loading || rows === null ? <Loader center /> : (

@@ -45,7 +45,7 @@ export default function Page() {
           <button key={x.v} onClick={() => setTab(x.v)} style={tabBtn(tab === x.v)}>{x.l}</button>
         ))}
       </div>
-      {tab === "notpaid" && <NotPaidPanel supabase={supabase} clientId={clientId} onPaid={open} onGoPrice={() => setTab("price")} />}
+      {tab === "notpaid" && <NotPaidPanel supabase={supabase} clientId={clientId} onPaid={open} />}
       {tab === "paid" && <PaidPanel supabase={supabase} clientId={clientId} onOpen={open} />}
       {tab === "detail" && <DetailPanel supabase={supabase} clientId={clientId} batchId={batchId} onSelect={setBatchId} />}
       {tab === "price" && <HargaBeli clientId={clientId} />}
