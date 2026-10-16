@@ -180,7 +180,7 @@ export default function StoreDashboard({ clientId, refreshKey }: { clientId: str
       </div>
       <div className="filterbar">
         <Sel label={t("City")} value={sel.city} onChange={pickCity} opts={cities} all={t("All Cities")} />
-        <Sel label={t("Dealer")} value={sel.store} onChange={(v) => setSel((s) => ({ ...s, store: v }))} opts={storesForCity} all={t("Pick a dealer…")} />
+        <Sel label={t("Store name")} value={sel.store} onChange={(v) => setSel((s) => ({ ...s, store: v }))} opts={storesForCity} all={t("Pick a store…")} />
         {sel.store && (
           <>
             <Sel label={t("Year")}  value={sel.year}  onChange={(v) => setSel((s) => ({ ...s, year: v }))}  opts={years.map(String)} all={t("All Years")} />

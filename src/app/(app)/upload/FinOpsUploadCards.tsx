@@ -146,7 +146,7 @@ function UploadCard({ supabase, clientId, cities, onDone, title, roles, slots }:
             {cities.map((c) => <option key={c.value} value={c.value}>{c.value}</option>)}
           </select>
         </Field>
-        <Field label="Dealer">
+        <Field label="Store name">
           <select value={dealer} onChange={(e) => setDealer(e.target.value)} disabled={!city}>
             <option value="">{city ? "Select dealer…" : "Pick city first"}</option>
             {dealers.map((d) => <option key={d} value={d}>{d}</option>)}

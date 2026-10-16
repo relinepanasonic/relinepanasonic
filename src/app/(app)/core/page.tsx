@@ -2,12 +2,17 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { isPageHidden } from "@/lib/workspace";
+import { useWorkspaceId } from "@/lib/useWorkspace";
+import VendorsPanel from "./VendorsPanel";
 
 export const dynamic = "force-dynamic";
 
 type Item = { id: string; kind: string; value: string; pic: string | null; city: string | null };
 
 export default function CoreListPage() {
+  const workspaceId = useWorkspaceId();
+  const hasVendors = !isPageHidden(workspaceId, "/payout"); // workspaces with Payout also have Vendors; their dealers are 'Store names'
   const [supabase] = useState(() => createClient());
   const [clientId, setClientId] = useState("");
   const [items, setItems] = useState<Item[]>([]);
@@ -73,7 +78,7 @@ export default function CoreListPage() {
         </Card>
 
         {/* Dealers */}
-        <Card icon="🏬" title="Dealers" count={dealers.length}>
+        <Card icon="🏬" title={hasVendors ? "Store names" : "Dealers"} count={dealers.length}>
           <DealerOrCityList
             rows={dealers.map((d) => ({ id: d.id, main: d.value, sub: [d.city, d.pic].filter(Boolean).join(" — ") }))}
             onDel={delItem}
@@ -97,6 +102,8 @@ export default function CoreListPage() {
           <SimpleAdd placeholder="Add type" onAdd={(v) => insertRow({ kind: "platform", value: v })} />
         </Card>
       </div>
+
+      {hasVendors && <VendorsPanel clientId={clientId} />}
     </>
   );
 }

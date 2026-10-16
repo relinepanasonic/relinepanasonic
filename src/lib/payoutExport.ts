@@ -1,13 +1,15 @@
 import * as XLSX from "xlsx";
 import { fmtDate } from "@/lib/dates";
 
-// A payout, as saved by the SQL function payout_create (Supabase Migration/64) and returned by payout_lines_of.
+// A payout, as saved by the SQL function payout_create (Supabase Migration/67) and returned by payout_lines_of.
 export type PayoutBatch = {
-  id: string; payout_no: string | null; store_name: string; dealer_city: string | null;
+  id: string; payout_no: string | null; vendor_id?: string | null; vendor_name?: string | null; store_name: string; dealer_city?: string | null;
   order_count: number; line_count: number; total_qty: number; total: number;
   note: string | null; created_by_name: string | null; created_at: string;
+  status?: string | null; proof_name?: string | null; proof_at?: string | null; receipt_name?: string | null; receipt_at?: string | null;
 };
 export type PayoutLine = {
+  store_name?: string | null;
   order_no: string; shipped_at: string | null; withdraw_at: string | null; completed_at: string | null;
   product_id: string | null; product_name: string | null; variant_id: string | null; variant_name: string | null;
   qty: number; harga_beli: number; total: number;
@@ -33,22 +35,26 @@ export function summarize(lines: PayoutLine[]): SummaryRow[] {
 }
 
 export const SUMMARY_HEAD = ["ID Product", "Nama Prod", "ID Variasi", "Variasi", "Qty", "Harga Beli", "Total"] as const;
-export const DETAIL_HEAD = ["No Pesanan", "Tgl Kirim", "Tgl Withdraw", "ID Prod", "Nama Prod", "ID Variasi", "Variasi", "Qty", "Harga Beli", "Total"] as const;
+export const DETAIL_HEAD = ["No Pesanan", "Store", "Tgl Kirim", "Tgl Withdraw", "ID Prod", "Nama Prod", "ID Variasi", "Variasi", "Qty", "Harga Beli", "Total"] as const;
 
 export const dateOrDash = (d: string | null) => (d ? fmtDate(d) : "—");
 
 export function exportFileName(b: PayoutBatch, ext: "xlsx" | "pdf"): string {
   const safe = (s: string) => s.replace(/[^\w.-]+/g, "_");
-  return `${safe(b.payout_no || "payout")}_${safe(b.store_name)}.${ext}`;
+  return `${safe(b.payout_no || "payout")}_${safe(b.vendor_name || b.store_name)}.${ext}`;
+}
+
+export function payoutInfoRows(b: PayoutBatch): string[][] {
+  return [
+    ["Payout", b.payout_no || ""], ["Vendor", b.vendor_name || "—"], ["Stores", b.store_name || ""],
+    ["Created", fmtDate(b.created_at.slice(0, 10))],
+  ];
 }
 
 // XLSX with two sheets: Summary and Detail. Money / quantity cells are real numbers (thousand separators by format).
 export function buildPayoutXlsx(b: PayoutBatch, lines: PayoutLine[]): Buffer {
   const sum = summarize(lines);
-  const info = [
-    ["Payout", b.payout_no || ""], ["Dealer", b.store_name], ["City", b.dealer_city || ""],
-    ["Created", fmtDate(b.created_at.slice(0, 10))],
-  ];
+  const info = payoutInfoRows(b);
 
   const summaryRows: (string | number)[][] = [
     ...info, [],
@@ -59,9 +65,9 @@ export function buildPayoutXlsx(b: PayoutBatch, lines: PayoutLine[]): Buffer {
   const detailRows: (string | number)[][] = [
     ...info, [],
     [...DETAIL_HEAD],
-    ...lines.map((l) => [l.order_no, l.shipped_at ? fmtDate(l.shipped_at) : "", l.withdraw_at ? fmtDate(l.withdraw_at) : "",
+    ...lines.map((l) => [l.order_no, l.store_name ?? "", l.shipped_at ? fmtDate(l.shipped_at) : "", l.withdraw_at ? fmtDate(l.withdraw_at) : "",
       l.product_id ?? "", l.product_name ?? "", l.variant_id ?? "-", l.variant_name ?? "-", Number(l.qty), Number(l.harga_beli), Number(l.total)]),
-    ["", "", "", "", "TOTAL", "", "", lines.reduce((a, l) => a + Number(l.qty), 0), "", lines.reduce((a, l) => a + Number(l.total), 0)],
+    ["", "", "", "", "", "TOTAL", "", "", lines.reduce((a, l) => a + Number(l.qty), 0), "", lines.reduce((a, l) => a + Number(l.total), 0)],
   ];
 
   const wb = XLSX.utils.book_new();
@@ -78,6 +84,6 @@ export function buildPayoutXlsx(b: PayoutBatch, lines: PayoutLine[]): Buffer {
     XLSX.utils.book_append_sheet(wb, ws, name);
   };
   put("Summary", summaryRows, [4, 5, 6], [16, 48, 16, 20, 8, 14, 16]);
-  put("Detail", detailRows, [7, 8, 9], [18, 13, 14, 14, 48, 16, 20, 8, 14, 16]);
+  put("Detail", detailRows, [8, 9, 10], [18, 16, 13, 14, 14, 48, 16, 20, 8, 14, 16]);
   return XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Buffer;
 }

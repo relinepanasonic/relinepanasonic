@@ -11,10 +11,10 @@ import { tabBtn } from "./shared";
 export const dynamic = "force-dynamic";
 
 
-// Payout (Super Admin + Admin): pay the vendor for the goods of completed orders.
+// Payout (Super Admin + Admin): pay a VENDOR (one vendor = many stores) for the goods of completed orders.
 //   Not Paid       — completed lines not paid yet; tick them, "Pay to Vendor" -> XLS + PDF.
-//   Paid           — the saved payouts.
-//   Detail Payout  — one payout, Summary / Detail.
+//   Paid           — the order lines already paid.
+//   Detail Payout  — the payout register: proof, receipt, status; press a row for its Summary / Detail.
 //   Harga Beli     — purchase price per dealer / product / variant, with a price log.
 const TABS = [
   { v: "notpaid", l: "Not Paid" },

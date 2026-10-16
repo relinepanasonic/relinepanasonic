@@ -214,7 +214,7 @@ export default function FinanceDashboard({ clientId, refreshKey, extraSections =
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
         <button onClick={() => setSection("dashboard")} style={tableTabBtn(section === "dashboard")}>{t("Dashboard")}</button>
         <button onClick={() => setSection("transaksi")} style={tableTabBtn(section === "transaksi")}>{t("Withdraw Detail")}</button>
-        <button onClick={() => setSection("notpaid")} style={tableTabBtn(section === "notpaid")}>{t("Not Paid Order")}</button>
+        <button onClick={() => setSection("notpaid")} style={tableTabBtn(section === "notpaid")}>{t("Not Completed")}</button>
         <button onClick={() => setSection("unconnected")} style={tableTabBtn(section === "unconnected")}>
           {t("Not Connected")}{uc && uc.unconnected_orders > 0 && <span style={COUNT_BADGE}>{uc.unconnected_orders > 99 ? "99+" : uc.unconnected_orders}</span>}
         </button>
@@ -226,7 +226,7 @@ export default function FinanceDashboard({ clientId, refreshKey, extraSections =
       {/* filters — City + Dealer only at first; Year/Month/Week auto-reveal once a store is picked */}
       <div className="filterbar">
         <Sel label={t("City")} value={sel.city} onChange={pickCity} opts={cities} all={t("All Cities")} />
-        <Sel label={t("Dealer")} value={sel.store} onChange={(v) => setSel((s) => ({ ...s, store: v }))} opts={storesForCity} all={t("Pick a dealer…")} />
+        <Sel label={t("Store name")} value={sel.store} onChange={(v) => setSel((s) => ({ ...s, store: v }))} opts={storesForCity} all={t("Pick a store…")} />
         {sel.store && (
           <>
             <Sel label={t("Year")}  value={sel.year}  onChange={(v) => setSel((s) => ({ ...s, year: v }))}  opts={years.map(String)} all={t("All Years")} />
@@ -330,9 +330,15 @@ export default function FinanceDashboard({ clientId, refreshKey, extraSections =
 /* ── Daily Transaction Detail: universal sortable header ── */
 function DailyTransactionTable({ rows, onRowClick, t }: { rows: DailyView[]; onRowClick: (day: string) => void; t: (k: string) => string }) {
   const { sortedData, sortConfig, requestSort } = useTableSort<DailyView>(rows);
+  const totalWithdraw = rows.reduce((a, r) => a + (r.net_income || 0), 0);   // what Shopee released in these days
+  const qtyWithdraw = rows.reduce((a, r) => a + (r.orders || 0), 0);         // the orders it was released for
   return (
     <div className="panel">
       <h3>{t("Withdraw Detail")}</h3>
+      <div className="kpi-grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(210px, 270px))", margin: "10px 0 14px" }}>
+        <div className="kpi kpi-hero"><div className="kpi-icon">💸</div><div className="lbl">{t("Total Withdraw")}</div><div className="val">{rpFull(totalWithdraw)}</div><div className="kpi-sub">{t("Net income released")}</div></div>
+        <div className="kpi"><div className="kpi-icon">🧾</div><div className="lbl">{t("Qty Transaction Withdraw")}</div><div className="val">{qtyWithdraw.toLocaleString("id-ID")}</div><div className="kpi-sub">{t("Orders released")}</div></div>
+      </div>
       <div className="hint">{t("Click a row to see that day's transaction detail · date based on release date")}</div>
       <div className="tbl-wrap" style={{ maxHeight: 350 }}>
         <table className="tbl">
@@ -422,6 +428,8 @@ function ProductProfitTable({ data, t }: { data: FinanceProducts | null; t: (k: 
             <SortableHeader label={t("Units Sold")} sortKey="units" currentSort={sortConfig} onRequestSort={requestSort} className="num" />
             <SortableHeader label={t("Units / Order")} sortKey="units_per_order" currentSort={sortConfig} onRequestSort={requestSort} className="num" />
             <SortableHeader label={t("Sales")} sortKey="sales" currentSort={sortConfig} onRequestSort={requestSort} className="num" />
+            <SortableHeader label={t("Nett Income")} sortKey="net_income" currentSort={sortConfig} onRequestSort={requestSort} className="num" />
+            <th className="num" style={cell} title={t("Nett Income ÷ Sales × 100%")}>%</th>
             <SortableHeader label={t("Ads Cost")} sortKey="ads_cost" currentSort={sortConfig} onRequestSort={requestSort} className="num" />
             <SortableHeader label={t("Promotional Cost")} sortKey="promotion_cost" currentSort={sortConfig} onRequestSort={requestSort} className="num" />
             <SortableHeader label={t("Refund")} sortKey="refund" currentSort={sortConfig} onRequestSort={requestSort} className="num" />
@@ -430,8 +438,6 @@ function ProductProfitTable({ data, t }: { data: FinanceProducts | null; t: (k: 
             <SortableHeader label={t("Market Place Fee")} sortKey="marketplace_fee" currentSort={sortConfig} onRequestSort={requestSort} className="num" />
             <SortableHeader label={t("Pajak")} sortKey="pajak" currentSort={sortConfig} onRequestSort={requestSort} className="num" />
             <SortableHeader label={t("Other")} sortKey="other" currentSort={sortConfig} onRequestSort={requestSort} className="num" />
-            <SortableHeader label={t("Nett Income")} sortKey="net_income" currentSort={sortConfig} onRequestSort={requestSort} className="num" />
-            <th className="num" style={cell} title={t("Nett Income ÷ Sales × 100%")}>%</th>
           </tr></thead>
           <tbody>
             {sortedData.map((r) => (
@@ -446,6 +452,8 @@ function ProductProfitTable({ data, t }: { data: FinanceProducts | null; t: (k: 
                 </td>
                 <td className="num" style={cell}>{r.units_per_order == null ? "—" : r.units_per_order.toLocaleString("id-ID", { maximumFractionDigits: 1 })}</td>
                 <td className="num" style={cell}>{rpFull(r.sales)}</td>
+                <td className="num" style={{ ...cell, color: r.net_income >= 0 ? "#86efac" : "#f87171", fontWeight: 700 }}>{rpFull(r.net_income)}</td>
+                <td className="num" style={{ ...cell, color: r.net_income >= 0 ? "#86efac" : "#f87171", fontWeight: 700 }}>{r.sales > 0 ? `${(r.net_income / r.sales * 100).toFixed(1)}%` : "—"}</td>
                 <td className="num" style={cell}>{rpFull(r.ads_cost)}</td>
                 <td className="num" style={cell}>{rpFull(r.promotion_cost)}</td>
                 <td className="num" style={cell}>{rpFull(r.refund)}</td>
@@ -454,8 +462,6 @@ function ProductProfitTable({ data, t }: { data: FinanceProducts | null; t: (k: 
                 <td className="num" style={cell}>{rpFull(r.marketplace_fee)}</td>
                 <td className="num" style={cell}>{rpFull(r.pajak)}</td>
                 <td className="num" style={cell}>{rpFull(r.other)}</td>
-                <td className="num" style={{ ...cell, color: r.net_income >= 0 ? "#86efac" : "#f87171", fontWeight: 700 }}>{rpFull(r.net_income)}</td>
-                <td className="num" style={{ ...cell, color: r.net_income >= 0 ? "#86efac" : "#f87171", fontWeight: 700 }}>{r.sales > 0 ? `${(r.net_income / r.sales * 100).toFixed(1)}%` : "—"}</td>
               </tr>
             ))}
             {sortedData.length === 0 && (
@@ -503,19 +509,19 @@ function NotPaidTable({ data, t }: { data: NotPaidData | null; t: (k: string) =>
 
   return (
     <div className="panel">
-      <h3>{t("Not Paid Order")}</h3>
+      <h3>{t("Not Completed")}</h3>
       {data && data.orders_checked > 0 && (
         <div className="kpi-grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(210px, 270px))", marginBottom: 14 }}>
           <div className="kpi kpi-hero">
-            <div className="kpi-icon">⏳</div>
-            <div className="lbl">{t("Not Paid Order")}</div>
-            <div className="val">{count.toLocaleString("id-ID")}</div>
-            <div className="kpi-sub">{t("of")} {data.orders_checked.toLocaleString("id-ID")} {t("orders")}</div>
+            <div className="kpi-icon">💰</div>
+            <div className="lbl">{t("Value in shipping")}</div>
+            <div className="val">{rpFull(data.not_paid_value)}</div>
           </div>
           <div className="kpi">
-            <div className="kpi-icon">💰</div>
-            <div className="lbl">{t("Order Value")}</div>
-            <div className="val">{rpFull(data.not_paid_value)}</div>
+            <div className="kpi-icon">⏳</div>
+            <div className="lbl">{t("Not Completed Order")}</div>
+            <div className="val">{count.toLocaleString("id-ID")}</div>
+            <div className="kpi-sub">{t("of")} {data.orders_checked.toLocaleString("id-ID")} {t("orders")}</div>
           </div>
         </div>
       )}
@@ -537,7 +543,7 @@ function NotPaidTable({ data, t }: { data: NotPaidData | null; t: (k: string) =>
             <SortableHeader label={t("Days Waiting")} sortKey="days_waiting" currentSort={sortConfig} onRequestSort={requestSort} className="num" />
             <th>{t("Products")}</th>
             <SortableHeader label={t("Units")} sortKey="units" currentSort={sortConfig} onRequestSort={requestSort} className="num" />
-            <SortableHeader label={t("Order Value")} sortKey="order_value" currentSort={sortConfig} onRequestSort={requestSort} className="num" />
+            <SortableHeader label={t("Value in shipping")} sortKey="order_value" currentSort={sortConfig} onRequestSort={requestSort} className="num" />
             <th>{t("Payment")}</th>
             <th>{t("Note")}</th>
           </tr></thead>

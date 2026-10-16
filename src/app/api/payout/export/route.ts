@@ -1,14 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { renderToBuffer } from "@react-pdf/renderer";
 import { createClient } from "@/lib/supabase/server";
 import { buildPayoutXlsx, exportFileName, type PayoutBatch, type PayoutLine } from "@/lib/payoutExport";
-import { PayoutDocument } from "@/lib/payoutPdf";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
-// GET /api/payout/export?batch=<payout id>&format=xlsx|pdf
-// The payout as a file with two tabs / pages: Summary (per product) and Detail (per order line).
+// GET /api/payout/export?batch=<payout id>&format=xlsx
+// The payout as an XLSX with two tabs: Summary (per product) and Detail (per order line).
+// (The PDF is built in the browser, lib/payoutPdfClient.ts: a 1,500-line PDF is too slow for a serverless function.)
 // Super Admin and Admin only; the data is read with the caller's own session (row-level security applies).
 export async function GET(req: NextRequest) {
   const supabase = await createClient();
@@ -20,7 +19,6 @@ export async function GET(req: NextRequest) {
   }
 
   const batchId = req.nextUrl.searchParams.get("batch") || "";
-  const format = req.nextUrl.searchParams.get("format") === "pdf" ? "pdf" : "xlsx";
   if (!batchId) return NextResponse.json({ error: "NO_BATCH" }, { status: 400 });
 
   const { data, error } = await supabase.rpc("payout_lines_of", { p_batch_id: batchId });
@@ -28,14 +26,11 @@ export async function GET(req: NextRequest) {
   const res = data as { batch: PayoutBatch | null; lines: PayoutLine[] };
   if (!res?.batch) return NextResponse.json({ error: "NOT_FOUND" }, { status: 404 });
 
-  const name = exportFileName(res.batch, format);
-  const body = format === "pdf"
-    ? await renderToBuffer(PayoutDocument({ batch: res.batch, lines: res.lines }))
-    : buildPayoutXlsx(res.batch, res.lines);
+  const body = buildPayoutXlsx(res.batch, res.lines);
   return new NextResponse(new Uint8Array(body), {
     headers: {
-      "Content-Type": format === "pdf" ? "application/pdf" : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      "Content-Disposition": `attachment; filename="${name}"`,
+      "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "Content-Disposition": `attachment; filename="${exportFileName(res.batch, "xlsx")}"`,
       "Cache-Control": "no-store",
     },
   });

@@ -1,14 +1,15 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { createClient } from "@/lib/supabase/client";
 
 export type Supabase = ReturnType<typeof createClient>;
 export const rp = (n: number | null | undefined) => "Rp " + Math.round(Number(n) || 0).toLocaleString("id-ID");
 export const num = (n: number | null | undefined) => Math.round(Number(n) || 0).toLocaleString("id-ID");
 
-// Download one saved payout as a file (the server builds it: /api/payout/export).
-export function downloadPayout(batchId: string, format: "xlsx" | "pdf") {
+// Download one saved payout as an XLSX (the server builds it: /api/payout/export). The PDF is built in the browser
+// (lib/payoutPdfClient.ts): a long payout is too slow for a serverless function.
+export function downloadPayout(batchId: string, format: "xlsx") {
   const a = document.createElement("a");
   a.href = `/api/payout/export?batch=${encodeURIComponent(batchId)}&format=${format}`;
   a.rel = "noopener";
@@ -17,59 +18,60 @@ export function downloadPayout(batchId: string, format: "xlsx" | "pdf") {
   a.remove();
 }
 
-type Link = { city: string | null; store_name: string };
+export type Vendor = { id: string; name: string; stores: string[] };
+export type VendorStore = { store_name: string; city: string | null; vendor_id: string | null };
 
-// City -> Dealer choice shared by the Payout sub pages. The dealer list is the Core List (master data) plus the
-// dealers already known from the finance filters; a one-dealer city picks its dealer automatically.
-export function useScope(supabase: Supabase, clientId: string) {
-  const [links, setLinks] = useState<Link[]>([]);
-  const [city, setCityState] = useState("");
-  const [store, setStore] = useState("");
+// Vendors (Core List): one vendor has many stores, one store has one vendor. Payout and Harga Beli work per vendor.
+export function useVendors(supabase: Supabase, clientId: string) {
+  const [vendors, setVendors] = useState<Vendor[] | null>(null);
+  const [stores, setStores] = useState<VendorStore[]>([]);
+  const [vendorId, setVendorId] = useState("");
 
-  useEffect(() => {
+  const reload = useCallback(async () => {
     if (!clientId) return;
-    (async () => {
-      const { data: m } = await supabase.from("master_data").select("value,city").eq("kind", "store").eq("client_id", clientId).order("value");
-      const merged: Link[] = ((m as { value: string; city: string | null }[]) || []).map((x) => ({ city: x.city, store_name: x.value }));
-      const { data: f } = await supabase.rpc("finance_filters");
-      const seen = new Set(merged.map((x) => x.store_name));
-      for (const x of ((f as { stores?: { store_name: string; city: string | null }[] })?.stores || [])) {
-        if (!seen.has(x.store_name)) merged.push({ city: x.city, store_name: x.store_name });
-      }
-      setLinks(merged);
-    })();
+    const { data } = await supabase.rpc("vendor_list", { p_client_id: clientId });
+    const d = (data as { vendors: Vendor[]; stores: VendorStore[] } | null) || { vendors: [], stores: [] };
+    setVendors(d.vendors || []); setStores(d.stores || []);
   }, [supabase, clientId]);
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => { reload(); }, [reload]);
 
-  const cities = useMemo(() => Array.from(new Set(links.map((l) => l.city).filter(Boolean) as string[])).sort(), [links]);
-  const stores = useMemo(() => Array.from(new Set(links.filter((l) => !city || l.city === city).map((l) => l.store_name))).sort(), [links, city]);
   useEffect(() => {
+    // a single vendor is picked for you
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (!store && stores.length === 1) setStore(stores[0]);
-  }, [stores, store]);
+    if (!vendorId && vendors && vendors.length === 1) setVendorId(vendors[0].id);
+  }, [vendors, vendorId]);
 
-  const setCity = (c: string) => { setCityState(c); setStore(""); };
-  const cityOfStore = links.find((l) => l.store_name === store)?.city ?? (city || null);
-  return { cities, stores, city, store, setCity, setStore, cityOfStore };
+  const vendor = useMemo(() => vendors?.find((v) => v.id === vendorId) || null, [vendors, vendorId]);
+  return { vendors, stores, vendorId, setVendorId, vendor, reload };
 }
 
-export function ScopeBar({ scope, children }: { scope: ReturnType<typeof useScope>; children?: React.ReactNode }) {
+export function VendorBar({ v, children }: { v: ReturnType<typeof useVendors>; children?: React.ReactNode }) {
   return (
     <div style={{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 14 }}>
-      <div className="fld" style={{ minWidth: 190 }}>
-        <label>City</label>
-        <select value={scope.city} onChange={(e) => scope.setCity(e.target.value)}>
-          <option value="">All cities</option>
-          {scope.cities.map((c) => <option key={c} value={c}>{c}</option>)}
+      <div className="fld" style={{ minWidth: 240 }}>
+        <label>Vendor</label>
+        <select value={v.vendorId} onChange={(e) => v.setVendorId(e.target.value)}>
+          <option value="">{v.vendors === null ? "Loading…" : v.vendors.length ? "Select vendor…" : "No vendors yet"}</option>
+          {(v.vendors || []).map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
         </select>
       </div>
-      <div className="fld" style={{ minWidth: 220 }}>
-        <label>Dealer</label>
-        <select value={scope.store} onChange={(e) => scope.setStore(e.target.value)}>
-          <option value="">{scope.stores.length ? "Select dealer…" : "No dealers"}</option>
-          {scope.stores.map((s) => <option key={s} value={s}>{s}</option>)}
-        </select>
-      </div>
+      {v.vendor && (
+        <div style={{ fontSize: 12.5, color: "var(--muted)", paddingBottom: 10, maxWidth: 360 }}>
+          {v.vendor.stores.length
+            ? <>Stores: <b style={{ color: "#cdd9f0" }}>{v.vendor.stores.join(", ")}</b></>
+            : <span style={{ color: "#fbbf24" }}>No store yet — add its stores in Core List.</span>}
+        </div>
+      )}
       {children}
+    </div>
+  );
+}
+
+export function NoVendors() {
+  return (
+    <div style={{ textAlign: "center", color: "var(--muted)", padding: 30 }}>
+      No vendors yet. Create a vendor and link its stores in <b style={{ color: "#cdd9f0" }}>Core List → Vendors</b>.
     </div>
   );
 }
