@@ -272,6 +272,7 @@ const ID_DICT: Record<string, string> = {
   "Total Product Ordered": "Total Produk Dipesan",
   "Ready to ship": "Siap dikirim",
   "Paid - Ship": "Bayar - Kirim",
+  "Withdraw Detail": "Rincian Dana Dilepas",
   "Pay → Ship Deadline": "Bayar → Batas Kirim",
   "Ship Deadline → Completed": "Batas Kirim → Selesai",
   "Pay → Completed": "Bayar → Selesai",

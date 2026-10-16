@@ -114,7 +114,7 @@ export default function FinanceDashboard({ clientId, refreshKey }: { clientId: s
   const [fp, setFp] = useState<FinanceProducts | null>(null);
   const [loading, setLoading] = useState(false);
   const [drill, setDrill] = useState<string | null>(null);
-  const [activeTable, setActiveTable] = useState<"transaksi" | "profit" | "notpaid" | "unconnected">("transaksi");
+  const [activeTable, setActiveTable] = useState<"transaksi" | "profit" | "notpaid" | "unconnected">("profit");
   const [np, setNp] = useState<NotPaidData | null>(null);
   const [uc, setUc] = useState<UnconnectedData | null>(null);
   const [dailyPajak, setDailyPajak] = useState<Record<string, number>>({});
@@ -289,8 +289,8 @@ export default function FinanceDashboard({ clientId, refreshKey }: { clientId: s
           their own maxHeight — tabbed instead of stacked so only one is
           ever on screen at a time. */}
       <div className="tbl-tabs">
-        <button onClick={() => setActiveTable("transaksi")} style={tableTabBtn(activeTable === "transaksi")}>{t("Daily Transaction Detail")}</button>
         <button onClick={() => setActiveTable("profit")} style={tableTabBtn(activeTable === "profit")}>Detail Product Profit</button>
+        <button onClick={() => setActiveTable("transaksi")} style={tableTabBtn(activeTable === "transaksi")}>{t("Withdraw Detail")}</button>
         <button onClick={() => setActiveTable("notpaid")} style={tableTabBtn(activeTable === "notpaid")}>
           {t("Not Paid Order")}
         </button>
@@ -322,7 +322,7 @@ function DailyTransactionTable({ rows, onRowClick, t }: { rows: DailyView[]; onR
   const { sortedData, sortConfig, requestSort } = useTableSort<DailyView>(rows);
   return (
     <div className="panel">
-      <h3>{t("Daily Transaction Detail")}</h3>
+      <h3>{t("Withdraw Detail")}</h3>
       <div className="hint">{t("Click a row to see that day's transaction detail · date based on release date")}</div>
       <div className="tbl-wrap" style={{ maxHeight: 350 }}>
         <table className="tbl">
@@ -649,32 +649,30 @@ function NotConnectedTable({ data, t }: { data: UnconnectedData | null; t: (k: s
 }
 
 /* ── day drill-down overlay ── */
-type DetailRow = {
-  order_no: string | null; buyer_username: string | null;
-  sales: number | null; promotion_cost: number | null; refund: number | null;
-  delivery_cost: number | null; affiliate_cost: number | null; marketplace_fee: number | null;
-  net_income: number | null;
+type WithdrawLine = {
+  order_no: string; product_id: string | null; product_name: string | null; qty: number | null;
+  order_date: string | null; release_date: string | null;
+  sales: number; promotion_cost: number; refund: number; delivery_cost: number; affiliate_cost: number;
+  marketplace_fee: number; pajak: number; net_income: number;
 };
+
+// Withdraw Detail pop-up: one row per product of each order released that day.
 function DayDrillDown({ day, clientId, sel, supabase, onClose }: {
   day: string; clientId: string;
   sel: { year: string; month: string; week: string; city: string; store: string };
   supabase: ReturnType<typeof createClient>; onClose: () => void;
 }) {
   const { t } = useLang();
-  const [rows, setRows] = useState<DetailRow[] | null>(null);
+  const [rows, setRows] = useState<WithdrawLine[] | null>(null);
 
   useEffect(() => {
     (async () => {
-      let q = supabase.from("finance_rows")
-        .select("order_no,buyer_username,sales,promotion_cost,refund,delivery_cost,affiliate_cost,marketplace_fee,net_income")
-        .eq("client_id", clientId).eq("release_date", day);
-      if (sel.year) q = q.eq("year", Number(sel.year));
-      if (sel.month) q = q.eq("month", sel.month);
-      if (sel.week) q = q.eq("week", sel.week);
-      if (sel.city) q = q.eq("dealer_city", sel.city);
-      if (sel.store) q = q.eq("store_name", sel.store);
-      const { data } = await q.order("order_no");
-      setRows((data as DetailRow[]) || []);
+      const { data } = await supabase.rpc("finance_day_lines", {
+        p_client_id: clientId, p_day: day,
+        p_year: sel.year ? Number(sel.year) : null, p_month: sel.month || null, p_week: sel.week || null,
+        p_city: sel.city || null, p_store: sel.store || null,
+      });
+      setRows((data as WithdrawLine[]) || []);
     })();
   }, [day, clientId, sel, supabase]);
 
@@ -682,34 +680,40 @@ function DayDrillDown({ day, clientId, sel, supabase, onClose }: {
     <div style={overlay} onClick={onClose}>
       <div style={drawer} onClick={(e) => e.stopPropagation()}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-          <div style={{ fontSize: 22, fontWeight: 800, color: "#fff" }}>{t("Transaction")} — {fmtDate(day)}</div>
+          <div style={{ fontSize: 22, fontWeight: 800, color: "#fff" }}>{t("Withdraw Detail")} — {fmtDate(day)}</div>
           <button className="btn-ghost" onClick={onClose}>✕ {t("Close")}</button>
         </div>
         {rows === null ? <Loader center /> : (
           <div className="tbl-wrap" style={{ maxHeight: "70vh" }}>
-            <table className="tbl" style={{ color: "#e8edf8", fontSize: 14.5 }}>
+            <table className="tbl day-tbl" style={{ color: "#e8edf8" }}>
               <thead><tr>
-                <th>{t("Order No.")}</th><th>{t("Buyer")}</th>
+                <th>{t("Order No.")}</th><th>{t("Product ID")}</th><th>{t("Product")}</th><th className="num">Qty</th>
+                <th>{t("Order Created")}</th><th>{t("Funds Released")}</th>
                 <th className="num">{t("Sales")}</th><th className="num">{t("Promotional Cost")}</th>
                 <th className="num">{t("Refund")}</th><th className="num">{t("Delivery Cost")}</th>
                 <th className="num">{t("Affiliate")}</th><th className="num">{t("Market Place Fee")}</th>
-                <th className="num">{t("Gross Profit")}</th>
+                <th className="num">{t("Pajak")}</th><th className="num">{t("Gross Profit")}</th>
               </tr></thead>
               <tbody>
                 {rows.map((r, i) => (
-                  <tr key={i} style={{ height: 48 }}>
-                    <td style={{ fontFamily: "monospace", fontSize: 13 }}>{r.order_no || "—"}</td>
-                    <td>{r.buyer_username || "—"}</td>
+                  <tr key={i}>
+                    <td style={{ fontFamily: "monospace", fontSize: 12.5 }}>{r.order_no || "—"}</td>
+                    <td style={{ fontFamily: "monospace", fontSize: 12.5 }}>{r.product_id || "—"}</td>
+                    <td style={{ maxWidth: 360, overflow: "hidden", textOverflow: "ellipsis" }} title={r.product_name || ""}>{r.product_name || "—"}</td>
+                    <td className="num">{r.qty == null ? "—" : Math.round(r.qty).toLocaleString("id-ID")}</td>
+                    <td>{fmtDate(r.order_date)}</td>
+                    <td>{fmtDate(r.release_date)}</td>
                     <td className="num">{rpFull(r.sales || 0)}</td>
                     <td className="num">{rpFull(Math.abs(r.promotion_cost || 0))}</td>
                     <td className="num">{rpFull(Math.abs(r.refund || 0))}</td>
                     <td className="num">{rpFull(Math.abs(r.delivery_cost || 0))}</td>
                     <td className="num">{rpFull(Math.abs(r.affiliate_cost || 0))}</td>
                     <td className="num">{rpFull(Math.abs(r.marketplace_fee || 0))}</td>
+                    <td className="num">{rpFull(Math.abs(r.pajak || 0))}</td>
                     <td className="num" style={{ color: (r.net_income || 0) >= 0 ? "#86efac" : "#f87171", fontWeight: 700 }}>{rpFull(r.net_income || 0)}</td>
                   </tr>
                 ))}
-                {rows.length === 0 && <tr><td colSpan={9} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>{t("No transactions")}</td></tr>}
+                {rows.length === 0 && <tr><td colSpan={14} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>{t("No transactions")}</td></tr>}
               </tbody>
             </table>
           </div>

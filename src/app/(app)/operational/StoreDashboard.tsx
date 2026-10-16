@@ -205,9 +205,9 @@ export default function StoreDashboard({ clientId, refreshKey }: { clientId: str
             <SubStat label={t("AOV")} value={avgSales == null ? "—" : rpFull(avgSales)} title="AOV — Average Order Value" />
           </div>
         </div>
-        <div className="kpi kpi-roas" style={{ display: "flex", flexDirection: "column", justifyContent: "center" }}>
+        <div className="kpi kpi-roas">
           <div className="lbl">SLA</div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 3, marginTop: 6 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 5, marginTop: 14 }}>
             <SlaLine label={t("Paid - Ship")} value={fmtHours(k?.sla_pay_to_deadline_hours ?? null)} />
             <SlaLine label={t("Ship - Completed")} value={fmtDays(k?.sla_deadline_to_done_days ?? null)} />
             <SlaLine label={t("Paid - Completed")} value={fmtDays(k?.sla_pay_to_done_days ?? null)} bold />
@@ -340,6 +340,8 @@ function Top5Table({ title, nameLabel, rows, onPick, t }: { title: string; nameL
   );
 }
 
+// a return number (units or shipping paid back) is shown in red as soon as it is not zero
+const redIf = (n: number | null | undefined): React.CSSProperties | undefined => (Number(n) > 0 ? { color: "#f87171", fontWeight: 700 } : undefined);
 function SlaLine({ label, value, bold }: { label: string; value: string; bold?: boolean }) {
   return (
     <div style={{ display: "flex", justifyContent: "space-between", gap: 10, fontSize: bold ? 13.5 : 12, whiteSpace: "nowrap" }}>
@@ -402,10 +404,10 @@ function DayTable({ title, hint, rows, onRowClick, t }: {
                 <td className="num">{numFull(r.orders)}</td>
                 <td className="num">{numFull(r.units)}</td>
                 <td className="num">{rpFull(r.aov)}</td>
-                <td className="num">{numFull(r.return_qty)}</td>
+                <td className="num" style={redIf(r.return_qty)}>{numFull(r.return_qty)}</td>
                 <td className="num">{rpFull(r.subtotal)}</td>
                 <td className="num">{rpFull(r.est_shipping_fee)}</td>
-                <td className="num">{rpFull(r.return_shipping_fee)}</td>
+                <td className="num" style={redIf(r.return_shipping_fee)}>{rpFull(r.return_shipping_fee)}</td>
                 <td className="num">{rpFull(r.buyer_shipping_fee)}</td>
                 <td className="num">{rpFull(r.est_shipping_cost)}</td>
               </tr>
@@ -475,11 +477,11 @@ function DayDrillDown({ kind, day, clientId, sel, supabase, onClose }: {
                       <td style={{ maxWidth: 380, overflow: "hidden", textOverflow: "ellipsis" }} title={r.product_name || ""}>{r.product_name || "—"}</td>
                       <td>{r.variant_name || "—"}</td>
                       <td className="num">{numFull(r.qty)}</td>
-                      <td className="num">{numFull(r.return_qty)}</td>
+                      <td className="num" style={redIf(r.return_qty)}>{numFull(r.return_qty)}</td>
                       <td className="num">{rpFull(r.subtotal)}</td>
                       <td className="num">{order(rpFull(r.total_payment || 0))}</td>
                       <td className="num">{order(rpFull(r.est_shipping_fee))}</td>
-                      <td className="num">{order(rpFull(r.return_shipping_fee))}</td>
+                      <td className="num" style={f ? redIf(r.return_shipping_fee) : undefined}>{order(rpFull(r.return_shipping_fee))}</td>
                       <td className="num">{order(rpFull(r.buyer_shipping_fee))}</td>
                       <td className="num">{order(rpFull(r.est_shipping_cost))}</td>
                       <td style={{ fontSize: 12.5 }}>{order(fmtDT(r.paid_at))}</td>
