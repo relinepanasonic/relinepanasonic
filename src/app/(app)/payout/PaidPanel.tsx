@@ -63,8 +63,8 @@ export default function PaidPanel({ supabase, clientId, onOpen }: {
           <div className="tbl-wrap" style={{ maxHeight: "62vh" }}>
             <table className="tbl day-tbl">
               <thead><tr>
-                {H("Paid on", "paid_at")}{H("Payout No", "payout_no")}{H("Completed", "completed_at")}{H("Store name", "store_name")}{H("No Pesanan", "order_no")}
-                {H("Product ID", "product_id")}{H("Product", "product_name")}{H("Variant", "variant_name")}{H("Qty", "qty", true)}{H("Harga Beli", "harga_beli", true)}{H("Total", "total", true)}
+                {H("Date Paid", "paid_at")}{H("Payout No", "payout_no")}{H("Order Completed", "completed_at")}{H("Store name", "store_name")}{H("No Pesanan", "order_no")}
+                {H("Product ID", "product_id")}{H("Product", "product_name")}{H("Variant", "variant_name")}{H("Qty", "qty", true)}{H("Harga Beli (per unit)", "harga_beli", true)}{H("Total (Qty × Harga Beli)", "total", true)}
               </tr></thead>
               <tbody>
                 {sortedData.slice(0, limit).map((r, i) => (

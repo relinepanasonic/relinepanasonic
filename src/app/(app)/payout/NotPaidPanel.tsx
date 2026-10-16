@@ -101,7 +101,7 @@ export default function NotPaidPanel({ supabase, clientId, onPaid }: {
   return (
     <div className="panel">
       <h3>Not Paid</h3>
-      <div className="hint">Completed orders of the vendor&apos;s stores not yet paid · date = order completed · tick the lines to pay</div>
+      <div className="hint">Completed orders of the vendor&apos;s stores not yet paid · Order Completed = the date the order was completed on Shopee (the base for the payout) · tick the lines to pay</div>
       <VendorBar v={v}>
         <div className="fld" style={{ minWidth: 150 }}><label>From</label><input type="date" value={from} onChange={(e) => setFrom(e.target.value)} style={{ colorScheme: "dark" }} /></div>
         <div className="fld" style={{ minWidth: 150 }}><label>To</label><input type="date" value={to} onChange={(e) => setTo(e.target.value)} style={{ colorScheme: "dark" }} /></div>
@@ -135,8 +135,8 @@ export default function NotPaidPanel({ supabase, clientId, onPaid }: {
           <table className="tbl day-tbl">
             <thead><tr>
               <th style={{ width: 36 }}><input type="checkbox" checked={allChecked} onChange={checkAll} disabled={!payableShown.length} title="Check all" /></th>
-              {H("Date", "completed_at")}{H("Store name", "store_name")}{H("No Pesanan", "order_no")}{H("Product ID", "product_id")}{H("Product", "product_name")}
-              {H("Variant ID", "variant_id")}{H("Variant", "variant_name")}{H("Qty", "qty", true)}{H("Harga Beli", "harga_beli", true)}{H("Total", "total", true)}
+              {H("Order Completed", "completed_at")}{H("Store name", "store_name")}{H("No Pesanan", "order_no")}{H("Product ID", "product_id")}{H("Product", "product_name")}
+              {H("Variant ID", "variant_id")}{H("Variant", "variant_name")}{H("Qty", "qty", true)}{H("Harga Beli (per unit)", "harga_beli", true)}{H("Total (Qty × Harga Beli)", "total", true)}
             </tr></thead>
             <tbody>
               {sortedData.slice(0, limit).map((r) => {
