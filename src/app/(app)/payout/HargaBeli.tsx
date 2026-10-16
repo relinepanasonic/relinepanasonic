@@ -196,7 +196,10 @@ export default function HargaBeli({ clientId }: { clientId: string }) {
                         <td className="num">
                           <input inputMode="numeric" placeholder={r.has_price ? fmtDigits(String(Math.round(r.price))) : "Rp"} value={fmtDigits(d ?? "")}
                             onChange={(e) => setEdits((m) => { const n = new Map(m); const v = digits(e.target.value); if (v) n.set(k, v); else n.delete(k); return n; })}
-                            style={{ width: 150, textAlign: "right", borderColor: dirty ? "var(--gold)" : undefined }} />
+                            style={{
+                              width: 150, textAlign: "right", padding: "8px 10px", borderRadius: 8, fontSize: 14, color: "#fff",
+                              background: "rgba(7,13,26,.85)", border: `1px solid ${dirty ? "var(--gold)" : "rgba(201,162,39,.35)"}`, outline: "none",
+                            }} />
                         </td>
                       </tr>
                     );

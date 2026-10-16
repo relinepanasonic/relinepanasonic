@@ -13,8 +13,8 @@ type Role = "superadmin" | "client_admin" | "branch_manager" | "store_user" | "a
 const NAV: { href: string; icon: string; label: string; short?: string; roles?: Role[] }[] = [
   { href: "/",          icon: "📊", label: "Dashboard",           roles: ["superadmin", "branch_manager", "advertiser", "pic_panasonic", "sales"] },
   { href: "/ads",       icon: "🎯", label: "Ads Performance", short: "Ads",     roles: ["superadmin", "advertiser"] },
-  { href: "/finance",   icon: "💹", label: "Earning", short: "Earning",         roles: ["superadmin", "client_admin", "branch_manager", "pic_panasonic", "sales"] },
   { href: "/operational", icon: "🏬", label: "Demographic", short: "Demographic", roles: ["superadmin", "client_admin", "branch_manager", "pic_panasonic", "sales"] },
+  { href: "/finance",   icon: "💹", label: "Earning", short: "Earning",         roles: ["superadmin", "client_admin", "branch_manager", "pic_panasonic", "sales"] },
   { href: "/payout",    icon: "💸", label: "Payout", short: "Payout", roles: ["superadmin", "client_admin"] },
   { href: "/calc",      icon: "🧮", label: "Price Calculator", short: "Calc",    roles: ["superadmin", "branch_manager", "pic_panasonic", "sales"] },
   { href: "/upload",    icon: "⬆️", label: "Upload Data", short: "Upload",         roles: ["superadmin", "client_admin"] },
@@ -35,7 +35,7 @@ const ROLE_LABEL: Record<Role, string> = {
 // Mobile bottom-nav priority. Someone who can see up to 5 pages gets them all in
 // the bar; anyone with more gets the first 4 below plus a "More" sheet that
 // lists the rest (Calc, Upload, Reports, Core List, Users, ...).
-const BOTTOM_PRIORITY = ["/", "/ads", "/finance", "/operational", "/payout", "/calc", "/upload", "/core", "/users"];
+const BOTTOM_PRIORITY = ["/", "/ads", "/operational", "/finance", "/payout", "/calc", "/upload", "/core", "/users"];
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (

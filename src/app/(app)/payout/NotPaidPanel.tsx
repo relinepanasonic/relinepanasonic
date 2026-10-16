@@ -18,8 +18,8 @@ type Line = {
 const PAGE = 300;
 const keyOf = (l: Pick<Line, "order_no" | "name_key" | "var_key">) => `${l.order_no}||${l.name_key}||${l.var_key}`;
 
-export default function NotPaidPanel({ supabase, clientId, onPaid }: {
-  supabase: Supabase; clientId: string; onPaid: (batchId: string) => void;
+export default function NotPaidPanel({ supabase, clientId, onPaid, onGoPrice }: {
+  supabase: Supabase; clientId: string; onPaid: (batchId: string) => void; onGoPrice: () => void;
 }) {
   const scope = useScope(supabase, clientId);
   const [from, setFrom] = useState("");
@@ -116,8 +116,9 @@ export default function NotPaidPanel({ supabase, clientId, onPaid }: {
       {err && <div style={{ color: "#f87171", marginBottom: 12, fontSize: 13 }}>✗ {err}</div>}
       {missing > 0 && !loading && (
         <div style={{ color: "#fbbf24", marginBottom: 10, fontSize: 12.5 }}>
-          ⚠ {missing} line{missing > 1 ? "s have" : " has"} no Product ID or no Harga Beli yet and cannot be ticked. Set the price in the <b>Harga Beli</b> sub page
-          (a Product ID appears once an Earning file with that product is uploaded).
+          ⚠ {missing} line{missing > 1 ? "s have" : " has"} no Harga Beli yet (or no Product ID) and cannot be ticked — a payout needs a price.{" "}
+          <button className="btn-gold" onClick={onGoPrice} style={{ padding: "4px 14px", fontSize: 12.5, marginLeft: 6 }}>Set the prices in Harga Beli</button>
+          <div style={{ color: "var(--muted)", marginTop: 4 }}>A Product ID appears once an Earning file with that product is uploaded.</div>
         </div>
       )}
 
