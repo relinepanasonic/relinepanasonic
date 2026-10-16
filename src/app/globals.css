@@ -311,3 +311,8 @@ table.tbl-sticky2{width:max-content;min-width:100%}
 .day-tbl th { white-space: normal !important; line-height: 1.25; padding: 10px 8px; font-size: 11px; vertical-align: middle; min-width: 74px; max-width: 150px; }
 .day-tbl .sortable-th-inner { gap: 4px; }
 .day-tbl td.num, .day-tbl th.num { text-align: right; }
+/* sort arrows (SortableHeader): dim grey; the direction in use turns gold */
+.sortable-th{user-select:none}
+.sort-arrow-up,.sort-arrow-down{font-size:9px;line-height:1;color:rgba(255,255,255,.28);transition:color .12s}
+.sortable-th:hover .sort-arrow-up,.sortable-th:hover .sort-arrow-down{color:rgba(255,255,255,.55)}
+.sort-arrow-up.active,.sort-arrow-down.active,.sortable-th:hover .sort-arrow-up.active,.sortable-th:hover .sort-arrow-down.active{color:var(--gold-soft,#f0d870);text-shadow:0 0 6px rgba(240,216,112,.55)}
