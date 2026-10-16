@@ -30,6 +30,7 @@ export interface OrderRow {
   city: string | null;             // Kota/Kabupaten
   province: string | null;
   completed_at: string | null;     // Waktu Pesanan Selesai (AX)
+  shipped_at: string | null;       // Waktu Pengiriman Diatur (only in the Order.shipping export)
   raw: Record<string, unknown>;
 }
 
@@ -42,6 +43,13 @@ function asTimestamp(v: unknown): string | null {
 function str(v: unknown): string | null {
   const s = String(v ?? "").trim();
   return s === "" ? null : s;
+}
+
+// True when the first row is this export's header (even if the file holds no orders, e.g. nothing
+// completed that day) — lets the upload say "empty file" instead of "wrong file".
+export function isOrdersHeader(matrix: unknown[][]): boolean {
+  const header = Array.from(matrix[0] || [], (h) => String(h ?? "").trim());
+  return header.includes("No. Pesanan") && header.includes("Waktu Pesanan Selesai");
 }
 
 export function parseOrdersMatrix(matrix: unknown[][]): OrderRow[] {
@@ -68,6 +76,7 @@ export function parseOrdersMatrix(matrix: unknown[][]): OrderRow[] {
   const iCity = idx("Kota/Kabupaten");
   const iProvince = idx("Provinsi");
   const iCompleted = idx("Waktu Pesanan Selesai");
+  const iShipped = idx("Waktu Pengiriman Diatur");
 
   if (iOrderNo < 0 || iCompleted < 0) return []; // not this export type
 
@@ -97,6 +106,7 @@ export function parseOrdersMatrix(matrix: unknown[][]): OrderRow[] {
       city: str(row[iCity]),
       province: str(row[iProvince]),
       completed_at: asTimestamp(row[iCompleted]),
+      shipped_at: iShipped < 0 ? null : asTimestamp(row[iShipped]),
       raw,
     });
   }

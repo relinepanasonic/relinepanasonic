@@ -63,7 +63,8 @@ export default function StoreDashboard({ clientId, refreshKey }: { clientId: str
   const [mo, setMo] = useState<MonthlyPoint[]>([]);        // orders per month, for the Total Transaction chart
   const [loading, setLoading] = useState(false);
   const [loadErr, setLoadErr] = useState("");
-  const [drill, setDrill] = useState<string | null>(null);
+  const [ship, setShip] = useState<Summary["daily"]>([]);   // Order Shipped table (Order.shipping uploads)
+  const [drill, setDrill] = useState<{ kind: "completed" | "shipped"; day: string } | null>(null);
   const [entity, setEntity] = useState<Entity | null>(null); // Top 5 row opened for its transactions
 
   const checkData = useCallback(async () => {
@@ -83,7 +84,7 @@ export default function StoreDashboard({ clientId, refreshKey }: { clientId: str
   useEffect(() => { checkData(); }, [checkData, refreshKey]);
 
   const load = useCallback(async () => {
-    if (!clientId || !sel.store) { setD(null); setTb(null); setMo([]); return; }
+    if (!clientId || !sel.store) { setD(null); setTb(null); setMo([]); setShip([]); return; }
     setLoading(true);
     setLoadErr("");
     try {
@@ -94,16 +95,18 @@ export default function StoreDashboard({ clientId, refreshKey }: { clientId: str
         p_city:  sel.city || null,
         p_store: sel.store,
       };
-      const [{ data, error }, { data: tbData }, { data: moData }] = await Promise.all([
+      const [{ data, error }, { data: tbData }, { data: moData }, { data: shipData }] = await Promise.all([
         supabase.rpc("store_perf_summary", params),
         supabase.rpc("store_perf_top_buyers", { p_client_id: clientId, ...params }),
         // the chart ignores the Month / Week filter on purpose: it shows every month
         supabase.rpc("store_perf_monthly", { p_client_id: clientId, p_year: params.p_year, p_city: params.p_city, p_store: params.p_store }),
+        supabase.rpc("store_perf_shipped_daily", { p_client_id: clientId, ...params }),
       ]);
       if (error) throw error;
       setD(data as Summary);
       setTb((tbData as TopBuyers) || null);
       setMo((moData as MonthlyPoint[]) || []);
+      setShip((shipData as Summary["daily"]) || []);
     } catch (e) {
       const err = e as { message?: string; code?: string };
       setLoadErr(err?.message ? `${err.message} (code: ${err.code || "?"})` : String(e));
@@ -133,6 +136,7 @@ export default function StoreDashboard({ clientId, refreshKey }: { clientId: str
   // initialKey: the daily table's default order is the backend's own
   // date-ascending order, unchanged until the user clicks a header.
   const dailySort = useTableSort<Summary["daily"][number]>(d?.daily ?? []);
+  const shipSort = useTableSort<Summary["daily"][number]>(ship);
   // orders per month in calendar order (year, then month) for the Total Transaction mini chart
   const ordersSeries = useMemo(
     () => [...mo].sort((a, b) => a.year - b.year || MONTH_ORDER.indexOf(a.month) - MONTH_ORDER.indexOf(b.month)).map((x) => x.orders),
@@ -238,10 +242,36 @@ export default function StoreDashboard({ clientId, refreshKey }: { clientId: str
         </Panel>
       </div>
 
-      {/* Daily table */}
+      {/* Order Shipped / Order Completed, one row per day */}
       <div className="panel">
-        <h3>{t("Daily Transaction Detail")}</h3>
-        <div className="hint">{t("Click a row to see that day's transaction detail · date based on order completed time")}</div>
+        <h3>{t("Order Shipped")}</h3>
+        <div className="hint">{t("Click a row to see that day's shipped orders · date based on the time the shipment was arranged")}</div>
+        <div className="tbl-wrap" style={{ maxHeight: 440 }}>
+          <table className="tbl">
+            <thead><tr>
+              <SortableHeader label={t("Date")} sortKey="tx_date" currentSort={shipSort.sortConfig} onRequestSort={shipSort.requestSort} />
+              <SortableHeader label={t("Orders")} sortKey="orders" currentSort={shipSort.sortConfig} onRequestSort={shipSort.requestSort} className="num" />
+              <SortableHeader label="GMV" sortKey="gmv" currentSort={shipSort.sortConfig} onRequestSort={shipSort.requestSort} className="num" />
+            </tr></thead>
+            <tbody>
+              {shipSort.sortedData.map((r) => (
+                <tr key={r.tx_date} style={{ cursor: "pointer" }} onClick={() => setDrill({ kind: "shipped", day: r.tx_date })}>
+                  <td style={{ fontWeight: 600 }}>{fmtDate(r.tx_date)}</td>
+                  <td className="num">{r.orders}</td>
+                  <td className="num">{rpFull(r.gmv)}</td>
+                </tr>
+              ))}
+              {shipSort.sortedData.length === 0 && (
+                <tr><td colSpan={3} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>{t("No data for these filters")}</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="panel">
+        <h3>{t("Order Completed")}</h3>
+        <div className="hint">{t("Click a row to see that day's completed orders · date based on order completed time")}</div>
         <div className="tbl-wrap" style={{ maxHeight: 440 }}>
           <table className="tbl">
             <thead><tr>
@@ -251,7 +281,7 @@ export default function StoreDashboard({ clientId, refreshKey }: { clientId: str
             </tr></thead>
             <tbody>
               {dailySort.sortedData.map((r) => (
-                <tr key={r.tx_date} style={{ cursor: "pointer" }} onClick={() => setDrill(r.tx_date)}>
+                <tr key={r.tx_date} style={{ cursor: "pointer" }} onClick={() => setDrill({ kind: "completed", day: r.tx_date })}>
                   <td style={{ fontWeight: 600 }}>{fmtDate(r.tx_date)}</td>
                   <td className="num">{r.orders}</td>
                   <td className="num">{rpFull(r.gmv)}</td>
@@ -266,7 +296,7 @@ export default function StoreDashboard({ clientId, refreshKey }: { clientId: str
       </div>
 
       {drill && (
-        <DayDrillDown day={drill} clientId={clientId} sel={sel} supabase={supabase} onClose={() => setDrill(null)} />
+        <DayDrillDown kind={drill.kind} day={drill.day} clientId={clientId} sel={sel} supabase={supabase} onClose={() => setDrill(null)} />
       )}
       {entity && (
         <EntityDrillDown entity={entity} clientId={clientId} sel={sel} supabase={supabase} onClose={() => setEntity(null)} />
@@ -360,6 +390,7 @@ function SlaLine({ label, value, bold }: { label: string; value: string; bold?: 
 type DetailRow = {
   order_no: string | null; product_name: string | null; variant_name: string | null; qty: number | null;
   paid_at: string | null; ship_deadline: string | null; completed_at: string | null;
+  shipped_at?: string | null; product_id?: string | null;
   payment_method: string | null; shipping_option: string | null; city: string | null; province: string | null;
   total_payment: number | null; order_status: string | null; cancel_return_status: string | null;
 };
@@ -371,8 +402,8 @@ function slaFor(paid: string | null, completed: string | null): string {
   const h = (new Date(completed.replace(" ", "T")).getTime() - new Date(paid.replace(" ", "T")).getTime()) / 3600000;
   return Number.isFinite(h) ? fmtHours(h) : "—";
 }
-function DayDrillDown({ day, clientId, sel, supabase, onClose }: {
-  day: string; clientId: string;
+function DayDrillDown({ kind, day, clientId, sel, supabase, onClose }: {
+  kind: "completed" | "shipped"; day: string; clientId: string;
   sel: { year: string; month: string; week: string; city: string; store: string };
   supabase: ReturnType<typeof createClient>; onClose: () => void;
 }) {
@@ -381,32 +412,29 @@ function DayDrillDown({ day, clientId, sel, supabase, onClose }: {
 
   useEffect(() => {
     (async () => {
-      let q = supabase.from("order_rows")
-        .select("order_no,product_name,variant_name,qty,paid_at,ship_deadline,completed_at,payment_method,shipping_option,city,province,total_payment,order_status,cancel_return_status")
-        .eq("client_id", clientId).gte("completed_at", `${day} 00:00:00`).lte("completed_at", `${day} 23:59:59`);
-      if (sel.year) q = q.eq("year", Number(sel.year));
-      if (sel.month) q = q.eq("month", sel.month);
-      if (sel.week) q = q.eq("week", sel.week);
-      if (sel.city) q = q.eq("dealer_city", sel.city);
-      if (sel.store) q = q.eq("store_name", sel.store);
-      const { data } = await q.order("order_no");
+      // the SQL function also fills each line's Shopee Product ID from the Earning report
+      const { data } = await supabase.rpc("store_perf_order_lines", {
+        p_client_id: clientId, p_kind: kind, p_day: day,
+        p_year: sel.year ? Number(sel.year) : null, p_month: sel.month || null, p_week: sel.week || null,
+        p_city: sel.city || null, p_store: sel.store || null,
+      });
       setRows((data as DetailRow[]) || []);
     })();
-  }, [day, clientId, sel, supabase]);
+  }, [kind, day, clientId, sel, supabase]);
 
   return (
     <div style={overlay} onClick={onClose}>
       <div style={drawer} onClick={(e) => e.stopPropagation()}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-          <div style={{ fontSize: 22, fontWeight: 800, color: "#fff" }}>{t("Transaction")} — {fmtDate(day)}</div>
+          <div style={{ fontSize: 22, fontWeight: 800, color: "#fff" }}>{t(kind === "shipped" ? "Order Shipped" : "Order Completed")} — {fmtDate(day)}</div>
           <button className="btn-ghost" onClick={onClose}>✕ {t("Close")}</button>
         </div>
         {rows === null ? <Loader center /> : (
           <div className="tbl-wrap" style={{ maxHeight: "72vh" }}>
             <table className="tbl" style={{ color: "#e8edf8", fontSize: 13.5 }}>
               <thead><tr>
-                <th>{t("Order No.")}</th><th>{t("Product")}</th><th>{t("Variant")}</th><th className="num">Qty</th>
-                <th>{t("Paid At")}</th><th>{t("Ship Deadline")}</th><th>{t("Completed At")}</th><th>SLA</th>
+                <th>{t("Order No.")}</th><th>{t("Product ID")}</th><th>{t("Product")}</th><th>{t("Variant")}</th><th className="num">Qty</th>
+                <th>{t("Paid At")}</th><th>{t("Ship Deadline")}</th><th>{kind === "shipped" ? t("Shipped At") : t("Completed At")}</th><th>SLA</th>
                 <th>{t("Payment Method")}</th><th>{t("Courier")}</th><th>{t("City")}</th><th>{t("Province")}</th>
                 <th className="num">Total Sales</th><th>{t("Status")}</th>
               </tr></thead>
@@ -416,13 +444,14 @@ function DayDrillDown({ day, clientId, sel, supabase, onClose }: {
                   return (
                     <tr key={i}>
                       <td style={{ fontFamily: "monospace", fontSize: 12.5, whiteSpace: "nowrap" }}>{showOrderNo ? (r.order_no || "—") : ""}</td>
+                      <td style={{ fontFamily: "monospace", fontSize: 12.5, whiteSpace: "nowrap" }}>{r.product_id || "—"}</td>
                       <td style={{ maxWidth: 220, whiteSpace: "normal" }}>{r.product_name || "—"}</td>
                       <td style={{ whiteSpace: "nowrap" }}>{r.variant_name || "—"}</td>
                       <td className="num">{r.qty ?? "—"}</td>
                       <td style={{ fontSize: 12.5, whiteSpace: "nowrap" }}>{fmtDT(r.paid_at)}</td>
                       <td style={{ fontSize: 12.5, whiteSpace: "nowrap" }}>{fmtDT(r.ship_deadline)}</td>
-                      <td style={{ fontSize: 12.5, whiteSpace: "nowrap" }}>{fmtDT(r.completed_at)}</td>
-                      <td style={{ fontSize: 12.5, whiteSpace: "nowrap", fontWeight: 700, color: GOLD }}>{slaFor(r.paid_at, r.completed_at)}</td>
+                      <td style={{ fontSize: 12.5, whiteSpace: "nowrap" }}>{fmtDT((kind === "shipped" ? r.shipped_at : r.completed_at) ?? null)}</td>
+                      <td style={{ fontSize: 12.5, whiteSpace: "nowrap", fontWeight: 700, color: GOLD }}>{slaFor(r.paid_at, (kind === "shipped" ? r.shipped_at : r.completed_at) ?? null)}</td>
                       <td style={{ fontSize: 12.5, whiteSpace: "nowrap" }}>{r.payment_method || "—"}</td>
                       <td style={{ fontSize: 12.5, whiteSpace: "nowrap" }}>{r.shipping_option || "—"}</td>
                       <td style={{ fontSize: 12.5, whiteSpace: "nowrap" }}>{r.city || "—"}</td>
@@ -432,7 +461,7 @@ function DayDrillDown({ day, clientId, sel, supabase, onClose }: {
                     </tr>
                   );
                 })}
-                {rows.length === 0 && <tr><td colSpan={14} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>{t("No transactions")}</td></tr>}
+                {rows.length === 0 && <tr><td colSpan={15} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>{t("No transactions")}</td></tr>}
               </tbody>
             </table>
           </div>

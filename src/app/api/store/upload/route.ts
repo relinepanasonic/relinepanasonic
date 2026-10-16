@@ -3,7 +3,7 @@ import * as XLSX from "xlsx";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { currentSchema } from "@/lib/workspace-server";
-import { parseOrdersMatrix } from "@/lib/parseOrders";
+import { isOrdersHeader, parseOrdersMatrix } from "@/lib/parseOrders";
 import { weekOfMonth } from "@/lib/parseFinance";
 
 export const runtime = "nodejs";
@@ -46,6 +46,10 @@ export async function POST(req: NextRequest) {
   if (!matrix.length) return NextResponse.json({ error: "EMPTY_FILE" }, { status: 400 });
 
   const parsedRows = parseOrdersMatrix(matrix);
+  if (!parsedRows.length && isOrdersHeader(matrix)) {
+    // a valid export with no orders (nothing completed in that range): nothing to store
+    return NextResponse.json({ ok: true, rows: 0, empty: true });
+  }
   if (!parsedRows.length) {
     return NextResponse.json({ error: "No order rows found — is this a Shopee Order.completed export?" }, { status: 400 });
   }

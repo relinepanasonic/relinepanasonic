@@ -180,6 +180,9 @@ const ID_DICT: Record<string, string> = {
   "Monthly Promotion Cost": "Biaya Promosi Bulanan",
   "Payment Method": "Metode Bayar", "Shipping Service": "Jasa Kirim",
   "Daily Transaction Detail": "Detail Transaksi per Hari",
+  "Order Shipped": "Pesanan Dikirim", "Shipped At": "Waktu Dikirim", "Product ID": "ID Produk",
+  "Click a row to see that day's shipped orders · date based on the time the shipment was arranged": "Klik baris untuk melihat pesanan yang dikirim hari itu · tanggal berdasarkan waktu pengiriman diatur",
+  "Click a row to see that day's completed orders · date based on order completed time": "Klik baris untuk melihat pesanan selesai hari itu · tanggal berdasarkan waktu pesanan selesai",
   "Click a row to see that day's transaction detail · date based on release date":
     "Klik baris untuk melihat detail transaksi hari itu · tanggal berdasarkan dana dilepaskan",
   "Date": "Tanggal", "Orders": "Pesanan", "Net Income": "Laba Bersih",

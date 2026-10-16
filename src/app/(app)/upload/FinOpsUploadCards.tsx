@@ -16,7 +16,7 @@ const THIS_YEAR = new Date().getFullYear();
 
 type Supabase = ReturnType<typeof createClient>;
 type CityRow = { value: string; pic: string | null };
-type UploadJson = { rows?: number; product_lines?: number; unreconciled_orders?: number; error?: string };
+type UploadJson = { rows?: number; product_lines?: number; unreconciled_orders?: number; empty?: boolean; skipped_orders?: number; error?: string };
 
 export default function FinOpsUploadCards({ supabase, clientId, cities, onDone }: {
   supabase: Supabase; clientId: string; cities: CityRow[]; onDone: () => void;
@@ -36,11 +36,21 @@ export default function FinOpsUploadCards({ supabase, clientId, cities, onDone }
       />
       <UploadCard
         supabase={supabase} clientId={clientId} cities={cities} onDone={onDone}
-        title="Demographic" roles="Super Admin | Admin"
+        title="Demographic · Order Completed" roles="Super Admin | Admin"
         endpoint="/api/store/upload"
         fileLabel="Order Completed" fileHint="(Order.completed)"
         guide={GUIDE.order}
-        okMessage={(j) => [`✓ ${j.rows} rows`]}
+        okMessage={(j) => [j.empty ? "✓ The file has no orders (nothing completed in that range) — nothing to save" : `✓ ${j.rows} rows`]}
+      />
+      <UploadCard
+        supabase={supabase} clientId={clientId} cities={cities} onDone={onDone}
+        title="Demographic · Order Shipping" roles="Super Admin | Admin"
+        endpoint="/api/store/ship-upload"
+        fileLabel="Order Shipping" fileHint="(Order.shipping)"
+        okMessage={(j) => [
+          j.empty ? "✓ The file has no orders — nothing to save" : `✓ ${j.rows} rows`,
+          ...(j.skipped_orders ? [`↷ ${j.skipped_orders} order(s) were already uploaded and were skipped`] : []),
+        ]}
       />
     </div>
   );
@@ -48,7 +58,7 @@ export default function FinOpsUploadCards({ supabase, clientId, cities, onDone }
 
 function UploadCard({ supabase, clientId, cities, onDone, title, roles, endpoint, fileLabel, fileHint, guide, okMessage }: {
   supabase: Supabase; clientId: string; cities: CityRow[]; onDone: () => void;
-  title: string; roles: string; endpoint: string; fileLabel: string; fileHint: string; guide: string;
+  title: string; roles: string; endpoint: string; fileLabel: string; fileHint: string; guide?: string;
   okMessage: (j: UploadJson) => string[];
 }) {
   const [year, setYear] = useState(THIS_YEAR);
@@ -130,7 +140,7 @@ function UploadCard({ supabase, clientId, cities, onDone, title, roles, endpoint
         <input type="file" accept=".xlsx,.xls" className="file-gold" style={{ fontSize: 12, display: "block", width: "100%" }}
           onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
         {file && <p style={{ marginTop: 6, fontSize: 11, color: "var(--gold)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>✓ {file.name}</p>}
-        <ImageGuideModal image={guide} align="right" />
+        {guide && <ImageGuideModal image={guide} align="right" />}
       </div>
 
       <div style={{ display: "flex", justifyContent: "center" }}>
