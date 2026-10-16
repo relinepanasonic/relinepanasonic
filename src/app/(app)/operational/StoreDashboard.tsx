@@ -453,7 +453,7 @@ function DayDrillDown({ kind, day, clientId, sel, supabase, onClose }: {
           <div className="tbl-wrap" style={{ maxHeight: "72vh" }}>
             <table className="tbl" style={{ color: "#e8edf8", fontSize: 13.5 }}>
               <thead><tr>
-                <th>{t("Order No.")}</th><th>{t("Product ID")} · {t("Product")}</th>
+                <th>{t("Order No.")}</th><th>{t("Product ID")}</th><th>{t("Product")}</th>
                 <th className="num">{t("Total Product Sold")}</th><th className="num">{t("Return Qty")}</th>
                 <th className="num">{t("Subtotal Pesanan")}</th><th className="num">{t("Total Payment")}</th>
                 <th className="num">{t("Estimasi Potongan Biaya Pengiriman")}</th><th className="num">{t("Ongkos Kirim Pengembalian Barang")}</th>
@@ -465,13 +465,17 @@ function DayDrillDown({ kind, day, clientId, sel, supabase, onClose }: {
                 {rows.map((r) => (
                   <tr key={r.order_no}>
                     <td style={{ fontFamily: "monospace", fontSize: 12.5, whiteSpace: "nowrap", verticalAlign: "top" }}>{r.order_no}</td>
-                    <td style={{ minWidth: 260, whiteSpace: "normal" }}>
+                    {/* one line per product in both columns (fixed line height keeps ID and name aligned) */}
+                    <td style={{ whiteSpace: "nowrap", verticalAlign: "top" }}>
                       {r.products.map((p, i) => (
-                        <div key={i} style={{ marginBottom: i < r.products.length - 1 ? 4 : 0 }}>
-                          <span style={{ fontFamily: "monospace", fontSize: 12, color: GOLD }}>{p.product_id || "—"}</span>
-                          {" · "}{p.product_name || "—"}{p.variant_name ? ` (${p.variant_name})` : ""}{p.qty != null ? ` ×${p.qty}` : ""}
-                        </div>
+                        <div key={i} style={{ height: 22, lineHeight: "22px", fontFamily: "monospace", fontSize: 12.5, color: GOLD }}>{p.product_id || "—"}</div>
                       ))}
+                    </td>
+                    <td style={{ whiteSpace: "nowrap", verticalAlign: "top", maxWidth: 380 }}>
+                      {r.products.map((p, i) => {
+                        const label = `${p.product_name || "—"}${p.variant_name ? ` (${p.variant_name})` : ""}${p.qty != null ? ` ×${p.qty}` : ""}`;
+                        return <div key={i} title={label} style={{ height: 22, lineHeight: "22px", overflow: "hidden", textOverflow: "ellipsis" }}>{label}</div>;
+                      })}
                     </td>
                     <td className="num">{numFull(r.units)}</td>
                     <td className="num">{numFull(r.return_qty)}</td>
@@ -491,7 +495,7 @@ function DayDrillDown({ kind, day, clientId, sel, supabase, onClose }: {
                     <td style={{ fontSize: 12.5, whiteSpace: "nowrap" }}>{r.status || "—"}</td>
                   </tr>
                 ))}
-                {rows.length === 0 && <tr><td colSpan={18} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>{t("No transactions")}</td></tr>}
+                {rows.length === 0 && <tr><td colSpan={19} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>{t("No transactions")}</td></tr>}
               </tbody>
             </table>
           </div>
