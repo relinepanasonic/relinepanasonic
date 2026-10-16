@@ -486,9 +486,9 @@ export default function UsersPage() {
 }
 
 const WS_PILL: Record<string, { label: string; color: string; bg: string; border: string }> = {
-  gobel: { label: "Gobel",          color: "#9fc2ee", bg: "rgba(59,110,165,.18)", border: "rgba(59,110,165,.45)" },
+  gobel: { label: "Reline Project 1.0", color: "#9fc2ee", bg: "rgba(59,110,165,.18)", border: "rgba(59,110,165,.45)" },
   light: { label: "Light Solution", color: "#e8c84a", bg: "rgba(201,162,39,.12)", border: "rgba(201,162,39,.4)" },
-  alpha: { label: "Reline Project 1.0",  color: "#6fe0ad", bg: "rgba(46,158,107,.14)", border: "rgba(46,158,107,.4)" },
+  alpha: { label: "Alpha Project",  color: "#6fe0ad", bg: "rgba(46,158,107,.14)", border: "rgba(46,158,107,.4)" },
 };
 
 function WorkspacePills({ ws }: { ws: string[] | null }) {

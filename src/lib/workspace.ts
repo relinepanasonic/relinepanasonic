@@ -1,8 +1,8 @@
 // Workspaces: one app, separate data per workspace.
-//   gobel = Panasonic Gobel          -> Postgres schema "public"  (existing data)
+//   gobel = Reline Project 1.0       -> Postgres schema "public"  (existing data; was "Panasonic Gobel")
 //   light = Panasonic Light Solution -> Postgres schema "ws_light" (own empty copy,
 //                                       see Supabase Migration/50-workspaces.sql)
-//   alpha = Reline Project 1.0       -> Postgres schema "ws_alpha" (own empty copy,
+//   alpha = Alpha Project            -> Postgres schema "ws_alpha" (own empty copy,
 //                                       see Supabase Migration/53-workspace-alpha.sql)
 // The chosen workspace is kept in a session cookie ("ws") so every Supabase call
 // (browser, server, API routes) reads/writes that workspace's schema only.
@@ -13,13 +13,13 @@ export const WORKSPACE_COOKIE = "ws";
 export const DEFAULT_WORKSPACE: WorkspaceId = "gobel";
 
 export const WORKSPACES: { id: WorkspaceId; name: string; schema: string; tagline: string }[] = [
-  { id: "gobel", name: "Panasonic Gobel",          schema: "public",   tagline: "Panasonic Gobel dealer network" },
+  { id: "gobel", name: "Reline Project 1.0",        schema: "public",   tagline: "Reline Project 1.0 dealer network" },
   { id: "light", name: "Panasonic Light Solution", schema: "ws_light", tagline: "Panasonic Light Solution business" },
-  { id: "alpha", name: "Reline Project 1.0",        schema: "ws_alpha", tagline: "Reline Project 1.0" },
+  { id: "alpha", name: "Alpha Project",            schema: "ws_alpha", tagline: "Alpha Project" },
 ];
 
 // Pages that do not exist in a workspace (hidden from the menu, direct links go back to the dashboard).
-// Panasonic Gobel keeps its original app: Earning, Demographic and Payout are for the newer workspaces.
+// Reline Project 1.0 (gobel) keeps its original app: Earning, Demographic and Payout are for the newer workspaces.
 const HIDDEN_PAGES: Record<WorkspaceId, string[]> = {
   gobel: ["/finance", "/operational", "/payout"],
   light: [],
