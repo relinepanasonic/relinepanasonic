@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { createClient } from "@/lib/supabase/client";
 
 export type Supabase = ReturnType<typeof createClient>;
@@ -16,6 +16,50 @@ export function downloadPayout(batchId: string, format: "xlsx") {
   document.body.appendChild(a);
   a.click();
   a.remove();
+}
+
+// The files kept with a payout: the transfer proof, the receipt, and the tax documents of buying from the vendor.
+export type FileKind = "proof" | "receipt" | "faktur" | "bukpot";
+export const FILE_LABEL: Record<FileKind, string> = { proof: "Transfer proof", receipt: "Receipt", faktur: "Faktur Pajak", bukpot: "Bukti Potong" };
+export type FileNames = { proof_name?: string | null; receipt_name?: string | null; faktur_name?: string | null; bukpot_name?: string | null };
+export const fileNameOf = (b: FileNames, kind: FileKind) => ({ proof: b.proof_name, receipt: b.receipt_name, faktur: b.faktur_name, bukpot: b.bukpot_name })[kind] || null;
+
+// upload straight to storage with a one-time link made by the server (no request size limit), then record it
+export async function uploadPayoutFile(supabase: Supabase, batchId: string, kind: FileKind, file: File): Promise<string> {
+  const sign = await fetch("/api/payout/file", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "sign", batch: batchId, kind, filename: file.name }) });
+  const sj = await sign.json();
+  if (!sign.ok) throw new Error(sj.error || "Could not prepare the upload");
+  const up = await supabase.storage.from("payout-files").uploadToSignedUrl(sj.path, sj.token, file);
+  if (up.error) throw new Error(up.error.message);
+  const commit = await fetch("/api/payout/file", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "commit", batch: batchId, kind, path: sj.path, name: file.name }) });
+  const cj = await commit.json();
+  if (!commit.ok) throw new Error(cj.error || "Could not save the file");
+  return cj.status as string;
+}
+export async function removePayoutFile(batchId: string, kind: FileKind) {
+  const r = await fetch("/api/payout/file", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "remove", batch: batchId, kind }) });
+  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Could not remove");
+}
+
+// one file cell: the file name (opens the file) with a remove button, or an upload button
+export function FileCell({ batchId, kind, name, busy, onUpload, onRemove }: {
+  batchId: string; kind: FileKind; name: string | null; busy: boolean; onUpload: (f: File) => void; onRemove: () => void;
+}) {
+  const ref = useRef<HTMLInputElement>(null);
+  if (name) {
+    return (
+      <>
+        <a href={`/api/payout/file?batch=${batchId}&kind=${kind}`} target="_blank" rel="noreferrer" title={name} style={{ color: "#e8edf8", textDecoration: "underline", display: "inline-block", maxWidth: 130, overflow: "hidden", textOverflow: "ellipsis", verticalAlign: "bottom" }}>{name}</a>{" "}
+        <button onClick={onRemove} title="Remove" style={{ background: "none", border: "none", color: "var(--muted)", cursor: "pointer" }}>✕</button>
+      </>
+    );
+  }
+  return (
+    <>
+      <input ref={ref} type="file" accept="image/*,.pdf" style={{ display: "none" }} onChange={(e) => { const f = e.target.files?.[0]; if (f) onUpload(f); if (ref.current) ref.current.value = ""; }} />
+      <button className="btn-ghost" disabled={busy} onClick={() => ref.current?.click()}>{busy ? "Uploading…" : `⬆ ${FILE_LABEL[kind]}`}</button>
+    </>
+  );
 }
 
 export type Vendor = { id: string; name: string; stores: string[] };

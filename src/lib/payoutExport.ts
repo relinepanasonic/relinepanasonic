@@ -7,6 +7,7 @@ export type PayoutBatch = {
   order_count: number; line_count: number; total_qty: number; total: number;
   note: string | null; created_by_name: string | null; created_at: string;
   status?: string | null; proof_name?: string | null; proof_at?: string | null; receipt_name?: string | null; receipt_at?: string | null;
+  faktur_name?: string | null; faktur_at?: string | null; bukpot_name?: string | null; bukpot_at?: string | null; tax_status?: string | null;
 };
 export type PayoutLine = {
   store_name?: string | null;

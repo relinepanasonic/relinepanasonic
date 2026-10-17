@@ -7,6 +7,10 @@ export const runtime = "nodejs";
 export const maxDuration = 30;
 
 const BUCKET = "payout-files";
+const KINDS = ["proof", "receipt", "faktur", "bukpot"] as const;
+type Kind = (typeof KINDS)[number];
+const isKind = (k: unknown): k is Kind => KINDS.includes(k as Kind);
+const COLUMN: Record<Kind, string> = { proof: "proof_path", receipt: "receipt_path", faktur: "faktur_path", bukpot: "bukpot_path" };
 
 async function guard() {
   const supabase = await createClient();
@@ -20,16 +24,16 @@ async function guard() {
 }
 
 // POST /api/payout/file
-//   { action: "sign",   batch, kind: "proof"|"receipt", filename }  -> { path, token }  (the browser then uploads the file
+//   { action: "sign",   batch, kind: "proof"|"receipt"|"faktur"|"bukpot", filename }  -> { path, token }  (the browser then uploads the file
 //                                                                      straight to storage: no 4.5 MB request limit)
 //   { action: "commit", batch, kind, path, name }                    -> records the file, moves the payout status on
 //   { action: "remove", batch, kind }                                -> forgets the file again
-// GET /api/payout/file?batch=...&kind=proof|receipt                  -> redirect to a short-lived signed link
-// Super Admin and Admin only. The proof / receipt live in the private storage bucket "payout-files".
+// GET /api/payout/file?batch=...&kind=proof|receipt|faktur|bukpot                  -> redirect to a short-lived signed link
+// Super Admin and Admin only. The proof / receipt / Faktur Pajak / Bukti Potong live in the private storage bucket "payout-files".
 export async function POST(req: NextRequest) {
   const g = await guard(); if ("error" in g) return g.error;
   const body = (await req.json().catch(() => null)) as { action?: string; batch?: string; kind?: string; filename?: string; path?: string; name?: string } | null;
-  if (!body?.batch || (body.kind !== "proof" && body.kind !== "receipt")) return NextResponse.json({ error: "BAD_REQUEST" }, { status: 400 });
+  if (!body?.batch || !isKind(body.kind)) return NextResponse.json({ error: "BAD_REQUEST" }, { status: 400 });
   const schema = await currentSchema();
   const admin = createAdminClient(schema);
 
@@ -58,9 +62,9 @@ export async function GET(req: NextRequest) {
   const g = await guard(); if ("error" in g) return g.error;
   const batch = req.nextUrl.searchParams.get("batch") || "";
   const kind = req.nextUrl.searchParams.get("kind");
-  if (!batch || (kind !== "proof" && kind !== "receipt")) return NextResponse.json({ error: "BAD_REQUEST" }, { status: 400 });
+  if (!batch || !isKind(kind)) return NextResponse.json({ error: "BAD_REQUEST" }, { status: 400 });
   // the path is read with the caller's own session (RLS), never taken from the request
-  const col = kind === "proof" ? "proof_path" : "receipt_path";
+  const col = COLUMN[kind];
   const { data: row } = await g.supabase.from("payout_batches").select(`${col}`).eq("id", batch).single();
   const path = (row as Record<string, string | null> | null)?.[col];
   if (!path) return NextResponse.json({ error: "NO_FILE" }, { status: 404 });

@@ -1,17 +1,17 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import Loader from "@/components/Loader";
 import { fmtDate } from "@/lib/dates";
 import { dateOrDash, summarize, type PayoutBatch, type PayoutLine } from "@/lib/payoutExport";
 import { downloadPayoutPdf } from "@/lib/payoutPdfClient";
-import { NoVendors, VendorBar, downloadPayout, num, rp, tabBtn, useVendors, type Supabase } from "./shared";
+import { FILE_LABEL, FileCell, NoVendors, VendorBar, downloadPayout, fileNameOf, num, removePayoutFile, rp, tabBtn, uploadPayoutFile, useVendors, type FileKind, type Supabase } from "./shared";
 
 // Detail Payout: the payout register, one row per payout:
-//   Date Payout | No Payout | Vendor | Store name | Total Payout | Proof (transfer proof) | Receipt | Status
+//   Date Payout | No Payout | Vendor | Store name | Total Payout | Proof (transfer proof) | Receipt | Faktur Pajak | Bukti Potong | Status
 // Press a row to see its Summary / Detail (and download the XLS / PDF again).
-// Proof and Receipt are uploaded here; the status follows: Waiting transfer -> Transferred (proof) -> Completed (receipt).
+// Proof, Receipt, Faktur Pajak and Bukti Potong (tax documents of buying from the vendor) are uploaded here; the status follows proof / receipt: Waiting transfer -> Transferred (proof) -> Completed (receipt).
 const STATUS_COLOR: Record<string, string> = { "Waiting transfer": "#fbbf24", Transferred: "#60a5fa", Completed: "#86efac" };
 
 export default function DetailPanel({ supabase, clientId, batchId, onSelect }: {
@@ -31,27 +31,19 @@ export default function DetailPanel({ supabase, clientId, batchId, onSelect }: {
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { load(); }, [load]);
 
-  // upload straight to storage with a one-time link made by the server (no request size limit), then record it
-  async function upload(b: PayoutBatch, kind: "proof" | "receipt", file: File) {
+  async function upload(b: PayoutBatch, kind: FileKind, file: File) {
     setBusyKey(`${b.id}:${kind}`); setMsg(null);
     try {
-      const sign = await fetch("/api/payout/file", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "sign", batch: b.id, kind, filename: file.name }) });
-      const sj = await sign.json();
-      if (!sign.ok) throw new Error(sj.error || "Could not prepare the upload");
-      const up = await supabase.storage.from("payout-files").uploadToSignedUrl(sj.path, sj.token, file);
-      if (up.error) throw new Error(up.error.message);
-      const commit = await fetch("/api/payout/file", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "commit", batch: b.id, kind, path: sj.path, name: file.name }) });
-      const cj = await commit.json();
-      if (!commit.ok) throw new Error(cj.error || "Could not save the file");
-      setMsg({ ok: true, text: `${kind === "proof" ? "Transfer proof" : "Receipt"} saved for ${b.payout_no}. Status: ${cj.status}.` });
+      const status = await uploadPayoutFile(supabase, b.id, kind, file);
+      setMsg({ ok: true, text: `${FILE_LABEL[kind]} saved for ${b.payout_no}.${kind === "proof" || kind === "receipt" ? ` Status: ${status}.` : ""}` });
       load();
     } catch (e) { setMsg({ ok: false, text: String((e as Error).message || e) }); }
     setBusyKey("");
   }
-  async function remove(b: PayoutBatch, kind: "proof" | "receipt") {
-    if (!window.confirm(`Remove the ${kind === "proof" ? "transfer proof" : "receipt"} of ${b.payout_no}?`)) return;
-    const r = await fetch("/api/payout/file", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "remove", batch: b.id, kind }) });
-    if (!r.ok) setMsg({ ok: false, text: (await r.json().catch(() => ({}))).error || "Could not remove" });
+  async function remove(b: PayoutBatch, kind: FileKind) {
+    if (!window.confirm(`Remove the ${FILE_LABEL[kind]} of ${b.payout_no}?`)) return;
+    try { await removePayoutFile(b.id, kind); setMsg({ ok: true, text: `${FILE_LABEL[kind]} of ${b.payout_no} removed.` }); }
+    catch (e) { setMsg({ ok: false, text: String((e as Error).message || e) }); }
     load();
   }
   async function cancel(b: PayoutBatch) {
@@ -72,7 +64,7 @@ export default function DetailPanel({ supabase, clientId, batchId, onSelect }: {
           <table className="tbl day-tbl">
             <thead><tr>
               <th>Date Payout</th><th>No Payout</th><th>Vendor</th><th>Store name</th><th className="num">Total Payout</th>
-              <th>Proof</th><th>Receipt</th><th>Status</th><th></th>
+              <th>Proof</th><th>Receipt</th><th>Faktur Pajak</th><th>Bukti Potong</th><th>Status</th><th></th>
             </tr></thead>
             <tbody>
               {list.map((b) => (
@@ -82,44 +74,24 @@ export default function DetailPanel({ supabase, clientId, batchId, onSelect }: {
                   <td>{b.vendor_name || "—"}</td>
                   <td style={{ whiteSpace: "normal", maxWidth: 260 }}>{b.store_name}</td>
                   <td className="num" style={{ fontWeight: 700 }}>{rp(b.total)}</td>
-                  {(["proof", "receipt"] as const).map((kind) => {
-                    const name = kind === "proof" ? b.proof_name : b.receipt_name;
-                    return (
-                      <td key={kind} onClick={(e) => e.stopPropagation()} style={{ whiteSpace: "nowrap" }}>
-                        {name ? (
-                          <>
-                            <a href={`/api/payout/file?batch=${b.id}&kind=${kind}`} target="_blank" rel="noreferrer" title={name} style={{ color: "#e8edf8", textDecoration: "underline", display: "inline-block", maxWidth: 130, overflow: "hidden", textOverflow: "ellipsis", verticalAlign: "bottom" }}>{name}</a>{" "}
-                            <button onClick={() => remove(b, kind)} title="Remove" style={{ background: "none", border: "none", color: "var(--muted)", cursor: "pointer" }}>✕</button>
-                          </>
-                        ) : (
-                          <UploadButton busy={busyKey === `${b.id}:${kind}`} label={kind === "proof" ? "Upload proof" : "Upload receipt"} onFile={(f) => upload(b, kind, f)} />
-                        )}
-                      </td>
-                    );
-                  })}
+                  {(["proof", "receipt", "faktur", "bukpot"] as const).map((kind) => (
+                    <td key={kind} onClick={(e) => e.stopPropagation()} style={{ whiteSpace: "nowrap" }}>
+                      <FileCell batchId={b.id} kind={kind} name={fileNameOf(b, kind)} busy={busyKey === `${b.id}:${kind}`} onUpload={(f) => upload(b, kind, f)} onRemove={() => remove(b, kind)} />
+                    </td>
+                  ))}
                   <td><span style={{ fontSize: 11.5, fontWeight: 700, padding: "3px 10px", borderRadius: 999, color: STATUS_COLOR[b.status || ""] || "var(--muted)", border: `1px solid ${(STATUS_COLOR[b.status || ""] || "#888")}55`, background: `${(STATUS_COLOR[b.status || ""] || "#888")}18` }}>{b.status || "—"}</span></td>
                   <td onClick={(e) => e.stopPropagation()} style={{ whiteSpace: "nowrap" }}>
                     <button className="btn-ghost" onClick={() => cancel(b)} style={{ color: "#f87171" }}>Cancel</button>
                   </td>
                 </tr>
               ))}
-              {list.length === 0 && <tr><td colSpan={9} style={{ textAlign: "center", color: "var(--muted)", padding: 24 }}>No payouts yet.</td></tr>}
+              {list.length === 0 && <tr><td colSpan={11} style={{ textAlign: "center", color: "var(--muted)", padding: 24 }}>No payouts yet.</td></tr>}
             </tbody>
           </table>
         </div>
       )}
       {batchId && <PayoutView supabase={supabase} batchId={batchId} onClose={() => onSelect(null)} />}
     </div>
-  );
-}
-
-function UploadButton({ label, busy, onFile }: { label: string; busy: boolean; onFile: (f: File) => void }) {
-  const ref = useRef<HTMLInputElement>(null);
-  return (
-    <>
-      <input ref={ref} type="file" accept="image/*,.pdf" style={{ display: "none" }} onChange={(e) => { const f = e.target.files?.[0]; if (f) onFile(f); if (ref.current) ref.current.value = ""; }} />
-      <button className="btn-ghost" disabled={busy} onClick={() => ref.current?.click()}>{busy ? "Uploading…" : `⬆ ${label}`}</button>
-    </>
   );
 }
 

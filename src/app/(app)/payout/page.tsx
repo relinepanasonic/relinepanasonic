@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import NotPaidPanel from "./NotPaidPanel";
 import PaidPanel from "./PaidPanel";
 import DetailPanel from "./DetailPanel";
+import PajakPanel from "./PajakPanel";
 import HargaBeli from "./HargaBeli";
 import { tabBtn } from "./shared";
 
@@ -15,11 +16,13 @@ export const dynamic = "force-dynamic";
 //   Not Paid       — completed lines not paid yet; tick them, "Pay to Vendor" -> XLS + PDF.
 //   Paid           — the order lines already paid.
 //   Detail Payout  — the payout register: proof, receipt, status; press a row for its Summary / Detail.
-//   Harga Beli     — purchase price per dealer / product / variant, with a price log.
+//   Pajak          — Faktur Pajak and Bukti Potong of buying from the vendor, per payout.
+//   Harga Beli     — purchase price per vendor / product / variant, with a price log.
 const TABS = [
   { v: "notpaid", l: "Not Paid" },
   { v: "paid", l: "Paid" },
   { v: "detail", l: "Detail Payout" },
+  { v: "tax", l: "Pajak" },
   { v: "price", l: "Harga Beli" },
 ] as const;
 
@@ -48,6 +51,7 @@ export default function Page() {
       {tab === "notpaid" && <NotPaidPanel supabase={supabase} clientId={clientId} onPaid={open} />}
       {tab === "paid" && <PaidPanel supabase={supabase} clientId={clientId} onOpen={open} />}
       {tab === "detail" && <DetailPanel supabase={supabase} clientId={clientId} batchId={batchId} onSelect={setBatchId} />}
+      {tab === "tax" && <PajakPanel supabase={supabase} clientId={clientId} onOpen={open} />}
       {tab === "price" && <HargaBeli clientId={clientId} />}
     </>
   );
