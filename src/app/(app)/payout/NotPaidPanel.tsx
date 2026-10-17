@@ -7,6 +7,8 @@ import { useTableSort } from "@/hooks/useTableSort";
 import { fmtDate } from "@/lib/dates";
 import { NoVendors, VendorBar, downloadPayout, num, rp, useVendors, type Supabase } from "./shared";
 import { downloadPayoutPdf } from "@/lib/payoutPdfClient";
+import DateRangePicker from "@/components/DateRangePicker";
+import MultiSelect from "@/components/MultiSelect";
 import type { PayoutBatch, PayoutLine } from "@/lib/payoutExport";
 
 // Not Paid: completed order lines (Order Completed) of a VENDOR's stores that were not paid yet.
@@ -31,6 +33,7 @@ export default function NotPaidPanel({ supabase, clientId, onPaid }: {
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
   const [search, setSearch] = useState("");
+  const [stores, setStores] = useState<string[]>([]);   // none ticked = every store of the vendor
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [limit, setLimit] = useState(PAGE);
   const [busy, setBusy] = useState(false);
@@ -49,9 +52,9 @@ export default function NotPaidPanel({ supabase, clientId, onPaid }: {
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return (rows || []).filter((r) => !q || r.order_no.toLowerCase().includes(q) || (r.product_name || "").toLowerCase().includes(q)
+    return (rows || []).filter((r) => (!stores.length || stores.includes(r.store_name))).filter((r) => !q || r.order_no.toLowerCase().includes(q) || (r.product_name || "").toLowerCase().includes(q)
       || (r.product_id || "").toLowerCase().includes(q) || (r.variant_name || "").toLowerCase().includes(q) || r.store_name.toLowerCase().includes(q));
-  }, [rows, search]);
+  }, [rows, search, stores]);
   const { sortedData, sortConfig, requestSort } = useTableSort<Line>(filtered);
 
   const payableShown = useMemo(() => sortedData.filter((r) => r.payable), [sortedData]);
@@ -101,20 +104,18 @@ export default function NotPaidPanel({ supabase, clientId, onPaid }: {
   return (
     <div className="panel">
       <h3>Not Paid</h3>
-      <div className="hint">Completed orders of the vendor&apos;s stores not yet paid · Order Completed = the date the order was completed on Shopee (the base for the payout) · tick the lines to pay</div>
-      <VendorBar v={v}>
-        <div className="fld" style={{ minWidth: 150 }}><label>From</label><input type="date" value={from} onChange={(e) => setFrom(e.target.value)} style={{ colorScheme: "dark" }} /></div>
-        <div className="fld" style={{ minWidth: 150 }}><label>To</label><input type="date" value={to} onChange={(e) => setTo(e.target.value)} style={{ colorScheme: "dark" }} /></div>
+      <VendorBar v={v} showStores={false}>
+        <div className="fld"><label>Stores</label>
+          <MultiSelect options={v.vendor?.stores || []} value={stores} onChange={setStores} allLabel="All stores" unit="stores" />
+        </div>
+        <div className="fld"><label>Order Completed</label>
+          <DateRangePicker from={from} to={to} onChange={(a, b) => { setFrom(a); setTo(b); }} />
+        </div>
         <div className="fld" style={{ minWidth: 220, flex: 1 }}><label>Search</label><input type="text" placeholder="Store / Order No. / Product ID / Product / Variant" value={search} onChange={(e) => setSearch(e.target.value)} /></div>
-        <button className="btn-ghost" onClick={checkAll} disabled={!payableShown.length}>{allChecked ? "☐ Uncheck All" : "☑ Check All"}</button>
-        <button className="btn-gold" onClick={pay} disabled={busy || !pickedLines.length} style={{ padding: "11px 28px", fontSize: 14.5 }}>{busy ? "Saving…" : "Pay to Vendor"}</button>
+        <button className="btn-gold" onClick={pay} disabled={busy || !pickedLines.length} style={{ padding: "11px 26px", fontSize: 14.5 }}>
+          {busy ? "Saving…" : pickedLines.length ? `Pay to Vendor · ${pickedLines.length} lines · ${rp(pickedTotal)}` : "Pay to Vendor"}
+        </button>
       </VendorBar>
-
-      <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 10 }}>
-        {pickedLines.length > 0
-          ? <><b style={{ color: "#fff" }}>{pickedLines.length}</b> lines ticked · Qty <b style={{ color: "#fff" }}>{num(pickedQty)}</b> · <b style={{ color: "var(--gold)" }}>{rp(pickedTotal)}</b></>
-          : <>{(rows || []).length} open lines{rows && rows.length ? ` · ${rp((rows || []).reduce((a, r) => a + Number(r.total), 0))}` : ""} · tick lines to enable <b>Pay to Vendor</b></>}
-      </div>
 
       {done && (
         <div style={{ border: "1px solid rgba(201,162,39,.5)", background: "rgba(201,162,39,.08)", borderRadius: 12, padding: 14, marginBottom: 14, display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>

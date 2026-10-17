@@ -6,6 +6,8 @@ import SortableHeader from "@/components/SortableHeader";
 import { useTableSort } from "@/hooks/useTableSort";
 import { fmtDate } from "@/lib/dates";
 import { NoVendors, VendorBar, num, rp, useVendors, type Supabase } from "./shared";
+import DateRangePicker from "@/components/DateRangePicker";
+import MultiSelect from "@/components/MultiSelect";
 
 // Paid: the order lines already paid to a vendor, newest payout first. Press a Payout No to open it in Detail Payout.
 type Paid = {
@@ -22,6 +24,7 @@ export default function PaidPanel({ supabase, clientId, onOpen }: {
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [search, setSearch] = useState("");
+  const [stores, setStores] = useState<string[]>([]);
   const [rows, setRows] = useState<Paid[] | null>(null);
   const [err, setErr] = useState("");
   const [limit, setLimit] = useState(PAGE);
@@ -38,9 +41,9 @@ export default function PaidPanel({ supabase, clientId, onOpen }: {
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return (rows || []).filter((r) => !q || r.order_no.toLowerCase().includes(q) || (r.product_name || "").toLowerCase().includes(q)
+    return (rows || []).filter((r) => (!stores.length || stores.includes(r.store_name))).filter((r) => !q || r.order_no.toLowerCase().includes(q) || (r.product_name || "").toLowerCase().includes(q)
       || (r.product_id || "").toLowerCase().includes(q) || r.payout_no.toLowerCase().includes(q) || r.store_name.toLowerCase().includes(q));
-  }, [rows, search]);
+  }, [rows, search, stores]);
   const { sortedData, sortConfig, requestSort } = useTableSort<Paid>(filtered);
   const H = (label: string, key: keyof Paid, numCol = false) =>
     <SortableHeader label={label} sortKey={key} currentSort={sortConfig} onRequestSort={requestSort} className={numCol ? "num" : undefined} />;
@@ -50,9 +53,13 @@ export default function PaidPanel({ supabase, clientId, onOpen }: {
     <div className="panel">
       <h3>Paid</h3>
       <div className="hint">Order lines already paid to the vendor · press a Payout No to open it</div>
-      <VendorBar v={v}>
-        <div className="fld" style={{ minWidth: 150 }}><label>From</label><input type="date" value={from} onChange={(e) => setFrom(e.target.value)} style={{ colorScheme: "dark" }} /></div>
-        <div className="fld" style={{ minWidth: 150 }}><label>To</label><input type="date" value={to} onChange={(e) => setTo(e.target.value)} style={{ colorScheme: "dark" }} /></div>
+      <VendorBar v={v} showStores={false}>
+        <div className="fld"><label>Stores</label>
+          <MultiSelect options={v.vendor?.stores || []} value={stores} onChange={setStores} allLabel="All stores" unit="stores" />
+        </div>
+        <div className="fld"><label>Order Completed</label>
+          <DateRangePicker from={from} to={to} onChange={(a, b) => { setFrom(a); setTo(b); }} />
+        </div>
         <div className="fld" style={{ minWidth: 220, flex: 1 }}><label>Search</label><input type="text" placeholder="Payout No / Store / Order No. / Product" value={search} onChange={(e) => setSearch(e.target.value)} /></div>
       </VendorBar>
       {v.vendors && v.vendors.length === 0 && <NoVendors />}

@@ -90,7 +90,7 @@ export function useVendors(supabase: Supabase, clientId: string) {
   return { vendors, stores, vendorId, setVendorId, vendor, reload };
 }
 
-export function VendorBar({ v, children }: { v: ReturnType<typeof useVendors>; children?: React.ReactNode }) {
+export function VendorBar({ v, children, showStores = true }: { v: ReturnType<typeof useVendors>; children?: React.ReactNode; showStores?: boolean }) {
   return (
     <div style={{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 14 }}>
       <div className="fld" style={{ minWidth: 240 }}>
@@ -100,7 +100,7 @@ export function VendorBar({ v, children }: { v: ReturnType<typeof useVendors>; c
           {(v.vendors || []).map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
         </select>
       </div>
-      {v.vendor && (
+      {v.vendor && (showStores || !v.vendor.stores.length) && (
         <div style={{ fontSize: 12.5, color: "var(--muted)", paddingBottom: 10, maxWidth: 360 }}>
           {v.vendor.stores.length
             ? <>Stores: <b style={{ color: "#cdd9f0" }}>{v.vendor.stores.join(", ")}</b></>
