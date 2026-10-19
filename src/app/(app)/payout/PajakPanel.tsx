@@ -15,13 +15,14 @@ import { FILE_LABEL, FileCell, NoVendors, VendorBar, fileNameOf, removePayoutFil
 // Sub pages:
 //   Rekap         per masa pajak: PPN Keluaran - PPN Masukan = PPN kurang / (lebih) bayar, and PPh 22 collected.
 //   PPN Masukan   PPN on buying from vendors: one row per payout, created automatically (fill in the Nomor Faktur).
-//   PPN Keluaran  PPN on the Shopee sales: "Fill from Earning" per month (per store), plus typed-in rows.
+//   PPN Keluaran  PPN on the Shopee sales, automatic from Order Completed per store per month (Harga Jual incl. PPN:
+//                 DPP = Harga Jual / 1.11, PPN = Harga Jual - DPP), plus typed-in rows.
 //   PPh 22        PPh 22 collected by Shopee, typed in from Shopee's bukti pungut.
 //   Dokumen       Faktur Pajak and Bukti Potong files per payout.
 type Kind = "ppn_masukan" | "ppn_keluaran" | "pph22";
 type TaxRow = {
   id: string; kind: Kind; period: string; tx_date: string | null; store_name: string | null; counterparty: string | null; doc_no: string | null;
-  dpp: number; rate: number; amount: number; total: number; source: "manual" | "payout" | "earning"; payout_no?: string | null; note: string | null;
+  dpp: number; rate: number; amount: number; total: number; source: "manual" | "payout" | "order"; payout_no?: string | null; note: string | null;
 };
 const KIND_LABEL: Record<Kind, string> = { ppn_masukan: "PPN Masukan", ppn_keluaran: "PPN Keluaran", pph22: "PPh 22" };
 const DEFAULT_RATE: Record<Kind, number> = { ppn_masukan: 0.11, ppn_keluaran: 0.11, pph22: 0.005 };
@@ -113,7 +114,6 @@ function TaxTable({ supabase, clientId, kind, onOpen }: { supabase: Supabase; cl
   const [rows, setRows] = useState<TaxRow[] | null>(null);
   const [edit, setEdit] = useState<Partial<TaxRow> | null>(null);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
-  const [fillMonth, setFillMonth] = useState(() => { const d = new Date(); d.setMonth(d.getMonth() - 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`; });
 
   const load = useCallback(async () => {
     if (!clientId) return;
@@ -125,12 +125,6 @@ function TaxTable({ supabase, clientId, kind, onOpen }: { supabase: Supabase; cl
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { load(); }, [load]);
 
-  async function fill() {
-    const { data, error } = await supabase.rpc("tax_fill_keluaran", { p_client_id: clientId, p_month: `${fillMonth}-01` });
-    if (error) return setMsg({ ok: false, text: error.message });
-    setMsg({ ok: true, text: `PPN Keluaran ${fillMonth}: ${(data as { stores: number }).stores} store row(s) filled from Earning.` });
-    load();
-  }
   async function del(r: TaxRow) {
     if (!window.confirm(`Delete this ${KIND_LABEL[kind]} row (${rp(r.amount)})?`)) return;
     const { error } = await supabase.rpc("tax_delete", { p_id: r.id });
@@ -145,16 +139,10 @@ function TaxTable({ supabase, clientId, kind, onOpen }: { supabase: Supabase; cl
     <>
       <div style={{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 12 }}>
         <div className="fld"><label>Masa pajak</label><DateRangePicker from={from} to={to} onChange={(a, b) => { setFrom(a); setTo(b); }} placeholder="All periods" /></div>
-        {kind === "ppn_keluaran" && (
-          <>
-            <div className="fld" style={{ minWidth: 150 }}><label>Month to fill</label><input type="month" value={fillMonth} onChange={(e) => setFillMonth(e.target.value)} style={{ colorScheme: "dark" }} /></div>
-            <button className="btn-ghost" onClick={fill}>⟳ Fill from Earning</button>
-          </>
-        )}
         <button className="btn-gold" onClick={() => setEdit({ kind, rate: DEFAULT_RATE[kind], tx_date: new Date().toISOString().slice(0, 10), counterparty: kind === "pph22" ? "Shopee" : kind === "ppn_keluaran" ? "Shopee buyers" : "" })} style={{ padding: "10px 22px" }}>+ Add {KIND_LABEL[kind]}</button>
       </div>
       {kind === "ppn_masukan" && <div style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 8 }}>Every Pay to Vendor adds its PPN Masukan here automatically: DPP = the payout total (Harga Beli excludes PPN), PPN 11% on top. Open a row to fill in the Nomor Faktur Pajak.</div>}
-      {kind === "ppn_keluaran" && <div style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 8 }}>Fill from Earning: per store, the Shopee sales of that month by order date (prices include PPN). Refill any time — typed-in rows are kept.</div>}
+      {kind === "ppn_keluaran" && <div style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 8 }}>Automatic from Order Completed: per store per month (completed date), Harga Jual = Subtotal Pesanan minus returns, incl. PPN → DPP = Harga Jual ÷ 1.11, PPN = Harga Jual − DPP. Always up to date after each upload; typed-in rows are added to it.</div>}
       {kind === "pph22" && <div style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 8 }}>Type in each bukti pungut from Shopee: DPP = gross turnover (excl. PPN), PPh 22 = 0.5%. It can be credited against your income tax.</div>}
       {v.vendors && v.vendors.length === 0 && kind === "ppn_masukan" && <NoVendors />}
       {msg && <div style={{ color: msg.ok ? "var(--gold)" : "#f87171", marginBottom: 10, fontSize: 13 }}>{msg.ok ? "✓" : "✗"} {msg.text}</div>}
@@ -169,7 +157,7 @@ function TaxTable({ supabase, clientId, kind, onOpen }: { supabase: Supabase; cl
             </tr></thead>
             <tbody>
               {rows.map((r) => (
-                <tr key={r.id}>
+                <tr key={r.id || `auto-${r.period}-${r.store_name}`}>
                   <td style={{ fontWeight: 700 }}>{masa(r.period)}</td>
                   <td>{r.tx_date ? fmtDate(r.tx_date) : "—"}</td>
                   <td style={{ whiteSpace: "normal", maxWidth: 200 }}>{r.store_name || "—"}</td>
@@ -178,12 +166,12 @@ function TaxTable({ supabase, clientId, kind, onOpen }: { supabase: Supabase; cl
                   <td className="num">{rp(r.dpp)}</td><td className="num">{pct(r.rate)}</td><td className="num" style={{ fontWeight: 700 }}>{rp(r.amount)}</td>
                   {kind !== "pph22" && <td className="num">{rp(r.total)}</td>}
                   <td style={{ fontSize: 12.5 }}>
-                    {r.source === "payout" && r.payout_no ? <span style={{ color: "var(--gold)" }}>Payout {r.payout_no}</span> : r.source === "earning" ? "Earning" : "Manual"}
+                    {r.source === "payout" && r.payout_no ? <span style={{ color: "var(--gold)" }}>Payout {r.payout_no}</span> : r.source === "order" ? "Order Completed" : "Manual"}
                   </td>
                   <td style={{ maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", fontSize: 12.5 }} title={r.note || ""}>{r.note || ""}</td>
                   <td style={{ whiteSpace: "nowrap" }}>
-                    <button className="btn-ghost" onClick={() => setEdit(r)}>Edit</button>{" "}
-                    {r.source !== "payout" && <button className="btn-ghost" onClick={() => del(r)} style={{ color: "#f87171" }}>Delete</button>}
+                    {r.source !== "order" && <button className="btn-ghost" onClick={() => setEdit(r)}>Edit</button>}{" "}
+                    {r.source === "manual" && <button className="btn-ghost" onClick={() => del(r)} style={{ color: "#f87171" }}>Delete</button>}
                   </td>
                 </tr>
               ))}
