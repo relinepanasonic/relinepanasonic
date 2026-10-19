@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import { isPageHidden } from "@/lib/workspace";
 import { useWorkspaceId } from "@/lib/useWorkspace";
 import VendorsPanel from "./VendorsPanel";
+import CompaniesPanel from "./CompaniesPanel";
 
 export const dynamic = "force-dynamic";
 
@@ -103,6 +104,7 @@ export default function CoreListPage() {
         </Card>
       </div>
 
+      {hasVendors && <CompaniesPanel clientId={clientId} />}
       {hasVendors && <VendorsPanel clientId={clientId} />}
     </>
   );

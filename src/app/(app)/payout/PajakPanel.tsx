@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import Loader from "@/components/Loader";
 import DateRangePicker from "@/components/DateRangePicker";
@@ -13,8 +13,9 @@ import { FILE_LABEL, FileCell, NoVendors, VendorBar, fileNameOf, removePayoutFil
 //          Shopee sales prices include PPN (DPP = price / 1.11).
 //   PPh 22 collected by Shopee at 0.5% of gross turnover excl. PPN (PMK 37/2025), from 1 Oct 2026.
 // Sub pages:
-//   Rekap         per masa pajak: PPN Keluaran - PPN Masukan = PPN kurang / (lebih) bayar, and PPh 22 collected.
-//   PPN Masukan   PPN on buying from vendors: one row per payout, created automatically (fill in the Nomor Faktur).
+//   Rekap         per masa pajak and store (with the month total): PPN Keluaran - PPN Masukan = PPN kurang / (lebih) bayar, PPh 22.
+//   Everything can be shown for one company (its stores; Core List -> Companies).
+//   PPN Masukan   PPN on buying from vendors: one row per payout per store, created automatically (fill in the Nomor Faktur).
 //   PPN Keluaran  PPN on the Shopee sales, automatic from Order Completed per store per month (Harga Jual incl. PPN:
 //                 DPP = Harga Jual / 1.11, PPN = Harga Jual - DPP), plus typed-in rows.
 //   PPh 22        PPh 22 collected by Shopee, typed in from Shopee's bukti pungut.
@@ -29,40 +30,84 @@ const DEFAULT_RATE: Record<Kind, number> = { ppn_masukan: 0.11, ppn_keluaran: 0.
 const masa = (p: string) => { const d = new Date(p + "T00:00:00"); return d.toLocaleDateString("id-ID", { month: "short", year: "numeric" }); };
 const pct = (r: number) => `${(Number(r) * 100).toLocaleString("id-ID", { maximumFractionDigits: 2 })}%`;
 
+type Company = { id: string; name: string; npwp: string | null; stores: string[] };
+
 export default function PajakPanel({ supabase, clientId, onOpen }: { supabase: Supabase; clientId: string; onOpen: (batchId: string) => void }) {
   const [tab, setTab] = useState<"rekap" | Kind | "docs">("rekap");
+  const [companies, setCompanies] = useState<Company[] | null>(null);
+  const [companyId, setCompanyId] = useState("");
+  useEffect(() => {
+    if (!clientId) return;
+    (async () => {
+      const { data } = await supabase.rpc("company_list", { p_client_id: clientId });
+      const list = ((data as { companies: Company[] } | null)?.companies) || [];
+      setCompanies(list);
+      if (list.length === 1) setCompanyId(list[0].id);
+    })();
+  }, [supabase, clientId]);
+  const company = companies?.find((c) => c.id === companyId) || null;
+
   return (
     <div className="panel">
       <h3>Pajak</h3>
-      <div className="hint">PPN 12% × DPP 11/12 (11% effective, PMK 131/2024) · PPh 22 marketplace 0.5% collected by Shopee from 1 Oct 2026 (PMK 37/2025)</div>
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", margin: "12px 0 14px" }}>
+      <div className="hint">PPN 12% × DPP 11/12 (11% effective, PMK 131/2024) · PPh 22 marketplace 0.5% collected by Shopee from 1 Oct 2026 (PMK 37/2025) · per company, per store</div>
+      <div style={{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "flex-end", margin: "12px 0 6px" }}>
+        <div className="fld" style={{ minWidth: 260 }}>
+          <label>Company</label>
+          <select value={companyId} onChange={(e) => setCompanyId(e.target.value)}>
+            <option value="">{companies === null ? "Loading…" : companies.length ? "All companies" : "No companies yet"}</option>
+            {(companies || []).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+        </div>
+        {company && (
+          <div style={{ fontSize: 12.5, color: "var(--muted)", paddingBottom: 10 }}>
+            {company.npwp ? <>NPWP <b style={{ color: "#cdd9f0", fontFamily: "monospace" }}>{company.npwp}</b> · </> : null}
+            {company.stores.length ? <>Stores: <b style={{ color: "#cdd9f0" }}>{company.stores.join(", ")}</b></> : <span style={{ color: "#fbbf24" }}>No store yet — link its stores in Core List → Companies.</span>}
+          </div>
+        )}
+        {companies && companies.length === 0 && <div style={{ fontSize: 12.5, color: "#fbbf24", paddingBottom: 10 }}>Add your companies and link their stores in Core List → Companies.</div>}
+      </div>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", margin: "8px 0 14px" }}>
         {([["rekap", "Rekap"], ["ppn_masukan", "PPN Masukan"], ["ppn_keluaran", "PPN Keluaran"], ["pph22", "PPh 22"], ["docs", "Dokumen"]] as const).map(([k, l]) => (
           <button key={k} onClick={() => setTab(k)} style={tabBtn(tab === k)}>{l}</button>
         ))}
       </div>
-      {tab === "rekap" && <Rekap supabase={supabase} clientId={clientId} />}
-      {(tab === "ppn_masukan" || tab === "ppn_keluaran" || tab === "pph22") && <TaxTable key={tab} supabase={supabase} clientId={clientId} kind={tab} onOpen={onOpen} />}
+      {tab === "rekap" && <Rekap supabase={supabase} clientId={clientId} companyId={companyId} />}
+      {(tab === "ppn_masukan" || tab === "ppn_keluaran" || tab === "pph22") && <TaxTable key={tab + companyId} supabase={supabase} clientId={clientId} kind={tab} onOpen={onOpen} companyId={companyId} companyStores={company?.stores || null} />}
       {tab === "docs" && <Docs supabase={supabase} clientId={clientId} onOpen={onOpen} />}
     </div>
   );
 }
 
-/* ── Rekap per masa pajak ── */
-type Sum = { period: string; keluaran: number; masukan: number; ppn_net: number; pph22: number; dpp_keluaran: number; dpp_masukan: number; omzet_pph22: number };
-function Rekap({ supabase, clientId }: { supabase: Supabase; clientId: string }) {
+/* ── Rekap per masa pajak, per store ── */
+type Sum = { period: string; store_name: string; keluaran: number; masukan: number; ppn_net: number; pph22: number; dpp_keluaran: number; dpp_masukan: number; omzet_pph22: number };
+type SumKey = "dpp_keluaran" | "keluaran" | "dpp_masukan" | "masukan" | "ppn_net" | "omzet_pph22" | "pph22";
+function Rekap({ supabase, clientId, companyId }: { supabase: Supabase; clientId: string; companyId: string }) {
   const [year, setYear] = useState(new Date().getFullYear());
   const [rows, setRows] = useState<Sum[] | null>(null);
   useEffect(() => {
     if (!clientId) return;
     (async () => {
-       
       setRows(null);
-      const { data } = await supabase.rpc("tax_summary", { p_client_id: clientId, p_year: year });
+      const { data } = await supabase.rpc("tax_summary", { p_client_id: clientId, p_year: year, p_company: companyId || null });
       setRows((data as Sum[]) || []);
     })();
-  }, [supabase, clientId, year]);
-  const tot = (k: keyof Sum) => (rows || []).reduce((a, r) => a + Number(r[k] || 0), 0);
+  }, [supabase, clientId, year, companyId]);
+  const months = useMemo(() => {
+    const m = new Map<string, Sum[]>();
+    for (const r of rows || []) { if (!m.has(r.period)) m.set(r.period, []); m.get(r.period)!.push(r); }
+    return [...m.entries()];
+  }, [rows]);
+  const add = (list: Sum[], k: SumKey) => list.reduce((x, r) => x + Number(r[k] || 0), 0);
   const net = (n: number) => <span style={{ color: n > 0 ? "#f87171" : n < 0 ? "#86efac" : undefined, fontWeight: 700 }}>{n < 0 ? `(${rp(-n)})` : rp(n)}</span>;
+  const cells = (list: Sum[]) => (
+    <>
+      <td className="num">{rp(add(list, "dpp_keluaran"))}</td><td className="num">{rp(add(list, "keluaran"))}</td>
+      <td className="num">{rp(add(list, "dpp_masukan"))}</td><td className="num">{rp(add(list, "masukan"))}</td>
+      <td className="num">{net(add(list, "ppn_net"))}</td>
+      <td className="num">{rp(add(list, "omzet_pph22"))}</td><td className="num">{rp(add(list, "pph22"))}</td>
+    </>
+  );
   return (
     <>
       <div style={{ display: "flex", gap: 12, alignItems: "flex-end", marginBottom: 12 }}>
@@ -71,33 +116,38 @@ function Rekap({ supabase, clientId }: { supabase: Supabase; clientId: string })
             {[0, 1, 2].map((d) => new Date().getFullYear() - d).map((y) => <option key={y} value={y}>{y}</option>)}
           </select>
         </div>
-        <div style={{ fontSize: 12.5, color: "var(--muted)", paddingBottom: 10 }}>PPN kurang bayar in red, lebih bayar (in brackets) in green.</div>
+        <div style={{ fontSize: 12.5, color: "var(--muted)", paddingBottom: 10 }}>Per store, with the month total. PPN kurang bayar in red, lebih bayar (in brackets) in green.</div>
       </div>
       {rows === null ? <Loader center /> : (
         <div className="tbl-wrap">
           <table className="tbl day-tbl">
             <thead><tr>
-              <th>Masa Pajak</th><th className="num">DPP Keluaran</th><th className="num">PPN Keluaran</th><th className="num">DPP Masukan</th><th className="num">PPN Masukan</th>
+              <th>Masa Pajak</th><th>Store</th><th className="num">DPP Keluaran</th><th className="num">PPN Keluaran</th><th className="num">DPP Masukan</th><th className="num">PPN Masukan</th>
               <th className="num">PPN Kurang / (Lebih) Bayar</th><th className="num">Omzet (PPh 22)</th><th className="num">PPh 22 Dipungut</th>
             </tr></thead>
             <tbody>
-              {rows.map((r) => (
-                <tr key={r.period}>
-                  <td style={{ fontWeight: 700 }}>{masa(r.period)}</td>
-                  <td className="num">{rp(r.dpp_keluaran)}</td><td className="num">{rp(r.keluaran)}</td>
-                  <td className="num">{rp(r.dpp_masukan)}</td><td className="num">{rp(r.masukan)}</td>
-                  <td className="num">{net(Number(r.ppn_net))}</td>
-                  <td className="num">{rp(r.omzet_pph22)}</td><td className="num">{rp(r.pph22)}</td>
-                </tr>
+              {months.map(([period, list]) => (
+                <Fragment key={period}>
+                  {list.map((r, i) => (
+                    <tr key={period + r.store_name}>
+                      <td style={{ fontWeight: 700 }}>{i === 0 ? masa(period) : ""}</td>
+                      <td>{r.store_name}</td>
+                      {cells([r])}
+                    </tr>
+                  ))}
+                  {list.length > 1 && (
+                    <tr style={{ fontWeight: 700, background: "rgba(201,162,39,.06)" }}>
+                      <td></td><td style={{ color: "var(--gold)" }}>Total {masa(period)}</td>{cells(list)}
+                    </tr>
+                  )}
+                </Fragment>
               ))}
               {rows.length > 0 && (
                 <tr style={{ fontWeight: 800, borderTop: "2px solid rgba(201,162,39,.4)" }}>
-                  <td>TOTAL {year}</td><td className="num">{rp(tot("dpp_keluaran"))}</td><td className="num">{rp(tot("keluaran"))}</td>
-                  <td className="num">{rp(tot("dpp_masukan"))}</td><td className="num">{rp(tot("masukan"))}</td><td className="num">{net(tot("ppn_net"))}</td>
-                  <td className="num">{rp(tot("omzet_pph22"))}</td><td className="num">{rp(tot("pph22"))}</td>
+                  <td>TOTAL {year}</td><td></td>{cells(rows)}
                 </tr>
               )}
-              {rows.length === 0 && <tr><td colSpan={8} style={{ textAlign: "center", color: "var(--muted)", padding: 24 }}>No tax rows in {year} yet.</td></tr>}
+              {rows.length === 0 && <tr><td colSpan={9} style={{ textAlign: "center", color: "var(--muted)", padding: 24 }}>No tax rows in {year} yet.</td></tr>}
             </tbody>
           </table>
         </div>
@@ -107,7 +157,9 @@ function Rekap({ supabase, clientId }: { supabase: Supabase; clientId: string })
 }
 
 /* ── one tax table (PPN Masukan / PPN Keluaran / PPh 22) ── */
-function TaxTable({ supabase, clientId, kind, onOpen }: { supabase: Supabase; clientId: string; kind: Kind; onOpen: (batchId: string) => void }) {
+function TaxTable({ supabase, clientId, kind, onOpen, companyId, companyStores }: {
+  supabase: Supabase; clientId: string; kind: Kind; onOpen: (batchId: string) => void; companyId: string; companyStores: string[] | null;
+}) {
   const v = useVendors(supabase, clientId);
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
@@ -118,10 +170,10 @@ function TaxTable({ supabase, clientId, kind, onOpen }: { supabase: Supabase; cl
   const load = useCallback(async () => {
     if (!clientId) return;
     setRows(null);
-    const { data, error } = await supabase.rpc("tax_list", { p_client_id: clientId, p_kind: kind, p_from: from || null, p_to: to || null });
+    const { data, error } = await supabase.rpc("tax_list", { p_client_id: clientId, p_kind: kind, p_from: from || null, p_to: to || null, p_company: companyId || null });
     if (error) setMsg({ ok: false, text: error.message });
     setRows(error ? [] : ((data as TaxRow[]) || []));
-  }, [supabase, clientId, kind, from, to]);
+  }, [supabase, clientId, kind, from, to, companyId]);
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { load(); }, [load]);
 
@@ -133,7 +185,7 @@ function TaxTable({ supabase, clientId, kind, onOpen }: { supabase: Supabase; cl
   }
 
   const sum = (k: "dpp" | "amount" | "total") => (rows || []).reduce((a, r) => a + Number(r[k] || 0), 0);
-  const stores = useMemo(() => v.stores.map((s) => s.store_name), [v.stores]);
+  const stores = useMemo(() => companyStores && companyStores.length ? companyStores : v.stores.map((s) => s.store_name), [v.stores, companyStores]);
 
   return (
     <>
