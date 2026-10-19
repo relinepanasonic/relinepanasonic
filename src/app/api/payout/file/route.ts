@@ -29,29 +29,35 @@ async function guard() {
 //   { action: "commit", batch, kind, path, name }                    -> records the file, moves the payout status on
 //   { action: "remove", batch, kind }                                -> forgets the file again
 // GET /api/payout/file?batch=...&kind=proof|receipt|faktur|bukpot                  -> redirect to a short-lived signed link
+// target "price" (with kind "proof") = the proof file of a Harga Beli log entry (batch = the Log ID).
 // Super Admin and Admin only. The proof / receipt / Faktur Pajak / Bukti Potong live in the private storage bucket "payout-files".
 export async function POST(req: NextRequest) {
   const g = await guard(); if ("error" in g) return g.error;
-  const body = (await req.json().catch(() => null)) as { action?: string; batch?: string; kind?: string; filename?: string; path?: string; name?: string } | null;
+  const body = (await req.json().catch(() => null)) as { action?: string; batch?: string; kind?: string; filename?: string; path?: string; name?: string; target?: string } | null;
   if (!body?.batch || !isKind(body.kind)) return NextResponse.json({ error: "BAD_REQUEST" }, { status: 400 });
   const schema = await currentSchema();
   const admin = createAdminClient(schema);
+  const isPrice = body.target === "price";
+  const folder = isPrice ? `${schema}/price/${body.batch}/` : `${schema}/${body.batch}/`;
+  const setFile = (path: string | null, name: string | null) => isPrice
+    ? g.supabase.rpc("price_change_set_proof", { p_change_id: Number(body.batch), p_path: path, p_name: name })
+    : g.supabase.rpc("payout_set_file", { p_batch_id: body.batch, p_kind: body.kind, p_path: path, p_name: name });
 
   if (body.action === "sign") {
     const safe = (body.filename || "file").replace(/[^\w.-]+/g, "_").slice(-80);
-    const path = `${schema}/${body.batch}/${body.kind}-${Date.now()}-${safe}`;
+    const path = `${folder}${body.kind}-${Date.now()}-${safe}`;
     const { data, error } = await admin.storage.from(BUCKET).createSignedUploadUrl(path);
     if (error || !data) return NextResponse.json({ error: error?.message || "Could not prepare the upload (is the storage bucket payout-files created? run migration 67)" }, { status: 500 });
     return NextResponse.json({ path, token: data.token });
   }
   if (body.action === "commit") {
-    if (!body.path || !body.path.startsWith(`${schema}/${body.batch}/`)) return NextResponse.json({ error: "BAD_PATH" }, { status: 400 });
-    const { data, error } = await g.supabase.rpc("payout_set_file", { p_batch_id: body.batch, p_kind: body.kind, p_path: body.path, p_name: body.name || "file" });
+    if (!body.path || !body.path.startsWith(folder)) return NextResponse.json({ error: "BAD_PATH" }, { status: 400 });
+    const { data, error } = await setFile(body.path, body.name || "file");
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     return NextResponse.json({ ok: true, ...(data as object) });
   }
   if (body.action === "remove") {
-    const { data, error } = await g.supabase.rpc("payout_set_file", { p_batch_id: body.batch, p_kind: body.kind, p_path: null, p_name: null });
+    const { data, error } = await setFile(null, null);
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     return NextResponse.json({ ok: true, ...(data as object) });
   }
@@ -64,8 +70,9 @@ export async function GET(req: NextRequest) {
   const kind = req.nextUrl.searchParams.get("kind");
   if (!batch || !isKind(kind)) return NextResponse.json({ error: "BAD_REQUEST" }, { status: 400 });
   // the path is read with the caller's own session (RLS), never taken from the request
-  const col = COLUMN[kind];
-  const { data: row } = await g.supabase.from("payout_batches").select(`${col}`).eq("id", batch).single();
+  const isPrice = req.nextUrl.searchParams.get("target") === "price";
+  const col = isPrice ? "proof_path" : COLUMN[kind];
+  const { data: row } = await g.supabase.from(isPrice ? "price_changes" : "payout_batches").select(`${col}`).eq("id", batch).single();
   const path = (row as Record<string, string | null> | null)?.[col];
   if (!path) return NextResponse.json({ error: "NO_FILE" }, { status: 404 });
   const admin = createAdminClient(await currentSchema());
