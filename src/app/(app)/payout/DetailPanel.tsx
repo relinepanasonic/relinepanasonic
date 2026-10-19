@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import Loader from "@/components/Loader";
 import { fmtDate } from "@/lib/dates";
-import { dateOrDash, summarize, type PayoutBatch, type PayoutLine } from "@/lib/payoutExport";
+import { dateOrDash, ppnOf, summarize, type PayoutBatch, type PayoutLine } from "@/lib/payoutExport";
 import { downloadPayoutPdf } from "@/lib/payoutPdfClient";
 import { FILE_LABEL, FileCell, NoVendors, VendorBar, downloadPayout, fileNameOf, num, removePayoutFile, rp, tabBtn, uploadPayoutFile, useVendors, type FileKind, type Supabase } from "./shared";
 
@@ -63,7 +63,7 @@ export default function DetailPanel({ supabase, clientId, batchId, onSelect }: {
         <div className="tbl-wrap" style={{ maxHeight: "62vh" }}>
           <table className="tbl day-tbl">
             <thead><tr>
-              <th>Date Payout</th><th>No Payout</th><th>Vendor</th><th>Store name</th><th className="num">Total Payout</th>
+              <th>Date Payout</th><th>No Payout</th><th>Vendor</th><th>Store name</th><th className="num">Total Payout</th><th className="num">PPN (11%)</th>
               <th>Proof</th><th>Receipt</th><th>Faktur Pajak</th><th>Bukti Potong</th><th>Status</th><th></th>
             </tr></thead>
             <tbody>
@@ -74,6 +74,7 @@ export default function DetailPanel({ supabase, clientId, batchId, onSelect }: {
                   <td>{b.vendor_name || "—"}</td>
                   <td style={{ whiteSpace: "normal", maxWidth: 260 }}>{b.store_name}</td>
                   <td className="num" style={{ fontWeight: 700 }}>{rp(b.total)}</td>
+                  <td className="num" style={{ color: "var(--muted)" }}>{rp(ppnOf(b.total))}</td>
                   {(["proof", "receipt", "faktur", "bukpot"] as const).map((kind) => (
                     <td key={kind} onClick={(e) => e.stopPropagation()} style={{ whiteSpace: "nowrap" }}>
                       <FileCell batchId={b.id} kind={kind} name={fileNameOf(b, kind)} busy={busyKey === `${b.id}:${kind}`} onUpload={(f) => upload(b, kind, f)} onRemove={() => remove(b, kind)} />
@@ -85,7 +86,7 @@ export default function DetailPanel({ supabase, clientId, batchId, onSelect }: {
                   </td>
                 </tr>
               ))}
-              {list.length === 0 && <tr><td colSpan={11} style={{ textAlign: "center", color: "var(--muted)", padding: 24 }}>No payouts yet.</td></tr>}
+              {list.length === 0 && <tr><td colSpan={12} style={{ textAlign: "center", color: "var(--muted)", padding: 24 }}>No payouts yet.</td></tr>}
             </tbody>
           </table>
         </div>
@@ -128,18 +129,18 @@ function PayoutView({ supabase, batchId, onClose }: { supabase: Supabase; batchI
             {view === "summary" ? (
               <div className="tbl-wrap" style={{ maxHeight: "60vh" }}>
                 <table className="tbl day-tbl">
-                  <thead><tr><th>ID Product</th><th>Nama Prod</th><th>ID Variasi</th><th>Variasi</th><th className="num">Qty</th><th className="num">Harga Beli</th><th className="num">Total</th></tr></thead>
+                  <thead><tr><th>ID Product</th><th>Nama Prod</th><th>ID Variasi</th><th>Variasi</th><th className="num">Qty</th><th className="num">Harga Beli</th><th className="num">PPN (11%)</th><th className="num">Total</th></tr></thead>
                   <tbody>
                     {sum.map((r, i) => (
                       <tr key={i}>
                         <td style={{ fontFamily: "monospace", fontSize: 12.5 }}>{r.product_id || "—"}</td>
                         <td style={{ maxWidth: 460, overflow: "hidden", textOverflow: "ellipsis" }} title={r.product_name}>{r.product_name}</td>
                         <td style={{ fontFamily: "monospace", fontSize: 12.5 }}>{r.variant_id}</td><td>{r.variant_name}</td>
-                        <td className="num">{num(r.qty)}</td><td className="num">{rp(r.harga_beli)}</td><td className="num">{rp(r.total)}</td>
+                        <td className="num">{num(r.qty)}</td><td className="num">{rp(r.harga_beli)}</td><td className="num" style={{ color: "var(--muted)" }}>{rp(ppnOf(r.total))}</td><td className="num">{rp(r.total)}</td>
                       </tr>
                     ))}
                     <tr style={{ fontWeight: 800, borderTop: "2px solid rgba(201,162,39,.4)" }}>
-                      <td></td><td>TOTAL</td><td></td><td></td><td className="num">{num(sum.reduce((a, r) => a + r.qty, 0))}</td><td></td>
+                      <td></td><td>TOTAL</td><td></td><td></td><td className="num">{num(sum.reduce((a, r) => a + r.qty, 0))}</td><td></td><td className="num">{rp(sum.reduce((a, r) => a + ppnOf(r.total), 0))}</td>
                       <td className="num" style={{ color: "var(--gold)" }}>{rp(sum.reduce((a, r) => a + r.total, 0))}</td>
                     </tr>
                   </tbody>
@@ -150,7 +151,7 @@ function PayoutView({ supabase, batchId, onClose }: { supabase: Supabase; batchI
                 <table className="tbl day-tbl">
                   <thead><tr>
                     <th>No Pesanan</th><th>Store</th><th>Tgl Kirim</th><th>Tgl Withdraw</th><th>ID Prod</th><th>Nama Prod</th><th>ID Variasi</th><th>Variasi</th>
-                    <th className="num">Qty</th><th className="num">Harga Beli</th><th className="num">Total</th>
+                    <th className="num">Qty</th><th className="num">Harga Beli</th><th className="num">PPN (11%)</th><th className="num">Total</th>
                   </tr></thead>
                   <tbody>
                     {data.lines.map((l, i) => (
@@ -160,7 +161,7 @@ function PayoutView({ supabase, batchId, onClose }: { supabase: Supabase; batchI
                         <td style={{ fontFamily: "monospace", fontSize: 12.5 }}>{l.product_id || "—"}</td>
                         <td style={{ maxWidth: 380, overflow: "hidden", textOverflow: "ellipsis" }} title={l.product_name || ""}>{l.product_name}</td>
                         <td style={{ fontFamily: "monospace", fontSize: 12.5 }}>{l.variant_id || "-"}</td><td>{l.variant_name || "-"}</td>
-                        <td className="num">{num(l.qty)}</td><td className="num">{rp(l.harga_beli)}</td><td className="num">{rp(l.total)}</td>
+                        <td className="num">{num(l.qty)}</td><td className="num">{rp(l.harga_beli)}</td><td className="num" style={{ color: "var(--muted)" }}>{rp(ppnOf(l.total))}</td><td className="num">{rp(l.total)}</td>
                       </tr>
                     ))}
                   </tbody>
