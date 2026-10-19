@@ -53,7 +53,7 @@ function Rekap({ supabase, clientId }: { supabase: Supabase; clientId: string })
   useEffect(() => {
     if (!clientId) return;
     (async () => {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
+       
       setRows(null);
       const { data } = await supabase.rpc("tax_summary", { p_client_id: clientId, p_year: year });
       setRows((data as Sum[]) || []);

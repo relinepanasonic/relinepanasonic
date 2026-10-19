@@ -71,7 +71,7 @@ export default function PaidPanel({ supabase, clientId, onOpen }: {
             <table className="tbl day-tbl">
               <thead><tr>
                 {H("Date Paid", "paid_at")}{H("Payout No", "payout_no")}{H("Order Completed", "completed_at")}{H("Store name", "store_name")}{H("No Pesanan", "order_no")}
-                {H("Product ID", "product_id")}{H("Product", "product_name")}{H("Variant", "variant_name")}{H("Qty", "qty", true)}{H("Harga Beli (per unit)", "harga_beli", true)}{H("Total (Qty × Harga Beli)", "total", true)}
+                {H("Product ID", "product_id")}{H("Product", "product_name")}{H("Variant", "variant_name")}{H("Qty", "qty", true)}{H("Harga Beli (per unit)", "harga_beli", true)}<th className="num" title="PPN inside the total (price incl. PPN)">PPN (11%)</th>{H("Total (Qty × Harga Beli)", "total", true)}
               </tr></thead>
               <tbody>
                 {sortedData.slice(0, limit).map((r, i) => (
@@ -84,10 +84,10 @@ export default function PaidPanel({ supabase, clientId, onOpen }: {
                     <td style={{ fontFamily: "monospace", fontSize: 12.5 }}>{r.product_id || "—"}</td>
                     <td style={{ maxWidth: 360, overflow: "hidden", textOverflow: "ellipsis" }} title={r.product_name || ""}>{r.product_name}</td>
                     <td>{r.variant_name && r.variant_name !== "-" ? r.variant_name : "—"}</td>
-                    <td className="num">{num(r.qty)}</td><td className="num">{rp(r.harga_beli)}</td><td className="num">{rp(r.total)}</td>
+                    <td className="num">{num(r.qty)}</td><td className="num">{rp(r.harga_beli)}</td><td className="num" style={{ color: "var(--muted)" }}>{rp(Math.round(Number(r.total) - Number(r.total) / 1.11))}</td><td className="num">{rp(r.total)}</td>
                   </tr>
                 ))}
-                {filtered.length === 0 && <tr><td colSpan={11} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>Nothing paid yet.</td></tr>}
+                {filtered.length === 0 && <tr><td colSpan={12} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>Nothing paid yet.</td></tr>}
               </tbody>
             </table>
             {sortedData.length > limit && (

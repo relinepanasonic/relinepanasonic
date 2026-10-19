@@ -214,7 +214,7 @@ export default function FinanceDashboard({ clientId, refreshKey, extraSections =
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
         <button onClick={() => setSection("dashboard")} style={tableTabBtn(section === "dashboard")}>{t("Dashboard")}</button>
         <button onClick={() => setSection("transaksi")} style={tableTabBtn(section === "transaksi")}>{t("Withdraw Detail")}</button>
-        <button onClick={() => setSection("notpaid")} style={tableTabBtn(section === "notpaid")}>{t("Not Completed")}</button>
+        <button onClick={() => setSection("notpaid")} style={tableTabBtn(section === "notpaid")}>{t("In Shipping")}</button>
         <button onClick={() => setSection("unconnected")} style={tableTabBtn(section === "unconnected")}>
           {t("Not Connected")}{uc && uc.unconnected_orders > 0 && <span style={COUNT_BADGE}>{uc.unconnected_orders > 99 ? "99+" : uc.unconnected_orders}</span>}
         </button>
@@ -509,7 +509,7 @@ function NotPaidTable({ data, t }: { data: NotPaidData | null; t: (k: string) =>
 
   return (
     <div className="panel">
-      <h3>{t("Not Completed")}</h3>
+      <h3>{t("In Shipping")}</h3>
       {data && data.orders_checked > 0 && (
         <div className="kpi-grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(210px, 270px))", marginBottom: 14 }}>
           <div className="kpi kpi-hero">
@@ -519,7 +519,7 @@ function NotPaidTable({ data, t }: { data: NotPaidData | null; t: (k: string) =>
           </div>
           <div className="kpi">
             <div className="kpi-icon">⏳</div>
-            <div className="lbl">{t("Not Completed Order")}</div>
+            <div className="lbl">{t("Orders in shipping")}</div>
             <div className="val">{count.toLocaleString("id-ID")}</div>
             <div className="kpi-sub">{t("of")} {data.orders_checked.toLocaleString("id-ID")} {t("orders")}</div>
           </div>

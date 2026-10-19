@@ -137,7 +137,7 @@ export default function NotPaidPanel({ supabase, clientId, onPaid }: {
             <thead><tr>
               <th style={{ width: 36 }}><input type="checkbox" checked={allChecked} onChange={checkAll} disabled={!payableShown.length} title="Check all" /></th>
               {H("Order Completed", "completed_at")}{H("Store name", "store_name")}{H("No Pesanan", "order_no")}{H("Product ID", "product_id")}{H("Product", "product_name")}
-              {H("Variant ID", "variant_id")}{H("Variant", "variant_name")}{H("Qty", "qty", true)}{H("Harga Beli (per unit)", "harga_beli", true)}{H("Total (Qty × Harga Beli)", "total", true)}
+              {H("Variant ID", "variant_id")}{H("Variant", "variant_name")}{H("Qty", "qty", true)}{H("Harga Beli (per unit)", "harga_beli", true)}<th className="num" title="PPN inside the total (price incl. PPN: total ÷ 1.11 = DPP)">PPN (11%)</th>{H("Total (Qty × Harga Beli)", "total", true)}
             </tr></thead>
             <tbody>
               {sortedData.slice(0, limit).map((r) => {
@@ -154,11 +154,12 @@ export default function NotPaidPanel({ supabase, clientId, onPaid }: {
                     <td>{r.variant_name && r.variant_name !== "-" ? r.variant_name : "—"}</td>
                     <td className="num">{num(r.qty)}</td>
                     <td className="num" style={r.reason === "no_price" ? { color: "#f87171" } : undefined}>{r.harga_beli == null ? (r.reason === "no_id" ? "—" : "no price") : rp(r.harga_beli)}</td>
+                    <td className="num" style={{ color: "var(--muted)" }}>{r.payable ? rp(Math.round(Number(r.total) - Number(r.total) / 1.11)) : "—"}</td>
                     <td className="num">{r.payable ? rp(r.total) : "—"}</td>
                   </tr>
                 );
               })}
-              {sortedData.length === 0 && <tr><td colSpan={11} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>Nothing to pay — every completed order of this vendor is paid.</td></tr>}
+              {sortedData.length === 0 && <tr><td colSpan={12} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>Nothing to pay — every completed order of this vendor is paid.</td></tr>}
             </tbody>
           </table>
           {sortedData.length > limit && (

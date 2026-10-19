@@ -81,7 +81,8 @@ export default function HargaBeli({ clientId }: { clientId: string }) {
     if (!clientId) return;
     setLog(null);
     const { data } = await supabase.rpc("harga_beli_log_vendor", { p_client_id: clientId, p_vendor: ven.vendorId || null, p_search: q || null, p_limit: 500 });
-    setLog((data as LogRow[]) || []);
+    // only real edits: a price that replaced an earlier price (setting a first price is not a change)
+    setLog(((data as LogRow[]) || []).filter((l) => l.old_price != null && Number(l.old_price) !== Number(l.new_price)));
   }, [supabase, clientId, ven.vendorId, q]);
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { if (view === "log") loadLog(); }, [loadLog, view]);
@@ -180,7 +181,7 @@ export default function HargaBeli({ clientId }: { clientId: string }) {
               <table className="tbl day-tbl">
                 <thead><tr>
                   <th>Prod ID</th><th>Prod Name</th><th>Variant ID</th><th>Variant Name</th>
-                  <th className="num">Price before</th><th>Since</th><th className="num" style={{ minWidth: 170 }}>New price</th>
+                  <th className="num">Price before</th><th className="num" title="PPN inside the price (incl. PPN: price ÷ 1.11 = DPP)">PPN (11%)</th><th>Since</th><th className="num" style={{ minWidth: 170 }}>New price</th>
                 </tr></thead>
                 <tbody>
                   {rows.map((r) => {
@@ -196,6 +197,7 @@ export default function HargaBeli({ clientId }: { clientId: string }) {
                         <td className="num" style={{ color: r.price ? "#e8edf8" : "var(--muted)" }}>
                           {rp(r.price)}{r.inherited && <span style={{ fontSize: 10.5, color: "var(--muted)" }}> (product price)</span>}
                         </td>
+                        <td className="num" style={{ color: "var(--muted)" }}>{r.price ? rp(Math.round(r.price - r.price / 1.11)) : "—"}</td>
                         <td style={{ fontSize: 12.5, color: "var(--muted)" }}>{r.since ? fmtDate(r.since) : "—"}</td>
                         <td className="num">
                           <input inputMode="numeric" placeholder={r.has_price ? fmtDigits(String(Math.round(r.price))) : "Rp"} value={fmtDigits(d ?? "")}
@@ -209,7 +211,7 @@ export default function HargaBeli({ clientId }: { clientId: string }) {
                     );
                   })}
                   {rows.length === 0 && (
-                    <tr><td colSpan={7} style={{ textAlign: "center", color: "var(--muted)", padding: 24 }}>
+                    <tr><td colSpan={8} style={{ textAlign: "center", color: "var(--muted)", padding: 24 }}>
                       {total === 0 && !q && !onlyMissing ? "No products yet. Upload the product list (SPOS file) first." : "Nothing matches."}
                     </td></tr>
                   )}
@@ -253,7 +255,7 @@ export default function HargaBeli({ clientId }: { clientId: string }) {
                   <td style={{ fontSize: 12.5 }}>{l.created_by_name || "—"}{l.source === "apply_all" && <span style={{ color: "var(--muted)" }}> · all vendors</span>}</td>
                 </tr>
               ))}
-              {log.length === 0 && <tr><td colSpan={9} style={{ textAlign: "center", color: "var(--muted)", padding: 24 }}>No price changes yet.</td></tr>}
+              {log.length === 0 && <tr><td colSpan={9} style={{ textAlign: "center", color: "var(--muted)", padding: 24 }}>No price edits yet — only changes of an existing price are listed here.</td></tr>}
             </tbody>
           </table>
         </div>
