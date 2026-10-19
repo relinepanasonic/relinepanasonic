@@ -62,6 +62,7 @@ export default function NotPaidPanel({ supabase, clientId, onPaid }: {
   const pickedLines = useMemo(() => (rows || []).filter((r) => picked.has(keyOf(r))), [rows, picked]);
   const pickedQty = pickedLines.reduce((a, r) => a + Number(r.qty), 0);
   const pickedTotal = pickedLines.reduce((a, r) => a + Number(r.total), 0);
+  const pickedPpn = Math.round(pickedTotal - pickedTotal / 1.11);   // Harga Beli includes PPN (11% effective)
 
   function toggle(r: Line) {
     setPicked((p) => { const n = new Set(p); const k = keyOf(r); if (n.has(k)) n.delete(k); else n.add(k); return n; });
@@ -83,7 +84,7 @@ export default function NotPaidPanel({ supabase, clientId, onPaid }: {
 
   async function pay() {
     if (!pickedLines.length || busy || !v.vendor) return;
-    if (!window.confirm(`Pay ${v.vendor.name}\n${pickedLines.length} lines · Qty ${num(pickedQty)} · ${rp(pickedTotal)}\n\nSave this payout and generate the XLS + PDF?`)) return;
+    if (!window.confirm(`Pay ${v.vendor.name}\n${pickedLines.length} lines · Qty ${num(pickedQty)}\nTotal ${rp(pickedTotal)} (DPP ${rp(pickedTotal - pickedPpn)} + PPN 11% ${rp(pickedPpn)})\n\nSave this payout and generate the XLS + PDF?`)) return;
     setBusy(true); setErr(""); setDone(null);
     const { data, error } = await supabase.rpc("payout_create", {
       p_client_id: clientId, p_vendor: v.vendorId,
@@ -113,7 +114,7 @@ export default function NotPaidPanel({ supabase, clientId, onPaid }: {
         </div>
         <div className="fld" style={{ minWidth: 220, flex: 1 }}><label>Search</label><input type="text" placeholder="Store / Order No. / Product ID / Product / Variant" value={search} onChange={(e) => setSearch(e.target.value)} /></div>
         <button className="btn-gold" onClick={pay} disabled={busy || !pickedLines.length} style={{ padding: "11px 26px", fontSize: 14.5 }}>
-          {busy ? "Saving…" : pickedLines.length ? `Pay to Vendor · ${pickedLines.length} lines · ${rp(pickedTotal)}` : "Pay to Vendor"}
+          {busy ? "Saving…" : pickedLines.length ? `Pay to Vendor · ${pickedLines.length} lines · ${rp(pickedTotal)} (PPN ${rp(pickedPpn)})` : "Pay to Vendor"}
         </button>
       </VendorBar>
 

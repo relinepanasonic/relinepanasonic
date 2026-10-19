@@ -74,6 +74,7 @@ type FinanceProductRow = {
   promotion_cost: number; refund: number; delivery_cost: number; affiliate_cost: number;
   marketplace_fee: number; pajak: number; other: number; net_income: number;
   ads_cost: number; // ad spend of this Product ID (the 3 ads uploads; per product, not per variant)
+  harga_beli?: number; harga_beli_missing?: number; // modal: units x Harga Beli on the order created date (migration 70)
   // from the Order Completed upload (migration 0131); units null = none of this product's orders found there
   units: number | null; units_orders: number; sales_with_units: number;
 };
@@ -430,6 +431,8 @@ function ProductProfitTable({ data, t }: { data: FinanceProducts | null; t: (k: 
             <SortableHeader label={t("Sales")} sortKey="sales" currentSort={sortConfig} onRequestSort={requestSort} className="num" />
             <SortableHeader label={t("Nett Income")} sortKey="net_income" currentSort={sortConfig} onRequestSort={requestSort} className="num" />
             <th className="num" style={cell} title={t("Nett Income ÷ Sales × 100%")}>%</th>
+            <SortableHeader label={t("Harga Beli")} sortKey="harga_beli" currentSort={sortConfig} onRequestSort={requestSort} className="num" />
+            <th className="num" style={cell} title={t("PPN inside the Harga Beli (incl. PPN: amount - amount / 1.11)")}>{t("PPN Harga Beli")}</th>
             <SortableHeader label={t("Ads Cost")} sortKey="ads_cost" currentSort={sortConfig} onRequestSort={requestSort} className="num" />
             <SortableHeader label={t("Promotional Cost")} sortKey="promotion_cost" currentSort={sortConfig} onRequestSort={requestSort} className="num" />
             <SortableHeader label={t("Refund")} sortKey="refund" currentSort={sortConfig} onRequestSort={requestSort} className="num" />
@@ -454,6 +457,10 @@ function ProductProfitTable({ data, t }: { data: FinanceProducts | null; t: (k: 
                 <td className="num" style={cell}>{rpFull(r.sales)}</td>
                 <td className="num" style={{ ...cell, color: r.net_income >= 0 ? "#86efac" : "#f87171", fontWeight: 700 }}>{rpFull(r.net_income)}</td>
                 <td className="num" style={{ ...cell, color: r.net_income >= 0 ? "#86efac" : "#f87171", fontWeight: 700 }}>{r.sales > 0 ? `${(r.net_income / r.sales * 100).toFixed(1)}%` : "—"}</td>
+                <td className="num" style={cell} title={r.harga_beli_missing ? `${r.harga_beli_missing} ${t("order line(s) without a Harga Beli")}` : undefined}>
+                  {rpFull(r.harga_beli || 0)}{r.harga_beli_missing ? <span style={{ color: "#fbbf24" }}>*</span> : null}
+                </td>
+                <td className="num" style={{ ...cell, color: "var(--muted)" }}>{rpFull(Math.round((r.harga_beli || 0) - (r.harga_beli || 0) / 1.11))}</td>
                 <td className="num" style={cell}>{rpFull(r.ads_cost)}</td>
                 <td className="num" style={cell}>{rpFull(r.promotion_cost)}</td>
                 <td className="num" style={cell}>{rpFull(r.refund)}</td>
@@ -465,7 +472,7 @@ function ProductProfitTable({ data, t }: { data: FinanceProducts | null; t: (k: 
               </tr>
             ))}
             {sortedData.length === 0 && (
-              <tr><td colSpan={16} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>
+              <tr><td colSpan={18} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>
                 {total > 0 && withDetail === 0
                   ? t("No per-product data for this period. Upload the newer Shopee Penghasilan income report to see products here.")
                   : t("No data for these filters")}
