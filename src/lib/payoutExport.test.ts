@@ -37,12 +37,13 @@ describe("payout export", () => {
     expect(wb.SheetNames).toEqual(["Summary", "Detail"]);
     const sum = XLSX.utils.sheet_to_json<unknown[]>(wb.Sheets.Summary, { header: 1 });
     const det = XLSX.utils.sheet_to_json<unknown[]>(wb.Sheets.Detail, { header: 1 });
-    expect(sum.find((r) => r[0] === "ID Product")).toEqual(["ID Product", "Nama Prod", "ID Variasi", "Variasi", "Qty", "Harga Beli", "PPN (11%)", "Total"]);
-    expect(det.find((r) => r[0] === "No Pesanan")).toEqual(["No Pesanan", "Store", "Tgl Kirim", "Tgl Withdraw", "ID Prod", "Nama Prod", "ID Variasi", "Variasi", "Qty", "Harga Beli", "PPN (11%)", "Total"]);
-    expect(sum.find((r) => r[0] === "P2")).toEqual(["P2", "Sudut plastik", "-", "-", 4, 2750, 1090, 11000]); // 11000 - 11000/1.11 = 1090
-    expect(sum[sum.length - 1][7]).toBe(24000);
-    expect(det[det.length - 1][11]).toBe(24000);
-    expect(det.find((r) => r[0] === "A1")?.[10]).toBe(595); // 6000 - 6000/1.11
+    expect(sum.find((r) => r[0] === "ID Product")).toEqual(["ID Product", "Nama Prod", "ID Variasi", "Variasi", "Qty", "Harga Beli", "Subtotal", "PPN (11%)", "Total (incl. PPN)"]);
+    expect(det.find((r) => r[0] === "No Pesanan")).toEqual(["No Pesanan", "Store", "Tgl Kirim", "Tgl Withdraw", "ID Prod", "Nama Prod", "ID Variasi", "Variasi", "Qty", "Harga Beli", "Subtotal", "PPN (11%)", "Total (incl. PPN)"]);
+    expect(sum.find((r) => r[0] === "P2")).toEqual(["P2", "Sudut plastik", "-", "-", 4, 2750, 11000, 1210, 12210]); // PPN 11% on top
+    expect(sum[sum.length - 1][6]).toBe(24000);
+    expect(sum[sum.length - 1][8]).toBe(24000 + 2640);
+    expect(det[det.length - 1][10]).toBe(24000);
+    expect(det.find((r) => r[0] === "A1")?.[11]).toBe(660); // 6000 x 11%
     expect(det.filter((r) => r[0] === "A1" || r[0] === "A2")).toHaveLength(4); // one row per order line
     expect(sum.find((r) => r[0] === "Vendor")).toEqual(["Vendor", "Vendor One"]);
   });

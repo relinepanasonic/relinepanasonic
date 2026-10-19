@@ -432,7 +432,7 @@ function ProductProfitTable({ data, t }: { data: FinanceProducts | null; t: (k: 
             <SortableHeader label={t("Nett Income")} sortKey="net_income" currentSort={sortConfig} onRequestSort={requestSort} className="num" />
             <th className="num" style={cell} title={t("Nett Income ÷ Sales × 100%")}>%</th>
             <SortableHeader label={t("Harga Beli")} sortKey="harga_beli" currentSort={sortConfig} onRequestSort={requestSort} className="num" />
-            <th className="num" style={cell} title={t("PPN inside the Harga Beli (incl. PPN: amount - amount / 1.11)")}>{t("PPN Harga Beli")}</th>
+            <th className="num" style={cell} title={t("PPN 11% on top of the Harga Beli")}>{t("PPN Harga Beli")}</th>
             <SortableHeader label={t("Ads Cost")} sortKey="ads_cost" currentSort={sortConfig} onRequestSort={requestSort} className="num" />
             <SortableHeader label={t("Promotional Cost")} sortKey="promotion_cost" currentSort={sortConfig} onRequestSort={requestSort} className="num" />
             <SortableHeader label={t("Refund")} sortKey="refund" currentSort={sortConfig} onRequestSort={requestSort} className="num" />
@@ -460,7 +460,7 @@ function ProductProfitTable({ data, t }: { data: FinanceProducts | null; t: (k: 
                 <td className="num" style={cell} title={r.harga_beli_missing ? `${r.harga_beli_missing} ${t("order line(s) without a Harga Beli")}` : undefined}>
                   {rpFull(r.harga_beli || 0)}{r.harga_beli_missing ? <span style={{ color: "#fbbf24" }}>*</span> : null}
                 </td>
-                <td className="num" style={{ ...cell, color: "var(--muted)" }}>{rpFull(Math.round((r.harga_beli || 0) - (r.harga_beli || 0) / 1.11))}</td>
+                <td className="num" style={{ ...cell, color: "var(--muted)" }}>{rpFull(Math.round((r.harga_beli || 0) * 0.11))}</td>
                 <td className="num" style={cell}>{rpFull(r.ads_cost)}</td>
                 <td className="num" style={cell}>{rpFull(r.promotion_cost)}</td>
                 <td className="num" style={cell}>{rpFull(r.refund)}</td>

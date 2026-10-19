@@ -9,7 +9,8 @@ import type { PayoutBatch } from "@/lib/payoutExport";
 import { FILE_LABEL, FileCell, NoVendors, VendorBar, fileNameOf, removePayoutFile, rp, tabBtn, uploadPayoutFile, useVendors, type FileKind, type Supabase } from "./shared";
 
 // Pajak (Super Admin + Admin). Rules used (Oct 2026):
-//   PPN    12% x DPP nilai lain 11/12 (PMK 131/2024) = 11% effective; prices are PPN-inclusive: DPP = price / 1.11.
+//   PPN    12% x DPP nilai lain 11/12 (PMK 131/2024) = 11% effective. Harga Beli excludes PPN (payout total = DPP);
+//          Shopee sales prices include PPN (DPP = price / 1.11).
 //   PPh 22 collected by Shopee at 0.5% of gross turnover excl. PPN (PMK 37/2025), from 1 Oct 2026.
 // Sub pages:
 //   Rekap         per masa pajak: PPN Keluaran - PPN Masukan = PPN kurang / (lebih) bayar, and PPh 22 collected.
@@ -152,7 +153,7 @@ function TaxTable({ supabase, clientId, kind, onOpen }: { supabase: Supabase; cl
         )}
         <button className="btn-gold" onClick={() => setEdit({ kind, rate: DEFAULT_RATE[kind], tx_date: new Date().toISOString().slice(0, 10), counterparty: kind === "pph22" ? "Shopee" : kind === "ppn_keluaran" ? "Shopee buyers" : "" })} style={{ padding: "10px 22px" }}>+ Add {KIND_LABEL[kind]}</button>
       </div>
-      {kind === "ppn_masukan" && <div style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 8 }}>Every Pay to Vendor adds its PPN Masukan here automatically (vendor price includes PPN). Open a row to fill in the Nomor Faktur Pajak.</div>}
+      {kind === "ppn_masukan" && <div style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 8 }}>Every Pay to Vendor adds its PPN Masukan here automatically: DPP = the payout total (Harga Beli excludes PPN), PPN 11% on top. Open a row to fill in the Nomor Faktur Pajak.</div>}
       {kind === "ppn_keluaran" && <div style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 8 }}>Fill from Earning: per store, the Shopee sales of that month by order date (prices include PPN). Refill any time — typed-in rows are kept.</div>}
       {kind === "pph22" && <div style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 8 }}>Type in each bukti pungut from Shopee: DPP = gross turnover (excl. PPN), PPh 22 = 0.5%. It can be credited against your income tax.</div>}
       {v.vendors && v.vendors.length === 0 && kind === "ppn_masukan" && <NoVendors />}

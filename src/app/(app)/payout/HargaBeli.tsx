@@ -10,7 +10,8 @@ import { parseProductList } from "@/lib/parseProductList";
 import { FileCell, NoVendors, VendorBar, removePayoutFile, rp, tabBtn, uploadPayoutFile, useVendors } from "./shared";
 
 // Harga Beli: the purchase price per VENDOR (all its stores), per product and variant, with a history.
-//   Prices    - Prod ID | Prod Name | Variant ID | Variant Name | Harga Beli | PPN | Since. "New Price" first asks when the new
+//   Prices    - Prod ID | Prod Name | Variant ID | Variant Name | Harga Beli (before PPN) | PPN 11% | Total (incl. PPN) | Notes.
+//               Type either the Harga Beli or the Total, the other follows. "New Price" first asks when the new
 //               prices become active, then every price can be edited; the current price is filled in as the baseline,
 //               so only the prices you actually change are saved. An order uses the price in force on its ORDER CREATED
 //               date; a variant without its own price uses the product price.
@@ -20,7 +21,7 @@ const PAGE = 200;
 
 type Row = {
   kode_produk: string; nama_produk: string | null; kode_variasi: string; nama_variasi: string | null;
-  price: number; has_price: boolean; inherited: boolean; since: string | null;
+  price: number; has_price: boolean; inherited: boolean; since: string | null; prev_price?: number | null;
 };
 type LogEntry = {
   id: number; created_at: string; effective_from: string; vendor_name: string | null; created_by_name: string | null;
@@ -31,7 +32,10 @@ const rowKey = (r: Pick<Row, "kode_produk" | "kode_variasi">) => `${r.kode_produ
 const digits = (v: string) => v.replace(/[^0-9]/g, "");
 const fmtDigits = (d: string) => (d ? Number(d).toLocaleString("id-ID") : "");
 const todayISO = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
-const ppn = (n: number) => Math.round(n - n / 1.11);
+// Harga Beli is the price BEFORE PPN; Total = Harga Beli + PPN 11%
+const ppn = (n: number) => Math.round(n * 0.11);
+const gross = (n: number) => Math.round(n) + ppn(n);
+const netOf = (total: number) => Math.round(total / 1.11);
 const baselineOf = (r: Row) => (r.price ? String(Math.round(r.price)) : "");   // what the input starts with
 const STATUS_COLOR: Record<string, string> = { Scheduled: "#60a5fa", Active: "#86efac" };
 
@@ -49,7 +53,8 @@ export default function HargaBeli({ clientId }: { clientId: string }) {
   const [rows, setRows] = useState<Row[] | null>(null);
   const [total, setTotal] = useState(0);
   const [editFrom, setEditFrom] = useState<string | null>(null);        // New Price mode: the date the prices become active
-  const [edits, setEdits] = useState<Map<string, { value: string; base: string }>>(new Map());
+  // value = the Harga Beli typed (digits); totalRaw = what was typed in the Total box, when that box was used
+  const [edits, setEdits] = useState<Map<string, { value: string; base: string; totalRaw?: string }>>(new Map());
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [dialog, setDialog] = useState<null | "new" | "all">(null);
@@ -209,7 +214,7 @@ export default function HargaBeli({ clientId }: { clientId: string }) {
             {editFrom && (
               <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", border: "1px solid rgba(201,162,39,.5)", background: "rgba(201,162,39,.08)", borderRadius: 12, padding: "10px 14px", marginBottom: 12 }}>
                 <div style={{ flex: 1, minWidth: 240, fontSize: 13.5 }}>
-                  <b style={{ color: "var(--gold)" }}>New Price</b> · active from <b style={{ color: "#fff" }}>{fmtDate(editFrom)}</b> · the current price is filled in — change only the prices that are different
+                  <b style={{ color: "var(--gold)" }}>New Price</b> · active from <b style={{ color: "#fff" }}>{fmtDate(editFrom)}</b> · the current price is filled in — type the Harga Beli or the Total (incl. PPN) of the prices that are different
                 </div>
                 <span style={{ fontSize: 13, color: "var(--gold)" }}>{changes.length} change{changes.length === 1 ? "" : "s"}</span>
                 <button className="btn-ghost" onClick={() => { setSince(editFrom); setDialog("new"); }}>Change date</button>
@@ -221,8 +226,10 @@ export default function HargaBeli({ clientId }: { clientId: string }) {
               <table className="tbl day-tbl">
                 <thead><tr>
                   <th>Prod ID</th><th>Prod Name</th><th>Variant ID</th><th>Variant Name</th>
-                  <th className="num" style={{ minWidth: editFrom ? 190 : undefined }}>{editFrom ? "New price" : "Harga Beli"}</th>
-                  <th className="num" title="PPN inside the price (incl. PPN: price ÷ 1.11 = DPP)">PPN (11%)</th><th>Since</th>
+                  <th className="num" style={{ minWidth: editFrom ? 170 : undefined }}>Harga Beli</th>
+                  <th className="num">PPN (11%)</th>
+                  <th className="num" style={{ minWidth: editFrom ? 170 : undefined }}>Total (incl. PPN)</th>
+                  <th>Notes</th>
                 </tr></thead>
                 <tbody>
                   {rows.map((r) => {
@@ -231,22 +238,27 @@ export default function HargaBeli({ clientId }: { clientId: string }) {
                     const base = baselineOf(r);
                     const value = e ? e.value : base;
                     const dirty = !!e && e.value !== "" && e.value !== e.base;
-                    const shown = Number(value || 0);
+                    const price = Number(value || 0);
+                    const setPrice = (d: string) => setEdits((m) => { const n = new Map(m); n.set(k, { value: d, base }); return n; });
+                    const setTotal = (d: string) => setEdits((m) => { const n = new Map(m); n.set(k, { value: d ? String(netOf(Number(d))) : "", base, totalRaw: d }); return n; });
+                    const totalShown = e?.totalRaw !== undefined ? e.totalRaw : (value ? String(gross(price)) : "");
+                    // Notes: in New Price mode the new price against the current one; otherwise the current price against the one it replaced
+                    const cmp = editFrom ? (r.price ? price - r.price : null) : (r.price && r.prev_price != null ? r.price - Number(r.prev_price) : null);
+                    const note = editFrom
+                      ? (!value ? "—" : !r.price ? "new price" : cmp! > 0 ? `▲ up ${rp(cmp)}` : cmp! < 0 ? `▼ down ${rp(-cmp!)}` : "= par")
+                      : (!r.price ? "no price yet" : r.prev_price == null ? `first price${r.since ? ` · since ${fmtDate(r.since)}` : ""}` : cmp! > 0 ? `▲ up ${rp(cmp)} · since ${fmtDate(r.since!)}` : cmp! < 0 ? `▼ down ${rp(-cmp!)} · since ${fmtDate(r.since!)}` : `= par · since ${fmtDate(r.since!)}`);
+                    const noteColor = cmp == null || cmp === 0 ? "var(--muted)" : cmp > 0 ? "#f87171" : "#86efac";
                     return (
                       <tr key={k} style={dirty ? { background: "rgba(201,162,39,.10)" } : undefined}>
                         <td style={{ fontFamily: "monospace", fontSize: 12.5 }}>{r.kode_produk}</td>
-                        <td style={{ maxWidth: 420, overflow: "hidden", textOverflow: "ellipsis" }} title={r.nama_produk || ""}>{r.nama_produk || "—"}</td>
+                        <td style={{ maxWidth: 240, overflow: "hidden", textOverflow: "ellipsis" }} title={r.nama_produk || ""}>{r.nama_produk || "—"}</td>
                         <td style={{ fontFamily: "monospace", fontSize: 12.5 }}>{r.kode_variasi}</td>
-                        <td>{r.nama_variasi || "-"}</td>
+                        <td style={{ maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis" }} title={r.nama_variasi || ""}>{r.nama_variasi || "-"}</td>
                         <td className="num">
                           {editFrom ? (
                             <>
-                              <input inputMode="numeric" value={fmtDigits(value)} placeholder="Rp"
-                                onChange={(ev) => { const d = digits(ev.target.value); setEdits((m) => { const n = new Map(m); n.set(k, { value: d, base }); return n; }); }}
-                                style={inputStyle(dirty)} />
-                              <div style={{ fontSize: 10.5, color: "var(--muted)", marginTop: 2 }}>
-                                {r.price ? `now ${rp(r.price)}${r.inherited ? " (product price)" : ""}` : "no price yet"}{dirty ? " · changed" : ""}
-                              </div>
+                              <input inputMode="numeric" value={fmtDigits(value)} placeholder="Rp" onChange={(ev) => setPrice(digits(ev.target.value))} style={inputStyle(dirty)} />
+                              <div style={{ fontSize: 10.5, color: "var(--muted)", marginTop: 2 }}>{r.price ? `now ${rp(r.price)}${r.inherited ? " (product price)" : ""}` : "no price yet"}</div>
                             </>
                           ) : (
                             <span style={{ color: r.price ? "#e8edf8" : "var(--muted)" }}>
@@ -254,13 +266,23 @@ export default function HargaBeli({ clientId }: { clientId: string }) {
                             </span>
                           )}
                         </td>
-                        <td className="num" style={{ color: "var(--muted)" }}>{shown ? rp(ppn(shown)) : "—"}</td>
-                        <td style={{ fontSize: 12.5, color: "var(--muted)" }}>{r.since ? fmtDate(r.since) : "—"}</td>
+                        <td className="num" style={{ color: "var(--muted)" }}>{price ? rp(ppn(price)) : "—"}</td>
+                        <td className="num">
+                          {editFrom ? (
+                            <>
+                              <input inputMode="numeric" value={fmtDigits(totalShown)} placeholder="Rp" onChange={(ev) => setTotal(digits(ev.target.value))} style={inputStyle(dirty)} />
+                              <div style={{ fontSize: 10.5, color: "var(--muted)", marginTop: 2 }}>{r.price ? `now ${rp(gross(r.price))}` : "type here or in Harga Beli"}</div>
+                            </>
+                          ) : (
+                            <span style={{ fontWeight: 700, color: r.price ? "#e8edf8" : "var(--muted)" }}>{r.price ? rp(gross(r.price)) : "—"}</span>
+                          )}
+                        </td>
+                        <td style={{ fontSize: 12.5, color: noteColor, whiteSpace: "nowrap" }}>{note}</td>
                       </tr>
                     );
                   })}
                   {rows.length === 0 && (
-                    <tr><td colSpan={7} style={{ textAlign: "center", color: "var(--muted)", padding: 24 }}>
+                    <tr><td colSpan={8} style={{ textAlign: "center", color: "var(--muted)", padding: 24 }}>
                       {total === 0 && !q && !onlyMissing ? "No products yet. Upload the product list (SPOS file) first." : "Nothing matches."}
                     </td></tr>
                   )}
@@ -350,7 +372,7 @@ function LogView({ supabase, entry, onClose }: { supabase: ReturnType<typeof cre
         {lines === null ? <Loader center /> : (
           <div className="tbl-wrap" style={{ maxHeight: "65vh" }}>
             <table className="tbl day-tbl">
-              <thead><tr><th>Prod ID</th><th>Product</th><th>Variant</th><th>Stores</th><th className="num">Price before</th><th className="num">New price</th><th className="num">PPN (11%)</th></tr></thead>
+              <thead><tr><th>Prod ID</th><th>Product</th><th>Variant</th><th>Stores</th><th className="num">Price before</th><th className="num">New price</th><th className="num">PPN (11%)</th><th className="num">Total (incl. PPN)</th></tr></thead>
               <tbody>
                 {lines.map((l, i) => (
                   <tr key={i}>
@@ -361,9 +383,10 @@ function LogView({ supabase, entry, onClose }: { supabase: ReturnType<typeof cre
                     <td className="num" style={{ color: "var(--muted)" }}>{l.old_price == null ? "—" : rp(l.old_price)}</td>
                     <td className="num" style={{ fontWeight: 700 }}>{rp(l.new_price)}</td>
                     <td className="num" style={{ color: "var(--muted)" }}>{rp(ppn(Number(l.new_price)))}</td>
+                    <td className="num">{rp(gross(Number(l.new_price)))}</td>
                   </tr>
                 ))}
-                {lines.length === 0 && <tr><td colSpan={7} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>No prices in this entry.</td></tr>}
+                {lines.length === 0 && <tr><td colSpan={8} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>No prices in this entry.</td></tr>}
               </tbody>
             </table>
           </div>

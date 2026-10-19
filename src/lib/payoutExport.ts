@@ -35,11 +35,12 @@ export function summarize(lines: PayoutLine[]): SummaryRow[] {
   return [...m.values()].sort((a, b) => a.product_name.localeCompare(b.product_name) || a.product_id.localeCompare(b.product_id) || a.variant_name.localeCompare(b.variant_name));
 }
 
-export const SUMMARY_HEAD = ["ID Product", "Nama Prod", "ID Variasi", "Variasi", "Qty", "Harga Beli", "PPN (11%)", "Total"] as const;
-export const DETAIL_HEAD = ["No Pesanan", "Store", "Tgl Kirim", "Tgl Withdraw", "ID Prod", "Nama Prod", "ID Variasi", "Variasi", "Qty", "Harga Beli", "PPN (11%)", "Total"] as const;
+export const SUMMARY_HEAD = ["ID Product", "Nama Prod", "ID Variasi", "Variasi", "Qty", "Harga Beli", "Subtotal", "PPN (11%)", "Total (incl. PPN)"] as const;
+export const DETAIL_HEAD = ["No Pesanan", "Store", "Tgl Kirim", "Tgl Withdraw", "ID Prod", "Nama Prod", "ID Variasi", "Variasi", "Qty", "Harga Beli", "Subtotal", "PPN (11%)", "Total (incl. PPN)"] as const;
 
-// Harga Beli includes PPN (12% x DPP 11/12 = 11% effective): the PPN inside an amount is amount - amount / 1.11
-export const ppnOf = (amount: number) => Math.round(Number(amount) - Number(amount) / 1.11);
+// Harga Beli is the price BEFORE PPN: PPN = 11% of it (12% x DPP 11/12), Total = Harga Beli + PPN.
+export const ppnOf = (amount: number) => Math.round(Number(amount) * 0.11);
+export const withPpn = (amount: number) => Math.round(Number(amount)) + ppnOf(amount);
 
 export const dateOrDash = (d: string | null) => (d ? fmtDate(d) : "—");
 
@@ -63,15 +64,15 @@ export function buildPayoutXlsx(b: PayoutBatch, lines: PayoutLine[]): Buffer {
   const summaryRows: (string | number)[][] = [
     ...info, [],
     [...SUMMARY_HEAD],
-    ...sum.map((r) => [r.product_id, r.product_name, r.variant_id, r.variant_name, r.qty, r.harga_beli, ppnOf(r.total), r.total]),
-    ["", "TOTAL", "", "", sum.reduce((a, r) => a + r.qty, 0), "", sum.reduce((a, r) => a + ppnOf(r.total), 0), sum.reduce((a, r) => a + r.total, 0)],
+    ...sum.map((r) => [r.product_id, r.product_name, r.variant_id, r.variant_name, r.qty, r.harga_beli, r.total, ppnOf(r.total), withPpn(r.total)]),
+    ["", "TOTAL", "", "", sum.reduce((a, r) => a + r.qty, 0), "", sum.reduce((a, r) => a + r.total, 0), sum.reduce((a, r) => a + ppnOf(r.total), 0), sum.reduce((a, r) => a + withPpn(r.total), 0)],
   ];
   const detailRows: (string | number)[][] = [
     ...info, [],
     [...DETAIL_HEAD],
     ...lines.map((l) => [l.order_no, l.store_name ?? "", l.shipped_at ? fmtDate(l.shipped_at) : "", l.withdraw_at ? fmtDate(l.withdraw_at) : "",
-      l.product_id ?? "", l.product_name ?? "", l.variant_id ?? "-", l.variant_name ?? "-", Number(l.qty), Number(l.harga_beli), ppnOf(l.total), Number(l.total)]),
-    ["", "", "", "", "", "TOTAL", "", "", lines.reduce((a, l) => a + Number(l.qty), 0), "", lines.reduce((a, l) => a + ppnOf(l.total), 0), lines.reduce((a, l) => a + Number(l.total), 0)],
+      l.product_id ?? "", l.product_name ?? "", l.variant_id ?? "-", l.variant_name ?? "-", Number(l.qty), Number(l.harga_beli), Number(l.total), ppnOf(l.total), withPpn(l.total)]),
+    ["", "", "", "", "", "TOTAL", "", "", lines.reduce((a, l) => a + Number(l.qty), 0), "", lines.reduce((a, l) => a + Number(l.total), 0), lines.reduce((a, l) => a + ppnOf(l.total), 0), lines.reduce((a, l) => a + withPpn(l.total), 0)],
   ];
 
   const wb = XLSX.utils.book_new();
@@ -87,7 +88,7 @@ export function buildPayoutXlsx(b: PayoutBatch, lines: PayoutLine[]): Buffer {
     }
     XLSX.utils.book_append_sheet(wb, ws, name);
   };
-  put("Summary", summaryRows, [4, 5, 6, 7], [16, 48, 16, 20, 8, 14, 12, 16]);
-  put("Detail", detailRows, [8, 9, 10, 11], [18, 16, 13, 14, 14, 48, 16, 20, 8, 14, 12, 16]);
+  put("Summary", summaryRows, [4, 5, 6, 7, 8], [16, 44, 16, 20, 8, 14, 14, 12, 16]);
+  put("Detail", detailRows, [8, 9, 10, 11, 12], [18, 16, 13, 14, 14, 44, 16, 20, 8, 14, 14, 12, 16]);
   return XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Buffer;
 }

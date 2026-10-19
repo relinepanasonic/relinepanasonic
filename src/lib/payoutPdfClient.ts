@@ -1,7 +1,7 @@
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import {
-  summarize, dateOrDash, exportFileName, payoutInfoRows, ppnOf, SUMMARY_HEAD, DETAIL_HEAD,
+  summarize, dateOrDash, exportFileName, payoutInfoRows, ppnOf, withPpn, SUMMARY_HEAD, DETAIL_HEAD,
   type PayoutBatch, type PayoutLine,
 } from "@/lib/payoutExport";
 
@@ -24,10 +24,10 @@ export function buildPayoutPdf(batch: PayoutBatch, lines: PayoutLine[]): jsPDF {
   autoTable(doc, {
     startY: 60, margin: { left: 32, right: 32 }, theme: "grid", headStyles: head, styles: base,
     head: [[...SUMMARY_HEAD]],
-    body: sum.map((r) => [r.product_id || "—", r.product_name, r.variant_id, r.variant_name, rp(r.qty), rp(r.harga_beli), rp(ppnOf(r.total)), rp(r.total)]),
-    foot: [["", "TOTAL", "", "", rp(sum.reduce((a, r) => a + r.qty, 0)), "", rp(sum.reduce((a, r) => a + ppnOf(r.total), 0)), rp(sum.reduce((a, r) => a + r.total, 0))]],
+    body: sum.map((r) => [r.product_id || "—", r.product_name, r.variant_id, r.variant_name, rp(r.qty), rp(r.harga_beli), rp(r.total), rp(ppnOf(r.total)), rp(withPpn(r.total))]),
+    foot: [["", "TOTAL", "", "", rp(sum.reduce((a, r) => a + r.qty, 0)), "", rp(sum.reduce((a, r) => a + r.total, 0)), rp(sum.reduce((a, r) => a + ppnOf(r.total), 0)), rp(sum.reduce((a, r) => a + withPpn(r.total), 0))]],
     footStyles: { ...head }, showFoot: "lastPage",
-    columnStyles: { 4: { halign: "right" }, 5: { halign: "right" }, 6: { halign: "right" }, 7: { halign: "right" } },
+    columnStyles: { 4: { halign: "right" }, 5: { halign: "right" }, 6: { halign: "right" }, 7: { halign: "right" }, 8: { halign: "right" } },
   });
 
   doc.addPage();
@@ -39,10 +39,10 @@ export function buildPayoutPdf(batch: PayoutBatch, lines: PayoutLine[]): jsPDF {
     startY: 60, margin: { left: 32, right: 32 }, theme: "grid", headStyles: head, styles: { ...base, fontSize: 7 },
     head: [[...DETAIL_HEAD]],
     body: lines.map((l) => [l.order_no, l.store_name ?? "", dateOrDash(l.shipped_at), dateOrDash(l.withdraw_at), l.product_id || "—",
-      l.product_name || "—", l.variant_id || "-", l.variant_name || "-", rp(l.qty), rp(l.harga_beli), rp(ppnOf(l.total)), rp(l.total)]),
-    foot: [["", "", "", "", "", "TOTAL", "", "", rp(lines.reduce((a, l) => a + Number(l.qty), 0)), "", rp(lines.reduce((a, l) => a + ppnOf(l.total), 0)), rp(lines.reduce((a, l) => a + Number(l.total), 0))]],
+      l.product_name || "—", l.variant_id || "-", l.variant_name || "-", rp(l.qty), rp(l.harga_beli), rp(l.total), rp(ppnOf(l.total)), rp(withPpn(l.total))]),
+    foot: [["", "", "", "", "", "TOTAL", "", "", rp(lines.reduce((a, l) => a + Number(l.qty), 0)), "", rp(lines.reduce((a, l) => a + Number(l.total), 0)), rp(lines.reduce((a, l) => a + ppnOf(l.total), 0)), rp(lines.reduce((a, l) => a + withPpn(l.total), 0))]],
     footStyles: { ...head }, showFoot: "lastPage",
-    columnStyles: { 8: { halign: "right" }, 9: { halign: "right" }, 10: { halign: "right" }, 11: { halign: "right" } },
+    columnStyles: { 8: { halign: "right" }, 9: { halign: "right" }, 10: { halign: "right" }, 11: { halign: "right" }, 12: { halign: "right" } },
   });
 
   const pages = doc.getNumberOfPages();

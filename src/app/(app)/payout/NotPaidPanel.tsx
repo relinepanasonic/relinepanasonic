@@ -9,7 +9,7 @@ import { NoVendors, VendorBar, downloadPayout, num, rp, useVendors, type Supabas
 import { downloadPayoutPdf } from "@/lib/payoutPdfClient";
 import DateRangePicker from "@/components/DateRangePicker";
 import MultiSelect from "@/components/MultiSelect";
-import type { PayoutBatch, PayoutLine } from "@/lib/payoutExport";
+import { ppnOf, withPpn, type PayoutBatch, type PayoutLine } from "@/lib/payoutExport";
 
 // Not Paid: completed order lines (Order Completed) of a VENDOR's stores that were not paid yet.
 // Tick lines (or "Check All") and press "Pay to Vendor" (top right): the lines are saved as a payout and the XLS + PDF
@@ -62,7 +62,8 @@ export default function NotPaidPanel({ supabase, clientId, onPaid }: {
   const pickedLines = useMemo(() => (rows || []).filter((r) => picked.has(keyOf(r))), [rows, picked]);
   const pickedQty = pickedLines.reduce((a, r) => a + Number(r.qty), 0);
   const pickedTotal = pickedLines.reduce((a, r) => a + Number(r.total), 0);
-  const pickedPpn = Math.round(pickedTotal - pickedTotal / 1.11);   // Harga Beli includes PPN (11% effective)
+  const pickedPpn = ppnOf(pickedTotal);   // Harga Beli excludes PPN: 11% comes on top
+  const pickedGross = pickedTotal + pickedPpn;
 
   function toggle(r: Line) {
     setPicked((p) => { const n = new Set(p); const k = keyOf(r); if (n.has(k)) n.delete(k); else n.add(k); return n; });
@@ -84,7 +85,7 @@ export default function NotPaidPanel({ supabase, clientId, onPaid }: {
 
   async function pay() {
     if (!pickedLines.length || busy || !v.vendor) return;
-    if (!window.confirm(`Pay ${v.vendor.name}\n${pickedLines.length} lines · Qty ${num(pickedQty)}\nTotal ${rp(pickedTotal)} (DPP ${rp(pickedTotal - pickedPpn)} + PPN 11% ${rp(pickedPpn)})\n\nSave this payout and generate the XLS + PDF?`)) return;
+    if (!window.confirm(`Pay ${v.vendor.name}\n${pickedLines.length} lines · Qty ${num(pickedQty)}\nSubtotal ${rp(pickedTotal)} + PPN 11% ${rp(pickedPpn)} = Total ${rp(pickedGross)}\n\nSave this payout and generate the XLS + PDF?`)) return;
     setBusy(true); setErr(""); setDone(null);
     const { data, error } = await supabase.rpc("payout_create", {
       p_client_id: clientId, p_vendor: v.vendorId,
@@ -114,7 +115,7 @@ export default function NotPaidPanel({ supabase, clientId, onPaid }: {
         </div>
         <div className="fld" style={{ minWidth: 220, flex: 1 }}><label>Search</label><input type="text" placeholder="Store / Order No. / Product ID / Product / Variant" value={search} onChange={(e) => setSearch(e.target.value)} /></div>
         <button className="btn-gold" onClick={pay} disabled={busy || !pickedLines.length} style={{ padding: "11px 26px", fontSize: 14.5 }}>
-          {busy ? "Saving…" : pickedLines.length ? `Pay to Vendor · ${pickedLines.length} lines · ${rp(pickedTotal)} (PPN ${rp(pickedPpn)})` : "Pay to Vendor"}
+          {busy ? "Saving…" : pickedLines.length ? `Pay to Vendor · ${pickedLines.length} lines · ${rp(pickedGross)} (incl. PPN ${rp(pickedPpn)})` : "Pay to Vendor"}
         </button>
       </VendorBar>
 
@@ -138,7 +139,7 @@ export default function NotPaidPanel({ supabase, clientId, onPaid }: {
             <thead><tr>
               <th style={{ width: 36 }}><input type="checkbox" checked={allChecked} onChange={checkAll} disabled={!payableShown.length} title="Check all" /></th>
               {H("Order Completed", "completed_at")}{H("Store name", "store_name")}{H("No Pesanan", "order_no")}{H("Product ID", "product_id")}{H("Product", "product_name")}
-              {H("Variant ID", "variant_id")}{H("Variant", "variant_name")}{H("Qty", "qty", true)}{H("Harga Beli (per unit)", "harga_beli", true)}<th className="num" title="PPN inside the total (price incl. PPN: total ÷ 1.11 = DPP)">PPN (11%)</th>{H("Total (Qty × Harga Beli)", "total", true)}
+              {H("Variant ID", "variant_id")}{H("Variant", "variant_name")}{H("Qty", "qty", true)}{H("Harga Beli (per unit)", "harga_beli", true)}{H("Subtotal (Qty × Harga Beli)", "total", true)}<th className="num">PPN (11%)</th><th className="num">Total (incl. PPN)</th>
             </tr></thead>
             <tbody>
               {sortedData.slice(0, limit).map((r) => {
@@ -155,12 +156,13 @@ export default function NotPaidPanel({ supabase, clientId, onPaid }: {
                     <td>{r.variant_name && r.variant_name !== "-" ? r.variant_name : "—"}</td>
                     <td className="num">{num(r.qty)}</td>
                     <td className="num" style={r.reason === "no_price" ? { color: "#f87171" } : undefined}>{r.harga_beli == null ? (r.reason === "no_id" ? "—" : "no price") : rp(r.harga_beli)}</td>
-                    <td className="num" style={{ color: "var(--muted)" }}>{r.payable ? rp(Math.round(Number(r.total) - Number(r.total) / 1.11)) : "—"}</td>
                     <td className="num">{r.payable ? rp(r.total) : "—"}</td>
+                    <td className="num" style={{ color: "var(--muted)" }}>{r.payable ? rp(ppnOf(r.total)) : "—"}</td>
+                    <td className="num" style={{ fontWeight: 700 }}>{r.payable ? rp(withPpn(r.total)) : "—"}</td>
                   </tr>
                 );
               })}
-              {sortedData.length === 0 && <tr><td colSpan={12} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>Nothing to pay — every completed order of this vendor is paid.</td></tr>}
+              {sortedData.length === 0 && <tr><td colSpan={13} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>Nothing to pay — every completed order of this vendor is paid.</td></tr>}
             </tbody>
           </table>
           {sortedData.length > limit && (
