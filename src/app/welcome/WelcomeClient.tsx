@@ -8,7 +8,7 @@ const COPY: Record<WorkspaceId, { badge: string; badgeTone: "live" | "new"; line
   gobel: {
     badge: "LIVE",
     badgeTone: "live",
-    lines: ["Dealer network dashboard", "Sales · Ads · Baseline · Etalase", "Upload, Core List, Calculator, BOD report"],
+    lines: ["Dealer network dashboard", "Sales · Ads · Baseline · Etalase", "Upload, Connector, Calculator, BOD report"],
     note: "Existing data",
   },
   light: {

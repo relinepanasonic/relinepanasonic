@@ -20,7 +20,7 @@ const ID_DICT: Record<string, string> = {
   "Price Calculator": "Kalkulator Harga",
   "Market Place Fee": "Biaya Marketplace",
   "Upload Data": "Unggah Data",
-  "Core List": "Daftar Inti",
+  "Connector": "Konektor",
   "Accounting": "Akuntansi",
   "Users": "Pengguna",
   "Invoice": "Faktur",

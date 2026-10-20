@@ -66,7 +66,7 @@ export function FileCell({ batchId, kind, name, busy, onUpload, onRemove, target
 export type Vendor = { id: string; name: string; stores: string[] };
 export type VendorStore = { store_name: string; city: string | null; vendor_id: string | null };
 
-// Vendors (Core List): one vendor has many stores, one store has one vendor. Payout and Harga Beli work per vendor.
+// Vendors (Connector): one vendor has many stores, one store has one vendor. Payout and Harga Beli work per vendor.
 export function useVendors(supabase: Supabase, clientId: string) {
   const [vendors, setVendors] = useState<Vendor[] | null>(null);
   const [stores, setStores] = useState<VendorStore[]>([]);
@@ -105,7 +105,7 @@ export function VendorBar({ v, children, showStores = true }: { v: ReturnType<ty
         <div style={{ fontSize: 12.5, color: "var(--muted)", paddingBottom: 10, maxWidth: 360 }}>
           {v.vendor.stores.length
             ? <>Stores: <b style={{ color: "#cdd9f0" }}>{v.vendor.stores.join(", ")}</b></>
-            : <span style={{ color: "#fbbf24" }}>No store yet — add its stores in Core List.</span>}
+            : <span style={{ color: "#fbbf24" }}>No store yet — add its stores in Connector.</span>}
         </div>
       )}
       {children}
@@ -116,7 +116,7 @@ export function VendorBar({ v, children, showStores = true }: { v: ReturnType<ty
 export function NoVendors() {
   return (
     <div style={{ textAlign: "center", color: "var(--muted)", padding: 30 }}>
-      No vendors yet. Create a vendor and link its stores in <b style={{ color: "#cdd9f0" }}>Core List → Vendors</b>.
+      No vendors yet. Create a vendor and link its stores in <b style={{ color: "#cdd9f0" }}>Connector</b>.
     </div>
   );
 }

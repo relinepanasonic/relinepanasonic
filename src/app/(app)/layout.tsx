@@ -18,7 +18,7 @@ const NAV: { href: string; icon: string; label: string; short?: string; roles?: 
   { href: "/payout",    icon: "💸", label: "Payout", short: "Payout", roles: ["superadmin", "client_admin"] },
   { href: "/calc",      icon: "🧮", label: "Price Calculator", short: "Calc",    roles: ["superadmin", "branch_manager", "pic_panasonic", "sales"] },
   { href: "/upload",    icon: "⬆️", label: "Upload Data", short: "Upload",         roles: ["superadmin", "client_admin"] },
-  { href: "/core",      icon: "🗂️", label: "Core List", short: "Core",          roles: ["superadmin", "client_admin", "advertiser"] },
+  { href: "/core",      icon: "🗂️", label: "Connector", short: "Connector",          roles: ["superadmin", "client_admin", "advertiser"] },
   { href: "/users",     icon: "👥", label: "Users",               roles: ["superadmin", "client_admin"] },
 ];
 
@@ -34,7 +34,7 @@ const ROLE_LABEL: Record<Role, string> = {
 
 // Mobile bottom-nav priority. Someone who can see up to 5 pages gets them all in
 // the bar; anyone with more gets the first 4 below plus a "More" sheet that
-// lists the rest (Calc, Upload, Reports, Core List, Users, ...).
+// lists the rest (Calc, Upload, Reports, Connector, Users, ...).
 const BOTTOM_PRIORITY = ["/", "/ads", "/operational", "/finance", "/payout", "/calc", "/upload", "/core", "/users"];
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {

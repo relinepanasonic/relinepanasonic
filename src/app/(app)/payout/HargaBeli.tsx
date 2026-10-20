@@ -208,7 +208,7 @@ export default function HargaBeli({ clientId }: { clientId: string }) {
       {view === "prices" ? (
         ven.vendors && ven.vendors.length === 0 ? <NoVendors />
         : !ven.vendorId ? <div style={{ textAlign: "center", color: "var(--muted)", padding: 30 }}>Pick a vendor to see and set its prices.</div>
-        : !repStore ? <div style={{ textAlign: "center", color: "#fbbf24", padding: 30 }}>This vendor has no store yet — add its stores in Core List → Vendors.</div>
+        : !repStore ? <div style={{ textAlign: "center", color: "#fbbf24", padding: 30 }}>This vendor has no store yet — add its stores in Connector.</div>
         : loading || rows === null ? <Loader center /> : (
           <>
             {editFrom && (

@@ -330,8 +330,8 @@ export default function UsersPage() {
             { role: "pic_panasonic", desc: "Dashboard (city) · Price Calculator · Market Place Fee" },
             { role: "sales",         desc: "Dashboard (selected dealers) · Price Calculator · Market Place Fee" },
             { role: "branch_manager",desc: "Dashboard (store) · Product · Store · Price Calculator · Market Fee" },
-            { role: "client_admin",  desc: "Upload Data · Core List" },
-            { role: "advertiser",    desc: "Dashboard (all) · Ads Performance · Core List" },
+            { role: "client_admin",  desc: "Upload Data · Connector" },
+            { role: "advertiser",    desc: "Dashboard (all) · Ads Performance · Connector" },
           ].map(({ role, desc }) => (
             <div key={role} style={{ display: "flex", alignItems: "center", gap: 10 }}>
               <RolePill role={role} />

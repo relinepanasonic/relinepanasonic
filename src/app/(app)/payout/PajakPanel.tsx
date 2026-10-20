@@ -14,7 +14,7 @@ import { FILE_LABEL, FileCell, NoVendors, VendorBar, fileNameOf, removePayoutFil
 //   PPh 22 collected by Shopee at 0.5% of gross turnover excl. PPN (PMK 37/2025), from 1 Oct 2026.
 // Sub pages:
 //   Rekap         per masa pajak and store (with the month total): PPN Keluaran - PPN Masukan = PPN kurang / (lebih) bayar, PPh 22.
-//   Everything can be shown for one company (its stores; Core List -> Companies).
+//   Everything can be shown for one company (its stores; Connector).
 //   PPN Masukan   PPN on buying from vendors: one row per payout per store, created automatically (fill in the Nomor Faktur).
 //   PPN Keluaran  PPN on the Shopee sales, automatic from Order Completed per store per month (Harga Jual incl. PPN:
 //                 DPP = Harga Jual / 1.11, PPN = Harga Jual - DPP), plus typed-in rows.
@@ -31,6 +31,7 @@ const masa = (p: string) => { const d = new Date(p + "T00:00:00"); return d.toLo
 const pct = (r: number) => `${(Number(r) * 100).toLocaleString("id-ID", { maximumFractionDigits: 2 })}%`;
 
 type Company = { id: string; name: string; npwp: string | null; stores: string[] };
+type Vend = { id: string; company_id: string | null; stores: string[] };
 
 export default function PajakPanel({ supabase, clientId, onOpen }: { supabase: Supabase; clientId: string; onOpen: (batchId: string) => void }) {
   const [tab, setTab] = useState<"rekap" | Kind | "docs">("rekap");
@@ -40,7 +41,8 @@ export default function PajakPanel({ supabase, clientId, onOpen }: { supabase: S
     if (!clientId) return;
     (async () => {
       const { data } = await supabase.rpc("company_list", { p_client_id: clientId });
-      const list = ((data as { companies: Company[] } | null)?.companies) || [];
+      const d = data as { companies: Omit<Company, "stores">[]; vendors: Vend[] } | null;
+      const list: Company[] = (d?.companies || []).map((c) => ({ ...c, stores: (d?.vendors || []).filter((v) => v.company_id === c.id).flatMap((v) => v.stores) }));
       setCompanies(list);
       if (list.length === 1) setCompanyId(list[0].id);
     })();
@@ -62,10 +64,10 @@ export default function PajakPanel({ supabase, clientId, onOpen }: { supabase: S
         {company && (
           <div style={{ fontSize: 12.5, color: "var(--muted)", paddingBottom: 10 }}>
             {company.npwp ? <>NPWP <b style={{ color: "#cdd9f0", fontFamily: "monospace" }}>{company.npwp}</b> · </> : null}
-            {company.stores.length ? <>Stores: <b style={{ color: "#cdd9f0" }}>{company.stores.join(", ")}</b></> : <span style={{ color: "#fbbf24" }}>No store yet — link its stores in Core List → Companies.</span>}
+            {company.stores.length ? <>Stores: <b style={{ color: "#cdd9f0" }}>{company.stores.join(", ")}</b></> : <span style={{ color: "#fbbf24" }}>No store yet — give it vendors with stores in Connector.</span>}
           </div>
         )}
-        {companies && companies.length === 0 && <div style={{ fontSize: 12.5, color: "#fbbf24", paddingBottom: 10 }}>Add your companies and link their stores in Core List → Companies.</div>}
+        {companies && companies.length === 0 && <div style={{ fontSize: 12.5, color: "#fbbf24", paddingBottom: 10 }}>Add your companies and their vendors in Connector.</div>}
       </div>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", margin: "8px 0 14px" }}>
         {([["rekap", "Rekap"], ["ppn_masukan", "PPN Masukan"], ["ppn_keluaran", "PPN Keluaran"], ["pph22", "PPh 22"], ["docs", "Dokumen"]] as const).map(([k, l]) => (
