@@ -23,7 +23,7 @@ import { FILE_LABEL, FileCell, NoVendors, VendorBar, fileNameOf, removePayoutFil
 type Kind = "ppn_masukan" | "ppn_keluaran" | "pph22";
 type TaxRow = {
   id: string; kind: Kind; period: string; tx_date: string | null; store_name: string | null; counterparty: string | null; doc_no: string | null;
-  dpp: number; rate: number; amount: number; total: number; source: "manual" | "payout" | "order"; payout_no?: string | null; note: string | null;
+  dpp: number; rate: number; amount: number; total: number; source: "manual" | "payout" | "order" | "earning"; payout_no?: string | null; note: string | null;
 };
 const KIND_LABEL: Record<Kind, string> = { ppn_masukan: "PPN Masukan", ppn_keluaran: "PPN Keluaran", pph22: "PPh 22" };
 const DEFAULT_RATE: Record<Kind, number> = { ppn_masukan: 0.11, ppn_keluaran: 0.11, pph22: 0.005 };
@@ -82,8 +82,8 @@ export default function PajakPanel({ supabase, clientId, onOpen }: { supabase: S
 }
 
 /* ── Rekap per masa pajak, per store ── */
-type Sum = { period: string; store_name: string; keluaran: number; masukan: number; ppn_net: number; pph22: number; dpp_keluaran: number; dpp_masukan: number; omzet_pph22: number };
-type SumKey = "dpp_keluaran" | "keluaran" | "dpp_masukan" | "masukan" | "ppn_net" | "omzet_pph22" | "pph22";
+type Sum = { period: string; store_name: string; keluaran: number; masukan: number; ppn_net: number; pph22: number; dpp_keluaran: number; dpp_masukan: number };
+type SumKey = "dpp_keluaran" | "keluaran" | "dpp_masukan" | "masukan" | "ppn_net" | "pph22";
 function Rekap({ supabase, clientId, companyId }: { supabase: Supabase; clientId: string; companyId: string }) {
   const [year, setYear] = useState(new Date().getFullYear());
   const [rows, setRows] = useState<Sum[] | null>(null);
@@ -107,7 +107,7 @@ function Rekap({ supabase, clientId, companyId }: { supabase: Supabase; clientId
       <td className="num">{rp(add(list, "dpp_keluaran"))}</td><td className="num">{rp(add(list, "keluaran"))}</td>
       <td className="num">{rp(add(list, "dpp_masukan"))}</td><td className="num">{rp(add(list, "masukan"))}</td>
       <td className="num">{net(add(list, "ppn_net"))}</td>
-      <td className="num">{rp(add(list, "omzet_pph22"))}</td><td className="num">{rp(add(list, "pph22"))}</td>
+      <td className="num">{rp(add(list, "pph22"))}</td>
     </>
   );
   return (
@@ -125,7 +125,7 @@ function Rekap({ supabase, clientId, companyId }: { supabase: Supabase; clientId
           <table className="tbl day-tbl">
             <thead><tr>
               <th>Masa Pajak</th><th>Store</th><th className="num">DPP Keluaran</th><th className="num">PPN Keluaran</th><th className="num">DPP Masukan</th><th className="num">PPN Masukan</th>
-              <th className="num">PPN Kurang / (Lebih) Bayar</th><th className="num">Omzet (PPh 22)</th><th className="num">PPh 22 Dipungut</th>
+              <th className="num">PPN Kurang / (Lebih) Bayar</th><th className="num">PPh 22 Dipungut</th>
             </tr></thead>
             <tbody>
               {months.map(([period, list]) => (
@@ -149,7 +149,7 @@ function Rekap({ supabase, clientId, companyId }: { supabase: Supabase; clientId
                   <td>TOTAL {year}</td><td></td>{cells(rows)}
                 </tr>
               )}
-              {rows.length === 0 && <tr><td colSpan={9} style={{ textAlign: "center", color: "var(--muted)", padding: 24 }}>No tax rows in {year} yet.</td></tr>}
+              {rows.length === 0 && <tr><td colSpan={8} style={{ textAlign: "center", color: "var(--muted)", padding: 24 }}>No tax rows in {year} yet.</td></tr>}
             </tbody>
           </table>
         </div>
@@ -220,11 +220,11 @@ function TaxTable({ supabase, clientId, kind, onOpen, companyId, companyStores }
                   <td className="num">{rp(r.dpp)}</td><td className="num">{pct(r.rate)}</td><td className="num" style={{ fontWeight: 700 }}>{rp(r.amount)}</td>
                   {kind !== "pph22" && <td className="num">{rp(r.total)}</td>}
                   <td style={{ fontSize: 12.5 }}>
-                    {r.source === "payout" && r.payout_no ? <span style={{ color: "var(--gold)" }}>Payout {r.payout_no}</span> : r.source === "order" ? "Order Completed" : "Manual"}
+                    {r.source === "payout" && r.payout_no ? <span style={{ color: "var(--gold)" }}>Payout {r.payout_no}</span> : r.source === "order" ? "Order Completed" : r.source === "earning" ? "Earning" : "Manual"}
                   </td>
                   <td style={{ maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", fontSize: 12.5 }} title={r.note || ""}>{r.note || ""}</td>
                   <td style={{ whiteSpace: "nowrap" }}>
-                    {r.source !== "order" && <button className="btn-ghost" onClick={() => setEdit(r)}>Edit</button>}{" "}
+                    {r.source !== "order" && r.source !== "earning" && <button className="btn-ghost" onClick={() => setEdit(r)}>Edit</button>}{" "}
                     {r.source === "manual" && <button className="btn-ghost" onClick={() => del(r)} style={{ color: "#f87171" }}>Delete</button>}
                   </td>
                 </tr>
