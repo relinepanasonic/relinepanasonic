@@ -40,6 +40,9 @@ async function getCachedJwks(): Promise<{ keys: unknown[] } | null> {
 }
 
 export async function proxy(request: NextRequest) {
+  // The ERP feed authenticates itself with a bearer key (see api/erp/upload-log); never send it to /login.
+  if (request.nextUrl.pathname.startsWith("/api/erp/")) return NextResponse.next();
+
   let response = NextResponse.next({ request });
 
   const supabase = createServerClient(
