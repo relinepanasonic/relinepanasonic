@@ -22,7 +22,7 @@ type Row = {
 
 const rp = (n: number | null | undefined) => n == null ? "—" : "Rp " + Math.round(n).toLocaleString("id-ID");
 const cell: React.CSSProperties = { padding: "7px 10px", fontSize: 12.5, whiteSpace: "nowrap" };
-const wrapCell: React.CSSProperties = { padding: "7px 10px", fontSize: 12.5, minWidth: 180, maxWidth: 320 };
+const wrapCell: React.CSSProperties = { padding: "7px 10px", fontSize: 12.5, width: 260, minWidth: 220, maxWidth: 300, whiteSpace: "normal", overflowWrap: "anywhere", lineHeight: 1.35, verticalAlign: "top" };
 const mono: React.CSSProperties = { ...cell, fontFamily: "monospace", fontSize: 12 };
 
 // "Dibatalkan oleh Pembeli. Alasan: Perlu mengubah Voucher" -> who + why
