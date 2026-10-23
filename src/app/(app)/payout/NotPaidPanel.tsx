@@ -36,6 +36,7 @@ export default function NotPaidPanel({ supabase, clientId, onPaid }: {
   const [search, setSearch] = useState("");
   const [stores, setStores] = useState<string[]>([]);   // none ticked = every store of the vendor
   const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [shopee, setShopee] = useState<"withdrawn" | "all" | "waiting">("withdrawn");   // Earning: only products Shopee has released (withdrawn)
   const [limit, setLimit] = useState(PAGE);
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState<{ id: string; payout_no: string; lines: number; total: number } | null>(null);
@@ -53,9 +54,10 @@ export default function NotPaidPanel({ supabase, clientId, onPaid }: {
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return (rows || []).filter((r) => (!stores.length || stores.includes(r.store_name))).filter((r) => !q || r.order_no.toLowerCase().includes(q) || (r.product_name || "").toLowerCase().includes(q)
+    return (rows || []).filter((r) => shopee === "all" || (shopee === "waiting" ? r.earn_status === "waiting" : r.earn_status !== "waiting"))
+      .filter((r) => (!stores.length || stores.includes(r.store_name))).filter((r) => !q || r.order_no.toLowerCase().includes(q) || (r.product_name || "").toLowerCase().includes(q)
       || (r.product_id || "").toLowerCase().includes(q) || (r.variant_name || "").toLowerCase().includes(q) || r.store_name.toLowerCase().includes(q));
-  }, [rows, search, stores]);
+  }, [rows, search, stores, shopee]);
   const { sortedData, sortConfig, requestSort } = useTableSort<Line>(filtered);
 
   const payableShown = useMemo(() => sortedData.filter((r) => r.payable), [sortedData]);
@@ -111,6 +113,13 @@ export default function NotPaidPanel({ supabase, clientId, onPaid }: {
         <div className="fld"><label>Stores</label>
           <MultiSelect options={v.vendor?.stores || []} value={stores} onChange={setStores} allLabel="All stores" unit="stores" />
         </div>
+        <div className="fld"><label>Shopee (Earning)</label>
+          <select value={shopee} onChange={(e) => { setShopee(e.target.value as "withdrawn" | "all" | "waiting"); setPicked(new Set()); }}>
+            <option value="withdrawn">Withdrawn only ({(rows || []).filter((r) => r.earn_status !== "waiting").length})</option>
+            <option value="waiting">Waiting for Earning ({(rows || []).filter((r) => r.earn_status === "waiting").length})</option>
+            <option value="all">All ({(rows || []).length})</option>
+          </select>
+        </div>
         <div className="fld"><label>Order Completed</label>
           <DateRangePicker from={from} to={to} onChange={(a, b) => { setFrom(a); setTo(b); }} />
         </div>
@@ -164,7 +173,7 @@ export default function NotPaidPanel({ supabase, clientId, onPaid }: {
                   </tr>
                 );
               })}
-              {sortedData.length === 0 && <tr><td colSpan={14} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>Nothing to pay — every completed order of this vendor is paid.</td></tr>}
+              {sortedData.length === 0 && <tr><td colSpan={14} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>Nothing to pay here — {shopee === "withdrawn" ? "no completed order is withdrawn from Shopee and unpaid (check Waiting for Earning)" : "every completed order of this vendor is paid"}.</td></tr>}
             </tbody>
           </table>
           {sortedData.length > limit && (
