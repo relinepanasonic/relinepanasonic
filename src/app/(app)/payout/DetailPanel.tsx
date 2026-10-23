@@ -6,7 +6,7 @@ import Loader from "@/components/Loader";
 import { fmtDate } from "@/lib/dates";
 import { dateOrDash, ppnOf, summarize, withPpn, type PayoutBatch, type PayoutLine } from "@/lib/payoutExport";
 import { downloadPayoutPdf } from "@/lib/payoutPdfClient";
-import { FILE_LABEL, FileCell, NoVendors, VendorBar, downloadPayout, fileNameOf, num, removePayoutFile, rp, tabBtn, uploadPayoutFile, useVendors, type FileKind, type Supabase } from "./shared";
+import { FILE_LABEL, FileCell, NoVendors, PartialBadge, VendorBar, downloadPayout, fileNameOf, num, removePayoutFile, rp, tabBtn, uploadPayoutFile, useVendors, type FileKind, type Supabase } from "./shared";
 
 // Detail Payout: the payout register, one row per payout:
 //   Date Payout | No Payout | Vendor | Store name | Total Payout | Proof (transfer proof) | Receipt | Faktur Pajak | Bukti Potong | Status
@@ -164,7 +164,7 @@ function PayoutView({ supabase, batchId, onClose }: { supabase: Supabase; batchI
                         <td style={{ fontFamily: "monospace", fontSize: 12.5 }}>{l.product_id || "—"}</td>
                         <td style={{ maxWidth: 380, overflow: "hidden", textOverflow: "ellipsis" }} title={l.product_name || ""}>{l.product_name}</td>
                         <td style={{ fontFamily: "monospace", fontSize: 12.5 }}>{l.variant_id || "-"}</td><td>{l.variant_name || "-"}</td>
-                        <td className="num">{num(l.qty)}</td><td className="num">{rp(l.harga_beli)}</td><td className="num">{rp(l.total)}</td><td className="num" style={{ color: "var(--muted)" }}>{rp(ppnOf(l.total))}</td><td className="num">{rp(withPpn(l.total))}</td>
+                        <td className="num">{num(l.qty)}<PartialBadge ordered={l.ordered_qty} qty={l.qty} /></td><td className="num">{rp(l.harga_beli)}</td><td className="num">{rp(l.total)}</td><td className="num" style={{ color: "var(--muted)" }}>{rp(ppnOf(l.total))}</td><td className="num">{rp(withPpn(l.total))}</td>
                       </tr>
                     ))}
                   </tbody>

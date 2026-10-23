@@ -14,6 +14,7 @@ export type PayoutLine = {
   order_no: string; shipped_at: string | null; withdraw_at: string | null; completed_at: string | null;
   product_id: string | null; product_name: string | null; variant_id: string | null; variant_name: string | null;
   qty: number; harga_beli: number; total: number;
+  ordered_qty?: number | null; partial?: boolean;
 };
 export type SummaryRow = {
   product_id: string; product_name: string; variant_id: string; variant_name: string; qty: number; harga_beli: number; total: number;

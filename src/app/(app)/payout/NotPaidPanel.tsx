@@ -5,7 +5,7 @@ import Loader from "@/components/Loader";
 import SortableHeader from "@/components/SortableHeader";
 import { useTableSort } from "@/hooks/useTableSort";
 import { fmtDate } from "@/lib/dates";
-import { NoVendors, VendorBar, downloadPayout, num, rp, useVendors, type Supabase } from "./shared";
+import { EarnChip, NoVendors, PartialBadge, VendorBar, downloadPayout, num, rp, useVendors, type Supabase } from "./shared";
 import { downloadPayoutPdf } from "@/lib/payoutPdfClient";
 import DateRangePicker from "@/components/DateRangePicker";
 import MultiSelect from "@/components/MultiSelect";
@@ -19,6 +19,7 @@ type Line = {
   completed_at: string; store_name: string; order_no: string; name_key: string; var_key: string; product_id: string | null; product_name: string;
   variant_id: string | null; variant_name: string; qty: number; harga_beli: number | null; total: number; payable: boolean;
   reason: "no_id" | "no_price" | null;
+  ordered_qty: number; returned_qty: number; partial: boolean; earn_status: string;
 };
 const PAGE = 300;
 const keyOf = (l: Pick<Line, "store_name" | "order_no" | "name_key" | "var_key">) => `${l.store_name}||${l.order_no}||${l.name_key}||${l.var_key}`;
@@ -139,7 +140,7 @@ export default function NotPaidPanel({ supabase, clientId, onPaid }: {
             <thead><tr>
               <th style={{ width: 36 }}><input type="checkbox" checked={allChecked} onChange={checkAll} disabled={!payableShown.length} title="Check all" /></th>
               {H("Order Completed", "completed_at")}{H("Store name", "store_name")}{H("No Pesanan", "order_no")}{H("Product ID", "product_id")}{H("Product", "product_name")}
-              {H("Variant ID", "variant_id")}{H("Variant", "variant_name")}{H("Qty", "qty", true)}{H("Harga Beli (per unit)", "harga_beli", true)}{H("Subtotal (Qty × Harga Beli)", "total", true)}<th className="num">PPN (11%)</th><th className="num">Total (incl. PPN)</th>
+              {H("Variant ID", "variant_id")}{H("Variant", "variant_name")}{H("Qty", "qty", true)}{H("Shopee (Earning)", "earn_status")}{H("Harga Beli (per unit)", "harga_beli", true)}{H("Subtotal (Qty × Harga Beli)", "total", true)}<th className="num">PPN (11%)</th><th className="num">Total (incl. PPN)</th>
             </tr></thead>
             <tbody>
               {sortedData.slice(0, limit).map((r) => {
@@ -154,7 +155,8 @@ export default function NotPaidPanel({ supabase, clientId, onPaid }: {
                     <td style={{ maxWidth: 380, overflow: "hidden", textOverflow: "ellipsis" }} title={r.product_name}>{r.product_name}</td>
                     <td style={{ fontFamily: "monospace", fontSize: 12.5 }}>{r.variant_id && r.variant_id !== "-" ? r.variant_id : "—"}</td>
                     <td>{r.variant_name && r.variant_name !== "-" ? r.variant_name : "—"}</td>
-                    <td className="num">{num(r.qty)}</td>
+                    <td className="num">{num(r.qty)}<PartialBadge ordered={r.ordered_qty} qty={r.qty} /></td>
+                    <td><EarnChip status={r.earn_status} /></td>
                     <td className="num" style={r.reason === "no_price" ? { color: "#f87171" } : undefined}>{r.harga_beli == null ? (r.reason === "no_id" ? "—" : "no price") : rp(r.harga_beli)}</td>
                     <td className="num">{r.payable ? rp(r.total) : "—"}</td>
                     <td className="num" style={{ color: "var(--muted)" }}>{r.payable ? rp(ppnOf(r.total)) : "—"}</td>
@@ -162,7 +164,7 @@ export default function NotPaidPanel({ supabase, clientId, onPaid }: {
                   </tr>
                 );
               })}
-              {sortedData.length === 0 && <tr><td colSpan={13} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>Nothing to pay — every completed order of this vendor is paid.</td></tr>}
+              {sortedData.length === 0 && <tr><td colSpan={14} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>Nothing to pay — every completed order of this vendor is paid.</td></tr>}
             </tbody>
           </table>
           {sortedData.length > limit && (

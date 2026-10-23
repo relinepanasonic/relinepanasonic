@@ -3,9 +3,10 @@
 import { useEffect, useRef, useState } from "react";
 
 // A dropdown where several options can be ticked. Nothing ticked = all.
-export default function MultiSelect({ options, value, onChange, allLabel = "All", unit = "selected", minWidth = 200 }: {
-  options: string[]; value: string[]; onChange: (v: string[]) => void; allLabel?: string; unit?: string; minWidth?: number;
+export default function MultiSelect({ options, value, onChange, allLabel = "All", unit = "selected", minWidth = 200, labels }: {
+  options: string[]; value: string[]; onChange: (v: string[]) => void; allLabel?: string; unit?: string; minWidth?: number; labels?: Record<string, string>;
 }) {
+  const show = (o: string) => labels?.[o] ?? o;
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -15,7 +16,7 @@ export default function MultiSelect({ options, value, onChange, allLabel = "All"
     return () => document.removeEventListener("mousedown", close);
   }, [open]);
 
-  const label = value.length === 0 || value.length === options.length ? allLabel : value.length === 1 ? value[0] : `${value.length} ${unit}`;
+  const label = value.length === 0 || value.length === options.length ? allLabel : value.length === 1 ? show(value[0]) : `${value.length} ${unit}`;
   const toggle = (o: string) => onChange(value.includes(o) ? value.filter((x) => x !== o) : [...value, o]);
 
   return (
@@ -35,7 +36,7 @@ export default function MultiSelect({ options, value, onChange, allLabel = "All"
           </div>
           {options.map((o) => (
             <label key={o} style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 8px", borderRadius: 6, cursor: "pointer", fontSize: 13, color: "#e8edf8" }}>
-              <input type="checkbox" checked={value.includes(o)} onChange={() => toggle(o)} /> {o}
+              <input type="checkbox" checked={value.includes(o)} onChange={() => toggle(o)} /> {show(o)}
             </label>
           ))}
           {options.length === 0 && <div style={{ color: "var(--muted)", fontSize: 12.5, padding: 8 }}>Nothing to choose</div>}

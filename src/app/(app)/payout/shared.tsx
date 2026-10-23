@@ -7,6 +7,28 @@ export type Supabase = ReturnType<typeof createClient>;
 export const rp = (n: number | null | undefined) => "Rp " + Math.round(Number(n) || 0).toLocaleString("id-ID");
 export const num = (n: number | null | undefined) => Math.round(Number(n) || 0).toLocaleString("id-ID");
 
+// "Partial": only some of the ordered units are paid (the rest was returned / refunded)
+export function PartialBadge({ ordered, qty, title }: { ordered: number | null | undefined; qty: number; title?: string }) {
+  if (ordered == null || !(Number(ordered) > Number(qty))) return null;
+  return (
+    <span title={title || `Only ${num(qty)} of ${num(ordered)} ordered units are paid — the rest was returned or refunded`}
+      style={{ marginLeft: 8, padding: "2px 8px", borderRadius: 999, fontSize: 10.5, fontWeight: 800, letterSpacing: ".03em", whiteSpace: "nowrap",
+        color: "#fbbf24", background: "rgba(251,191,36,.12)", border: "1px solid rgba(251,191,36,.45)" }}>
+      PARTIAL {num(qty)}/{num(ordered)}
+    </span>
+  );
+}
+
+// What Shopee paid for this product line (Earning): paid | partial | refunded | waiting
+export function EarnChip({ status }: { status: string | null | undefined }) {
+  const m: Record<string, { t: string; c: string }> = {
+    paid: { t: "Paid by Shopee", c: "#86efac" }, partial: { t: "Partly refunded", c: "#fbbf24" },
+    refunded: { t: "Refunded", c: "#f87171" }, waiting: { t: "Waiting for Earning", c: "#8fa3c7" },
+  };
+  const x = m[status || "waiting"] || m.waiting;
+  return <span style={{ color: x.c, fontSize: 12, whiteSpace: "nowrap" }}>{x.t}</span>;
+}
+
 // Download one saved payout as an XLSX (the server builds it: /api/payout/export). The PDF is built in the browser
 // (lib/payoutPdfClient.ts): a long payout is too slow for a serverless function.
 export function downloadPayout(batchId: string, format: "xlsx") {
