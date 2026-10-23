@@ -33,8 +33,8 @@ function cancelWho(reason: string | null): { by: string; why: string } {
   return { by, why: i >= 0 ? r.slice(i + 7).trim() : r };
 }
 
-// Who won a return? Shopee decides: "Dana Dikembalikan ke Pembeli" = buyer refunded (seller loses);
-// "Dana Dicairkan ke Penjual" = the money is released to the seller (seller wins);
+// Who won a return? Shopee decides: "Dana Dikembalikan ke Pembeli" = buyer refunded (Lose);
+// "Dana Dicairkan ke Penjual" = the money is released to the seller (Win);
 // "Pengembalian ... Dibatalkan" = the return was cancelled / withdrawn, the sale stands (seller keeps it).
 type Result = "win" | "lose" | "kept" | "open";
 function resultOf(status: string | null): Result {
@@ -45,8 +45,8 @@ function resultOf(status: string | null): Result {
   return "open";
 }
 const RESULT_STYLE: Record<Result, { label: string; color: string }> = {
-  win: { label: "Seller wins", color: "#86efac" }, kept: { label: "Return cancelled", color: "#86efac" },
-  lose: { label: "Buyer refunded", color: "#f87171" }, open: { label: "In process", color: "#fbbf24" },
+  win: { label: "Win", color: "#86efac" }, kept: { label: "Return cancelled", color: "#86efac" },
+  lose: { label: "Lose", color: "#f87171" }, open: { label: "In process", color: "#fbbf24" },
 };
 // how far a cancelled / failed order got: shipped time, only a tracking number (booked, never handed over), or nothing
 function shippingStage(r: { tracking_no: string | null; extra: Record<string, string | number | null> }): string {
@@ -111,12 +111,12 @@ export default function ReturPanel({ supabase, clientId, sel, refreshKey, t }: {
         </div>
         {kind === "return" && (
           <div className="fld" style={{ minWidth: 200 }}>
-            <label>{t("Result")}</label>
+            <label>{t("Win / Lose")}</label>
             <select value={res} onChange={(e2) => setRes(e2.target.value as "" | Result)}>
               <option value="">{t("All")} ({new Set(all.map((r) => r.ref_no || r.order_no)).size})</option>
-              <option value="win">{t("Seller wins")} ({nOf("win")})</option>
+              <option value="win">{t("Win")} ({nOf("win")})</option>
               <option value="kept">{t("Return cancelled")} ({nOf("kept")})</option>
-              <option value="lose">{t("Buyer refunded")} ({nOf("lose")})</option>
+              <option value="lose">{t("Lose")} ({nOf("lose")})</option>
               <option value="open">{t("In process")} ({nOf("open")})</option>
             </select>
           </div>
@@ -134,7 +134,7 @@ export default function ReturPanel({ supabase, clientId, sel, refreshKey, t }: {
             <thead>
               {kind === "cancel" && <tr><th>{t("Order Created")}</th><th>{t("No. Pesanan")}</th><th>{t("Product")}</th><th>{t("Variant")}</th><th className="num">{t("Qty")}</th><th className="num">{t("Subtotal")}</th><th>{t("Cancelled by")}</th><th>{t("Reason")}</th><th>{t("Payment")}</th><th>{t("Reached shipping")}</th>{doneHead}</tr>}
               {kind === "failed" && <tr><th>{t("Order Created")}</th><th>{t("No. Pesanan")}</th><th>{t("Product")}</th><th>{t("Variant")}</th><th className="num">{t("Qty")}</th><th className="num">{t("Subtotal")}</th><th>{t("Delivery status")}</th><th>{t("Reached shipping")}</th><th>{t("Shipping")}</th><th>{t("Tracking")}</th><th>{t("Claim")}</th><th className="num">{t("Compensation")}</th>{doneHead}</tr>}
-              {kind === "return" && <tr><th>{t("Requested")}</th><th>{t("No. Return")}</th><th>{t("No. Pesanan")}</th><th>{t("Product")}</th><th>{t("Variant")}</th><th className="num">{t("Qty")}</th><th className="num">{t("Refund")}</th><th>{t("Type")}</th><th>{t("Result")}</th><th>{t("Shopee status")}</th><th>{t("Reason")}</th><th className="num">{t("Fund release")}</th><th>{t("Refund done")}</th><th>{t("Goods")}</th>{doneHead}</tr>}
+              {kind === "return" && <tr><th>{t("Requested")}</th><th>{t("No. Return")}</th><th>{t("No. Pesanan")}</th><th>{t("Product")}</th><th>{t("Variant")}</th><th className="num">{t("Qty")}</th><th className="num">{t("Refund")}</th><th>{t("Type")}</th><th>{t("Status")}</th><th>{t("Win / Lose")}</th><th>{t("Reason")}</th><th className="num">{t("Fund release")}</th><th>{t("Refund done")}</th><th>{t("Goods")}</th>{doneHead}</tr>}
             </thead>
             <tbody>
               {rows.map((r, i) => kind === "cancel" ? (
@@ -156,8 +156,9 @@ export default function ReturPanel({ supabase, clientId, sel, refreshKey, t }: {
                 <tr key={i}>
                   <td style={cell}>{fmtDateTime(r.event_at)}</td><td style={mono}>{r.ref_no}</td><td style={mono}>{r.order_no}</td><td style={wrapCell}>{r.product_name}</td><td style={cell}>{r.variant_name || "—"}</td>
                   <td className="num">{r.qty}</td><td className="num">{rp(r.amount)}</td>
-                  <td style={cell}>{(e(r, "return_type") as string) || "—"}</td><td style={cell}><b style={{ color: RESULT_STYLE[resultOf(r.status)].color }}>{t(RESULT_STYLE[resultOf(r.status)].label)}</b></td>
-                  <td style={wrapCell}>{r.status || "—"}</td><td style={wrapCell}>{r.reason || "—"}</td>
+                  <td style={cell}>{(e(r, "return_type") as string) || "—"}</td><td style={wrapCell}>{r.status || "—"}</td>
+                  <td style={cell}><b style={{ color: RESULT_STYLE[resultOf(r.status)].color }}>{t(RESULT_STYLE[resultOf(r.status)].label)}</b></td>
+                  <td style={wrapCell}>{r.reason || "—"}</td>
                   <td className="num" style={{ color: ((e(r, "fund_release") as number) || 0) < 0 ? "#f87171" : undefined }}>{rp(e(r, "fund_release") as number | null)}</td>
                   <td style={cell}>{e(r, "refund_done_at") ? fmtDateTime(e(r, "refund_done_at") as string) : "—"}</td><td style={cell}>{(e(r, "goods_status") as string) || "—"}</td>
                   {doneCells(r)}
