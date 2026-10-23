@@ -86,10 +86,10 @@ export function parseExceptionMatrix(matrix: unknown[][], kind: ExceptionKind): 
         payment_method: str(col(row, "Metode Pembayaran")), shipping_option: str(col(row, "Opsi Pengiriman")), tracking_no: str(col(row, "No. Resi")),
         buyer_username: str(col(row, "Username (Pembeli)")), city: str(col(row, "Kota/Kabupaten")), province: str(col(row, "Provinsi")),
         extra: kind === "failed" ? {
-          order_status: str(col(row, "Status Pesanan")), claim_status: str(col(row, "Status Klaim")),
+          shipped_at: ts(col(row, "Waktu Pengiriman Diatur")), order_status: str(col(row, "Status Pesanan")), claim_status: str(col(row, "Status Klaim")),
           claim_filed_at: ts(col(row, "Tanggal Klaim Diajukan")), claim_approved_at: ts(col(row, "Tanggal Klaim Disetujui")),
           claim_paid_at: ts(col(row, "Tanggal Klaim Dicairkan")), claim_rejected_at: ts(col(row, "Tanggal Klaim Ditolak")), compensation: toNum(col(row, "Jumlah Kompensasi")),
-        } : {},
+        } : { shipped_at: ts(col(row, "Waktu Pengiriman Diatur")) },
       });
     }
   }
