@@ -45,8 +45,12 @@ const BADGES: { key: string; label: string; color: string }[] = [
   { key: "finance", label: "Earning",   color: "#14b8a6" },
   { key: "orders",  label: "Demographic", color: "#06b6d4" },
   { key: "orders_ship", label: "Demographic · Shipping", color: "#0ea5e9" },
+  { key: "retur_cancel", label: "Order Cancel", color: "#f87171" },
+  { key: "retur_failed", label: "Failed Delivery", color: "#fb923c" },
+  { key: "retur_return", label: "Return Refund", color: "#fbbf24" },
 ];
 function subKey(u: UploadRow): string {
+  if ((u.source as string) === "retur") return "retur_" + (u.meta?.kind || "return");
   if (u.source !== "ads") return u.source;
   if (u.meta?.kind === "ads_group") return u.meta?.ads_level === "incubation" ? "gmvmax" : "group";
   return "ads";

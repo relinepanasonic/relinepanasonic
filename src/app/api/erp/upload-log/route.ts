@@ -25,6 +25,7 @@ const NO_STORE = { "Cache-Control": "no-store" };
 const TYPE_LABEL: Record<string, string> = {
   perf: "Performa", spos: "SPOS", ads: "Ads", gmvmax: "GMV Auto", group: "Group Ads",
   finance: "Earning", orders: "Demographic", orders_ship: "Demographic · Shipping",
+  retur_cancel: "Order Cancel", retur_failed: "Failed Delivery", retur_return: "Return Refund",
 };
 
 type Meta = { store_name?: string; bulan?: string; admin?: string; kind?: string; ads_level?: string } | null;
@@ -32,6 +33,7 @@ type UploadRow = { id: string; source: string; filename: string | null; created_
 type Profile = { id: string; role: string; display_name: string | null; workspaces: string[] | null };
 
 function subKey(u: UploadRow): string {
+  if (u.source === "retur") return "retur_" + (u.meta?.kind || "return");
   if (u.source !== "ads") return u.source;
   if (u.meta?.kind === "ads_group") return u.meta?.ads_level === "incubation" ? "gmvmax" : "group";
   return "ads";

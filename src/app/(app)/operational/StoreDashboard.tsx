@@ -9,6 +9,8 @@ import {
 } from "recharts";
 import { createClient } from "@/lib/supabase/client";
 import Loader from "@/components/Loader";
+import OrderLookup from "@/components/OrderLookup";
+import ReturPanel from "./ReturPanel";
 import { useLang } from "@/lib/financeI18n";
 import { useTableSort } from "@/hooks/useTableSort";
 import SortableHeader from "@/components/SortableHeader";
@@ -63,7 +65,7 @@ export default function StoreDashboard({ clientId, refreshKey }: { clientId: str
   const [mo, setMo] = useState<MonthlyPoint[]>([]);        // orders per month, for the Total Transaction chart
   const [loading, setLoading] = useState(false);
   const [loadErr, setLoadErr] = useState("");
-  const [section, setSection] = useState<"dashboard" | "shipped" | "completed">("dashboard"); // sub pages: the dashboard, and each table on its own
+  const [section, setSection] = useState<"dashboard" | "shipped" | "completed" | "retur">("dashboard"); // sub pages: the dashboard, and each table on its own
   const [ship, setShip] = useState<DayRow[]>([]);   // Order Shipped table (Order.shipping uploads)
   const [done, setDone] = useState<DayRow[]>([]);   // Order Completed table (Order.completed uploads)
   const [drill, setDrill] = useState<{ kind: "completed" | "shipped"; day: string } | null>(null);
@@ -172,11 +174,13 @@ export default function StoreDashboard({ clientId, refreshKey }: { clientId: str
           ⚠ {t("Failed to load data. Filter is too large or connection is slow.")} ({loadErr})
         </div>
       )}
+      <OrderLookup supabase={supabase} clientId={clientId} store={sel.store} t={t} />
       {/* filters — City + Dealer only at first; Year/Month/Week auto-reveal once a store is picked */}
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
         <button onClick={() => setSection("dashboard")} style={tableTabBtn(section === "dashboard")}>{t("Dashboard")}</button>
         <button onClick={() => setSection("shipped")} style={tableTabBtn(section === "shipped")}>{t("Order Shipped")}</button>
         <button onClick={() => setSection("completed")} style={tableTabBtn(section === "completed")}>{t("Order Completed")}</button>
+        <button onClick={() => setSection("retur")} style={tableTabBtn(section === "retur")}>{t("Retur")}</button>
       </div>
       <div className="filterbar">
         <Sel label={t("City")} value={sel.city} onChange={pickCity} opts={cities} all={t("All Cities")} />
@@ -254,7 +258,9 @@ export default function StoreDashboard({ clientId, refreshKey }: { clientId: str
       </>
       )}
 
-      {section !== "dashboard" && (
+      {section === "retur" && <ReturPanel supabase={supabase} clientId={clientId} sel={sel} refreshKey={refreshKey} t={t} />}
+
+      {(section === "shipped" || section === "completed") && (
         <DayTable
           title={t(section === "shipped" ? "Order Shipped" : "Order Completed")}
           hint={t(section === "shipped"

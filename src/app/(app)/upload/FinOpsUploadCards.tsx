@@ -27,7 +27,7 @@ function dateFromFilename(name: string): string | null {
 
 type Supabase = ReturnType<typeof createClient>;
 type CityRow = { value: string; pic: string | null };
-type UploadJson = { rows?: number; product_lines?: number; unreconciled_orders?: number; empty?: boolean; skipped_orders?: number; error?: string };
+type UploadJson = { rows?: number; orders?: number; product_lines?: number; unreconciled_orders?: number; empty?: boolean; skipped_orders?: number; error?: string };
 type Slot = {
   key: string; endpoint: string; fileLabel: string; fileHint: string; guide?: string;
   okMessage: (j: UploadJson) => string[];
@@ -55,6 +55,16 @@ const COMPLETED_SLOT: Slot = {
   okMessage: (j) => [j.empty ? "✓ The file has no orders (nothing completed in that range) — nothing to save" : `✓ ${j.rows} rows`],
 };
 
+const retur = (kind: string, fileLabel: string, fileHint: string): Slot => ({
+  key: "retur_" + kind, endpoint: "/api/store/retur-upload?kind=" + kind, fileLabel, fileHint,
+  okMessage: (j) => [j.empty ? "✓ The file has no rows — nothing to save" : `✓ ${j.rows} rows · ${j.orders} orders (an order already saved is updated, not doubled)`],
+});
+const RETUR_SLOTS: Slot[] = [
+  retur("cancel", "Order Cancel", "(Order.cancelled)"),
+  retur("failed", "Failed Delivery", "(Order.failed_delivery)"),
+  retur("return", "Return Refund", "(Order.return_refund)"),
+];
+
 export default function FinOpsUploadCards({ supabase, clientId, cities, onDone }: {
   supabase: Supabase; clientId: string; cities: CityRow[]; onDone: () => void;
 }) {
@@ -67,6 +77,10 @@ export default function FinOpsUploadCards({ supabase, clientId, cities, onDone }
       <div style={{ flex: "1.7 1 640px", minWidth: 0, display: "flex" }}>
         <UploadCard supabase={supabase} clientId={clientId} cities={cities} onDone={onDone}
           title="Demographic" roles="Super Admin | Admin" slots={[SHIPPING_SLOT, COMPLETED_SLOT]} />
+      </div>
+      <div style={{ flex: "1 1 100%", minWidth: 0, display: "flex" }}>
+        <UploadCard supabase={supabase} clientId={clientId} cities={cities} onDone={onDone}
+          title="Retur" roles="Super Admin | Admin" slots={RETUR_SLOTS} />
       </div>
     </div>
   );

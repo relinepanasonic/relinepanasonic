@@ -156,7 +156,7 @@ export function parseFinanceMatrix(matrix: unknown[][]): FinanceParsed {
   return { username, periodeStart, periodeEnd, rows };
 }
 
-const MONTHS_ID = ["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"];
+export const MONTHS_ID = ["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"];
 
 // "Week N of <month>" = days (N-1)*7+1 .. N*7 counted from day 1 of the
 // UPLOAD'S chosen month (not the calendar month the date literally falls

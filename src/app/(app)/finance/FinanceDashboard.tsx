@@ -8,6 +8,7 @@ import {
 } from "recharts";
 import { createClient } from "@/lib/supabase/client";
 import Loader from "@/components/Loader";
+import OrderLookup from "@/components/OrderLookup";
 import { useLang } from "@/lib/financeI18n";
 import { useTableSort } from "@/hooks/useTableSort";
 import SortableHeader from "@/components/SortableHeader";
@@ -212,6 +213,7 @@ export default function FinanceDashboard({ clientId, refreshKey, extraSections =
 
   return (
     <div className="fin-compact">
+      <OrderLookup supabase={supabase} clientId={clientId} store={sel.store} t={t} />
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
         <button onClick={() => setSection("dashboard")} style={tableTabBtn(section === "dashboard")}>{t("Dashboard")}</button>
         <button onClick={() => setSection("transaksi")} style={tableTabBtn(section === "transaksi")}>{t("Withdraw Detail")}</button>
