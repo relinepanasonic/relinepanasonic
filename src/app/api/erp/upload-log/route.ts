@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
+import { checkErpAuth } from "@/lib/erpAuth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { WORKSPACES } from "@/lib/workspace";
 
@@ -39,23 +40,11 @@ function subKey(u: UploadRow): string {
   return "ads";
 }
 
-// SHA-256 first, so the comparison is constant-time and a length mismatch leaks nothing.
-function safeEqual(a: string, b: string): boolean {
-  const ha = crypto.createHash("sha256").update(a, "utf8").digest();
-  const hb = crypto.createHash("sha256").update(b, "utf8").digest();
-  return crypto.timingSafeEqual(ha, hb);
-}
-function checkAuth(req: NextRequest): boolean {
-  const expected = process.env.ERP_API_KEY;
-  if (!expected) return false;
-  const m = /^Bearer\s+(.+)$/.exec((req.headers.get("authorization") || "").trim());
-  return !!m && safeEqual(m[1], expected);
-}
 const jakartaDayStart = (d: string) => new Date(`${d}T00:00:00${JAKARTA_OFFSET}`);
 const bad = (error: string) => NextResponse.json({ error }, { status: 400, headers: NO_STORE });
 
 export async function GET(req: NextRequest) {
-  if (!checkAuth(req)) return new NextResponse(null, { status: 401, headers: NO_STORE });
+  if (!checkErpAuth(req)) return new NextResponse(null, { status: 401, headers: NO_STORE });
 
   const from = req.nextUrl.searchParams.get("from") || "";
   const to = req.nextUrl.searchParams.get("to") || "";
