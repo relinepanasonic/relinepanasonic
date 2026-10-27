@@ -229,6 +229,7 @@ export default function MassiveCalculatorPage() {
       <div style={{ display: "flex", gap: 8, marginBottom: 18 }}>
         <span className="mode-tab on">Massive Calculator</span>
         <Link href="/calc/marketplace-fee" className="mode-tab">Marketplace Fee</Link>
+        <Link href="/calc/price-research" className="mode-tab">Price Research</Link>
       </div>
 
       <div className="panel">
