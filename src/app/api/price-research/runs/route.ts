@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { currentSchema } from "@/lib/workspace-server";
-import { keyOfUrl, logHint, parseItem, shopeeCookieLooksLoggedIn, type Platform } from "@/lib/priceResearch";
+import { cookieNote, keyOfUrl, logHint, parseItem, type Platform } from "@/lib/priceResearch";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -52,8 +52,8 @@ export async function GET() {
         if (!items.length) {
           const lr = await fetch(`https://api.apify.com/v2/actor-runs/${run.apify_run_id}/log?token=${encodeURIComponent(token)}`).catch(() => null);
           const hint = lr && lr.ok ? logHint(await lr.text()) : "";
-          const cookieNote = run.platform === "shopee" && !shopeeCookieLooksLoggedIn(process.env.APIFY_SHOPEE_COOKIE) ? " The saved Shopee cookie has no login token (SPC_EC): copy it again while logged in." : "";
-          why = `Apify returned 0 results.${hint ? ` Log: ${hint}` : ""}${cookieNote}`;
+          const cookieInfo = run.platform === "shopee" ? cookieNote(process.env.APIFY_SHOPEE_COOKIE) : "";
+          why = `Apify returned 0 results.${hint ? ` Log: ${hint}` : ""}${cookieInfo}`;
         }
         const { data: ls } = await admin.from("price_research_links").select("id, client_id, platform, product_url").in("id", run.link_ids);
         const byKey = new Map(items.map((it) => { const p = parseItem(run.platform, it); return [p.key, p] as const; }));

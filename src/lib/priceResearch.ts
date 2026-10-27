@@ -106,3 +106,15 @@ export function logHint(log: string): string {
 }
 // A Shopee login cookie carries SPC_EC (the login token); without it the actor sees a logged-out visitor and usually returns nothing.
 export const shopeeCookieLooksLoggedIn = (cookie: string | undefined) => !!cookie && /(^|;\s*)SPC_EC=/.test(cookie);
+
+// The NAMES of the cookies (never the values) in a saved cookie string, so a wrong paste can be diagnosed without showing a secret.
+export function cookieNames(cookie: string | undefined): string[] {
+  return (cookie || "").split(";").map((c) => c.split("=")[0].trim()).filter(Boolean);
+}
+export function cookieNote(cookie: string | undefined): string {
+  if (!cookie) return " APIFY_SHOPEE_COOKIE is empty in this deployment (set it in Vercel and redeploy).";
+  const names = cookieNames(cookie);
+  const login = names.filter((n) => /^SPC_(EC|ST)$/.test(n));
+  if (login.length) return ` The saved cookie has ${names.length} cookies including ${login.join(", ")}, so it looks logged in: it may have expired or Shopee blocked this request.`;
+  return ` The saved cookie has ${names.length} cookies (${names.filter((n) => n.startsWith("SPC_")).slice(0, 8).join(", ") || "no SPC_ ones"}) but no login token (SPC_EC / SPC_ST): it was copied while logged out, or Vercel was not redeployed after you changed it.`;
+}

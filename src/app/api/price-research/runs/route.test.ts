@@ -68,6 +68,7 @@ describe("GET /api/price-research/runs", () => {
     expect(err).toMatch(/Apify returned 0 results/);
     expect(err).toMatch(/Login required/);
     expect(err).toMatch(/no login token/);
+    expect(err).toMatch(/SPC_SI/);
     expect(err).not.toMatch(/secretvalue99/);
     vi.unstubAllGlobals();
   });
