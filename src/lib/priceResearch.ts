@@ -32,7 +32,7 @@ export function urlMatchesPlatform(p: Platform, url: string): boolean {
 }
 
 export function buildInput(p: Platform, urls: string[], env: Record<string, string | undefined> = process.env): Record<string, unknown> {
-  if (p === "shopee") return { mode: "product_detail", urls, region: "id", maxItems: urls.length, cookie: env.APIFY_SHOPEE_COOKIE || "" };
+  if (p === "shopee") return { mode: "product_detail", urls, region: "id", maxItems: urls.length, cookie: buyerCookie(env.APIFY_SHOPEE_COOKIE) };
   if (p === "tokopedia") return { startUrls: urls, maxResults: urls.length, proxyConfiguration: { useApifyProxy: true } };
   return { productUrls: urls, includeReviews: false };
 }
@@ -105,7 +105,14 @@ export function logHint(log: string): string {
   return (telling.length ? telling : lines).slice(-3).join(" · ").slice(0, 400);
 }
 // A Shopee login cookie carries SPC_EC (the login token); without it the actor sees a logged-out visitor and usually returns nothing.
-export const shopeeCookieLooksLoggedIn = (cookie: string | undefined) => !!cookie && /(^|;\s*)SPC_EC=/.test(cookie);
+export const shopeeCookieLooksLoggedIn = (cookie: string | undefined) =>
+  !!cookie && (/(^|;\s*)SPC_(EC|ST)=[^;\s]{10,}/.test(cookie) || /(^|;\s*)SPC_U=\d+/.test(cookie));   // SPC_EC is not always present
+
+// The scraper only needs the BUYER session. A cookie copied from a browser that is also signed in to Seller Centre carries the seller
+// session (SPC_SC_*): those cookies are never sent to Apify.
+export function buyerCookie(cookie: string | undefined): string {
+  return (cookie || "").split(";").map((c) => c.trim()).filter((c) => c && !/^SPC_SC_/i.test(c)).join("; ");
+}
 
 // The NAMES of the cookies (never the values) in a saved cookie string, so a wrong paste can be diagnosed without showing a secret.
 export function cookieNames(cookie: string | undefined): string[] {

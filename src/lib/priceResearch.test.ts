@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { actorFor, buildInput, estimateCost, keyOfUrl, logHint, parseItem, shopeeCookieLooksLoggedIn, urlMatchesPlatform } from "./priceResearch";
+import { actorFor, buildInput, buyerCookie, estimateCost, keyOfUrl, logHint, parseItem, shopeeCookieLooksLoggedIn, urlMatchesPlatform } from "./priceResearch";
 
 describe("price research helpers", () => {
   it("accepts a product URL only on its own marketplace", () => {
@@ -46,7 +46,15 @@ describe("price research helpers", () => {
   it("tells a logged-in Shopee cookie from a visitor cookie", () => {
     expect(shopeeCookieLooksLoggedIn("SPC_F=1; SPC_EC=xyz; SPC_ST=abc")).toBe(true);
     expect(shopeeCookieLooksLoggedIn("SPC_R_T_IV=1; SPC_T_ID=2; SPC_SI=3")).toBe(false);
+    expect(shopeeCookieLooksLoggedIn("SPC_F=1; SPC_U=26308820; SPC_ST=Pgn0DEU6jWfYRJdlPqLzCeECT")).toBe(true);   // SPC_EC is not always there
+    expect(shopeeCookieLooksLoggedIn("SPC_F=1; SPC_U=-")).toBe(false);
     expect(shopeeCookieLooksLoggedIn(undefined)).toBe(false);
+  });
+
+  it("never sends the Seller Centre session to Apify", () => {
+    const c = "SPC_F=1; SPC_ST=abc; SPC_SC_SESSION=sellersecret; SPC_SC_MAIN_SHOP_SA_UD=0; SPC_U=26308820";
+    expect(buyerCookie(c)).toBe("SPC_F=1; SPC_ST=abc; SPC_U=26308820");
+    expect(String(buildInput("shopee", ["u"], { APIFY_SHOPEE_COOKIE: c }).cookie)).not.toMatch(/sellersecret|SPC_SC_/);
   });
 
   it("estimates the Apify cost", () => {
