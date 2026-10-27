@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { actorFor, buildInput, estimateCost, keyOfUrl, logHint, parseItem, urlMatchesPlatform } from "./priceResearch";
+import { actorFor, buildInput, detectPlatform, estimateCost, keyOfUrl, logHint, parseItem, urlMatchesPlatform } from "./priceResearch";
 
 describe("price research helpers", () => {
   it("accepts a product URL only on its own marketplace", () => {
@@ -42,6 +42,14 @@ describe("price research helpers", () => {
     expect(h).toMatch(/Login required/);
     expect(h).not.toMatch(/abcdef123456/);
     expect(logHint("")).toBe("");
+  });
+
+  it("detects the marketplace from the product URL", () => {
+    expect(detectPlatform("https://shopee.co.id/AC-i.1.2")).toBe("shopee");
+    expect(detectPlatform("https://www.tokopedia.com/shop/ac")).toBe("tokopedia");
+    expect(detectPlatform("https://shop-id.tokopedia.com/pdp/x/1729653353364556550")).toBe("tiktok");
+    expect(detectPlatform("https://www.lazada.co.id/x")).toBeNull();
+    expect(detectPlatform("not a url")).toBeNull();
   });
 
   it("estimates the Apify cost", () => {

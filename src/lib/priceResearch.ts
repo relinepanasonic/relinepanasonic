@@ -108,3 +108,13 @@ export function logHint(log: string): string {
   const telling = lines.filter((l) => /error|warn|cookie|login|log in|blocked|captcha|forbidden|403|429|no results|0 results|failed|denied|expired/i.test(l));
   return (telling.length ? telling : lines).slice(-3).join(" · ").slice(0, 400);
 }
+
+// The marketplace of a product URL, so nobody has to pick it by hand (null = not a Shopee / Tokopedia / TikTok Shop link).
+export function detectPlatform(url: string): Platform | null {
+  let host = "";
+  try { host = new URL(url.trim()).hostname.toLowerCase(); } catch { return null; }
+  if (host === "shopee.co.id" || host.endsWith(".shopee.co.id")) return "shopee";
+  if (host.endsWith("tiktok.com") || host === "shop-id.tokopedia.com") return "tiktok";   // TikTok Shop Indonesia lives on a tokopedia.com sub-domain
+  if (host === "tokopedia.com" || host.endsWith(".tokopedia.com")) return "tokopedia";
+  return null;
+}
