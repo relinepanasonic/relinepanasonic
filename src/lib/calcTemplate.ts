@@ -1,7 +1,8 @@
 // XLS template / import of the Massive Calculator. One flat sheet, one row per calculator line:
 //   No | Prod ID | Product Name | Modal Produk | Harga Jual | Platform | Jenis Toko | Category | Sub Category | Jenis Product | Target ROAS |
 //   Berat (kg) | Uk PxLxT (cm3) | Gratis Ongkir | Promo Xtra | Paylater 3 Bln | Paylater 6 Bln | Biaya Lain
-// Prod ID must be a product of the Product Catalog; its name and SRP are read from there (Harga Jual left empty = the SRP).
+// Prod ID must be a product of the SRP in force (Product Catalog); its name, Harga Beli and Harga SRP are read from there
+// (Modal Produk left empty = Harga Beli, Harga Jual left empty = Harga SRP).
 // A line is identified by Prod ID + Platform + Jenis Toko: importing the same line again updates it instead of adding a duplicate.
 import { parsePrice } from "./catalogXls";
 
@@ -30,7 +31,7 @@ export function isFlatTemplate(matrix: unknown[][]): boolean {
   return matrix.slice(0, 10).some((r) => { const c = (r || []).map(norm); return c.includes("prodid") && c.includes("modalproduk"); });
 }
 
-export function parseCalcMatrix(matrix: unknown[][], catalog: Map<string, { name: string; srp: number | null }>, fees: FeeKey[]): ParsedCalc {
+export function parseCalcMatrix(matrix: unknown[][], catalog: Map<string, { name: string; srp: number | null; beli?: number | null }>, fees: FeeKey[]): ParsedCalc {
   let h = -1;
   for (let i = 0; i < Math.min(matrix.length, 10); i++) { const c = (matrix[i] || []).map(norm); if (c.includes("prodid") && c.includes("modalproduk")) { h = i; break; } }
   if (h < 0) return { rows: [], skipped: [], matched: 0, unmatched: 0, error: "Header row not found (the sheet needs Prod ID and Modal Produk: use the template)." };
@@ -60,7 +61,7 @@ export function parseCalcMatrix(matrix: unknown[][], catalog: Map<string, { name
     if (feeId) matched++; else unmatched++;
     const hargaCell = get(row, I.harga);
     rows.push({
-      prod_id: prod, item_product: p.name, modal_produk_rp: num(get(row, I.modal)), harga_jual_rp: String(hargaCell ?? "").trim() === "" ? (p.srp ?? 0) : num(hargaCell),
+      prod_id: prod, item_product: p.name, modal_produk_rp: String(get(row, I.modal) ?? "").trim() === "" ? (p.beli ?? 0) : num(get(row, I.modal)), harga_jual_rp: String(hargaCell ?? "").trim() === "" ? (p.srp ?? 0) : num(hargaCell),
       fee_id: feeId, target_roas: num(get(row, I.roas)), berat_kg: num(get(row, I.berat)), ukuran_cm3: num(get(row, I.uk)),
       gratis_ongkir_on: yes(get(row, I.ongkir), true), promo_xtra_on: yes(get(row, I.promo), true), paylater_3mo_on: yes(get(row, I.p3), false), paylater_6mo_on: yes(get(row, I.p6), false),
       biaya_lain_rp: num(get(row, I.lain)), platform: platform.toLowerCase(), toko: toko.toLowerCase(),

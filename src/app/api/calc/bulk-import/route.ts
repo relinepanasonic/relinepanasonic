@@ -71,10 +71,10 @@ export async function POST(req: NextRequest) {
   // The flat template (Prod ID + Modal Produk ...): products come from the Product Catalog, one line = Prod ID + Platform + Jenis Toko.
   if (isFlatTemplate(matrix)) {
     const [{ data: cat }, { data: feeRows }] = await Promise.all([
-      admin.from("pr_srp_products").select("prod_id, product_name, price_srp").eq("client_id", clientId),
+      admin.rpc("pr_srp_catalog", { p_client_id: clientId }),   // the products of the SRP in force today
       admin.from("market_fees").select("id, category, sub_category, jenis_product, platform, jenis_toko").eq("client_id", clientId),
     ]);
-    const catalog = new Map(((cat as { prod_id: string; product_name: string; price_srp: number | null }[]) || []).map((c) => [c.prod_id, { name: c.product_name, srp: c.price_srp }]));
+    const catalog = new Map(((cat as { prod_id: string; product_name: string; harga_srp: number | null; harga_beli: number | null }[]) || []).map((c) => [c.prod_id, { name: c.product_name, srp: c.harga_srp, beli: c.harga_beli }]));
     const fees = (feeRows as FeeKey[]) || [];
     const parsed = parseCalcMatrix(matrix, catalog, fees);
     if (parsed.error) return NextResponse.json({ error: parsed.error }, { status: 400 });

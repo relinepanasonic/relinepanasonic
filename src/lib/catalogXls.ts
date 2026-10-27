@@ -1,11 +1,11 @@
-// XLS template / import of the Product Catalog (Price Calculator > Price Research > Product Catalog).
-// One flat sheet, one row per product: No | SRP ID | Product Name | Prod ID | Price SRP. Prod ID is the key: a known Prod ID is updated
-// (an SRP change is logged), a new one is added.
+// XLS template / import of one SRP list (Price Calculator > Price Research > Product Catalog > an SRP).
+// One flat sheet, one row per product: No | Product Name | Prod ID | Harga Beli | Harga SRP. Prod ID is the key inside the SRP: a known Prod ID
+// is updated, a new one is added. The SRP ID is automatic and is not in the sheet.
 
-export const CATALOG_HEADER = ["No", "SRP ID", "Product Name", "Prod ID", "Price SRP"] as const;
-export const CATALOG_EXAMPLE = [1, "SRP-2026-10", "AC Panasonic 2 PK CS-YN18AKJ", "9078737678", 7500000];
+export const CATALOG_HEADER = ["No", "Product Name", "Prod ID", "Harga Beli", "Harga SRP"] as const;
+export const CATALOG_EXAMPLE = [1, "AC Panasonic 2 PK CS-YN18AKJ", "9078737678", 5800000, 7500000];
 
-export type CatalogRow = { prod_id: string; product_name: string; srp_id: string | null; price_srp: number | null };
+export type CatalogRow = { prod_id: string; product_name: string; harga_beli: number | null; harga_srp: number | null };
 
 // "Rp 7.500.000" / "7,500,000" / 7500000 / "12,5" -> number (null when empty or not a number)
 export function parsePrice(v: unknown): number | null {
@@ -27,7 +27,7 @@ export function parseCatalogMatrix(matrix: unknown[][]): { rows: CatalogRow[]; s
     const cells = (matrix[i] || []).map(norm);
     const idx = (names: string[]) => cells.findIndex((c) => names.includes(c));
     const prod = idx(["prodid", "productid", "idproduk", "kodeproduk"]), name = idx(["productname", "namaproduk", "produk", "product", "itemproduct"]);
-    if (prod >= 0 && name >= 0) { h = i; col = { prod, name, srp: idx(["srpid"]), price: idx(["pricesrp", "srp", "hargasrp", "price"]) }; break; }
+    if (prod >= 0 && name >= 0) { h = i; col = { prod, name, beli: idx(["hargabeli", "modalproduk", "hargamodal", "beli", "costprice"]), srp: idx(["hargasrp", "pricesrp", "srp"]) }; break; }
   }
   if (h < 0) return { rows: [], skipped: [], error: "Header row not found. The sheet needs the columns Product Name and Prod ID (use the template)." };
   const rows: CatalogRow[] = []; const skipped: { row: number; reason: string }[] = []; const seen = new Set<string>();
@@ -38,7 +38,7 @@ export function parseCatalogMatrix(matrix: unknown[][]): { rows: CatalogRow[]; s
     if (!prod_id || !product_name) { skipped.push({ row: r + 1, reason: "Prod ID and Product Name are required" }); continue; }
     if (seen.has(prod_id)) { skipped.push({ row: r + 1, reason: `Prod ID ${prod_id} appears twice in the sheet` }); continue; }
     seen.add(prod_id);
-    rows.push({ prod_id, product_name, srp_id: col.srp >= 0 ? (String(row[col.srp] ?? "").trim() || null) : null, price_srp: col.price >= 0 ? parsePrice(row[col.price]) : null });
+    rows.push({ prod_id, product_name, harga_beli: col.beli >= 0 ? parsePrice(row[col.beli]) : null, harga_srp: col.srp >= 0 ? parsePrice(row[col.srp]) : null });
   }
   return { rows, skipped };
 }

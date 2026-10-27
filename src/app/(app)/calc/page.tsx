@@ -27,8 +27,8 @@ type CalcRow = {
   biaya_lain_rp: number;
 };
 
-// the Product Catalog (Price Research > Product Catalog): the one list of products, shared with Price Guard
-type CatalogItem = { prod_id: string; product_name: string; srp_id: string | null; price_srp: number | null };
+// the products of the SRP in force (Price Research > Product Catalog): the one list of products, shared with Price Guard
+type CatalogItem = { prod_id: string; product_name: string; srp_no: string | null; harga_beli: number | null; harga_srp: number | null };
 type FeeSel = { category: string; sub_category: string; jenis_product: string; platform: string; jenis_toko: string };
 const FEE_FIELDS: (keyof FeeSel)[] = ["category", "sub_category", "jenis_product", "platform", "jenis_toko"];
 const emptySel: FeeSel = { category: "", sub_category: "", jenis_product: "", platform: "", jenis_toko: "" };
@@ -160,7 +160,7 @@ export default function MassiveCalculatorPage() {
     const [f, r, cat, guard] = await Promise.all([
       fetchAll<Fee>(supabase, "market_fees", cid, "category"),
       fetchAll<CalcRow>(supabase, "massive_calc_rows", cid, "created_at"),
-      supabase.from("pr_srp_products").select("prod_id, product_name, srp_id, price_srp").eq("client_id", cid).order("product_name"),
+      supabase.rpc("pr_srp_catalog", { p_client_id: cid }),
       supabase.rpc("price_guard", { p_client_id: cid }),
     ]);
     setFees(f);
@@ -308,7 +308,8 @@ export default function MassiveCalculatorPage() {
                 <th style={stickyTh}>Product Name</th>
                 <th style={stickyTh}>Product ID</th>
                 <th style={stickyTh}>SRP ID</th>
-                <th className="num" style={stickyTh}>Price SRP</th>
+                <th className="num" style={stickyTh}>Harga Beli</th>
+                <th className="num" style={stickyTh}>Harga SRP</th>
                 <th className="num" style={stickyTh}>Lowest Competitor</th>
                 <th style={stickyTh}>Category</th>
                 <th className="num" style={stickyTh}>Modal Produk</th>
@@ -350,10 +351,10 @@ export default function MassiveCalculatorPage() {
                   catalog={catalog} catalogById={catalogById} lowest={lowest} onSave={saveRow} onDelete={deleteRow} />
               ))}
               {!loading && rows.length === 0 && (
-                <tr><td colSpan={37} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>No product rows yet — click “+ Add Product”, or fill the XLS template and Import it.</td></tr>
+                <tr><td colSpan={38} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>No product rows yet — click “+ Add Product”, or fill the XLS template and Import it.</td></tr>
               )}
               {loading && (
-                <tr><td colSpan={37} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>Loading…</td></tr>
+                <tr><td colSpan={38} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>Loading…</td></tr>
               )}
             </tbody>
           </table>
@@ -425,10 +426,10 @@ function CalcRowLine({ no, row, fee, fees, catalog, catalogById, lowest, onSave,
 
   const cat = v.prod_id ? catalogById.get(v.prod_id) ?? null : null;
   const low = v.prod_id ? lowest.get(v.prod_id) ?? null : null;
-  // picking a catalog product fills the name, the Prod ID and (as the starting point) Harga Jual = its SRP
+  // picking a catalog product fills the name, the Prod ID, Modal Produk = its Harga Beli and (as the starting point) Harga Jual = its Harga SRP
   function pickProduct(prodId: string) {
     const c = prodId ? catalogById.get(prodId) : null;
-    setV((st) => ({ ...st, prod_id: prodId, item_product: c ? c.product_name : st.item_product, harga_jual_rp: c && c.price_srp != null ? formatRp(c.price_srp) : st.harga_jual_rp }));
+    setV((st) => ({ ...st, prod_id: prodId, item_product: c ? c.product_name : st.item_product, modal_produk_rp: c && c.harga_beli != null ? formatRp(c.harga_beli) : st.modal_produk_rp, harga_jual_rp: c && c.harga_srp != null ? formatRp(c.harga_srp) : st.harga_jual_rp }));
   }
 
   function save() { onSave(row.id, parsed); }
@@ -493,9 +494,12 @@ function CalcRowLine({ no, row, fee, fees, catalog, catalogById, lowest, onSave,
         </select>
       </td>
       <td className="calc-ro" style={{ fontFamily: "monospace" }}>{cat?.prod_id || "—"}</td>
-      <td className="calc-ro" style={{ fontFamily: "monospace" }}>{cat?.srp_id || "—"}</td>
-      <td className="num" style={{ fontWeight: 600 }}>{cat?.price_srp != null ? `Rp ${formatRp(cat.price_srp)}` : "—"}
-        {cat?.price_srp != null && parsed.harga_jual_rp !== cat.price_srp && <div><button onClick={() => setV((s) => ({ ...s, harga_jual_rp: formatRp(cat.price_srp as number) }))} className="btn-ghost" style={{ padding: "0 6px", fontSize: 10 }} title="Use the SRP as Harga Jual">= SRP</button></div>}
+      <td className="calc-ro" style={{ fontFamily: "monospace" }}>{cat?.srp_no || "—"}</td>
+      <td className="num" style={{ fontWeight: 600 }}>{cat?.harga_beli != null ? `Rp ${formatRp(cat.harga_beli)}` : "—"}
+        {cat?.harga_beli != null && parsed.modal_produk_rp !== cat.harga_beli && <div><button onClick={() => setV((s) => ({ ...s, modal_produk_rp: formatRp(cat.harga_beli as number) }))} className="btn-ghost" style={{ padding: "0 6px", fontSize: 10 }} title="Use Harga Beli as Modal Produk">= Beli</button></div>}
+      </td>
+      <td className="num" style={{ fontWeight: 600 }}>{cat?.harga_srp != null ? `Rp ${formatRp(cat.harga_srp)}` : "—"}
+        {cat?.harga_srp != null && parsed.harga_jual_rp !== cat.harga_srp && <div><button onClick={() => setV((s) => ({ ...s, harga_jual_rp: formatRp(cat.harga_srp as number) }))} className="btn-ghost" style={{ padding: "0 6px", fontSize: 10 }} title="Use Harga SRP as Harga Jual">= SRP</button></div>}
       </td>
       <td className="num calc-ro">{low != null ? `Rp ${formatRp(low)}` : "—"}{low != null && parsed.harga_jual_rp > 0 && <div style={{ fontSize: 11, color: parsed.harga_jual_rp > low ? "#ff9a9a" : "#4ade80" }}>{parsed.harga_jual_rp > low ? "+" : ""}{((parsed.harga_jual_rp / low - 1) * 100).toFixed(1)}% vs ours</div>}</td>
       <td>

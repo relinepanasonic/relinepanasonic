@@ -16,16 +16,16 @@ describe("product catalog XLS", () => {
     const { rows, skipped, error } = parseCatalogMatrix([[...CATALOG_HEADER], CATALOG_EXAMPLE]);
     expect(error).toBeUndefined();
     expect(skipped).toEqual([]);
-    expect(rows).toEqual([{ prod_id: "9078737678", product_name: "AC Panasonic 2 PK CS-YN18AKJ", srp_id: "SRP-2026-10", price_srp: 7500000 }]);
+    expect(rows).toEqual([{ prod_id: "9078737678", product_name: "AC Panasonic 2 PK CS-YN18AKJ", harga_beli: 5800000, harga_srp: 7500000 }]);
   });
 
   it("finds the header below a title, skips empty / incomplete / duplicate rows and reports their sheet row number", () => {
-    const m = [["Katalog"], [], ["Produk", "Product ID", "SRP", "SRP ID"],
-      ["AC A", "P1", "Rp 4.000.000", "S1"], ["", "", "", ""], ["AC B", "", 5, "S1"], ["AC A again", "P1", 1, "S1"], ["Fan", "P3", "", ""]];
+    const m = [["Katalog"], [], ["Produk", "Product ID", "Harga SRP", "Modal Produk"],
+      ["AC A", "P1", "Rp 4.000.000", "Rp 3.000.000"], ["", "", "", ""], ["AC B", "", 5, 1], ["AC A again", "P1", 1, 1], ["Fan", "P3", "", ""]];
     const { rows, skipped } = parseCatalogMatrix(m);
     expect(rows.map((r) => r.prod_id)).toEqual(["P1", "P3"]);
-    expect(rows[0]).toMatchObject({ srp_id: "S1", price_srp: 4000000 });
-    expect(rows[1]).toMatchObject({ srp_id: null, price_srp: null });
+    expect(rows[0]).toMatchObject({ harga_srp: 4000000, harga_beli: 3000000 });
+    expect(rows[1]).toMatchObject({ harga_srp: null, harga_beli: null });
     expect(skipped.map((s) => s.row)).toEqual([6, 7]);
   });
 
@@ -35,7 +35,7 @@ describe("product catalog XLS", () => {
 });
 
 describe("Massive Calculator XLS", () => {
-  const catalog = new Map([["9078737678", { name: "AC Panasonic 2 PK CS-YN18AKJ", srp: 7500000 }], ["P2", { name: "Fan", srp: null }]]);
+  const catalog = new Map([["9078737678", { name: "AC Panasonic 2 PK CS-YN18AKJ", srp: 7500000, beli: 5600000 }], ["P2", { name: "Fan", srp: null }]]);
   const fees = [{ id: "F1", category: "Elektronik", sub_category: "AC", jenis_product: "AC Split", platform: "Shopee", jenis_toko: "Star" }];
 
   it("the template example is recognised and linked to its fee row, Harga Jual empty = the SRP", () => {
@@ -46,6 +46,11 @@ describe("Massive Calculator XLS", () => {
     expect(r.matched).toBe(1);
     expect(r.rows[0]).toMatchObject({ prod_id: "9078737678", item_product: "AC Panasonic 2 PK CS-YN18AKJ", modal_produk_rp: 5800000, harga_jual_rp: 7500000, fee_id: "F1",
       target_roas: 8, berat_kg: 28, ukuran_cm3: 52000, gratis_ongkir_on: true, promo_xtra_on: true, paylater_3mo_on: false, biaya_lain_rp: 0 });
+  });
+
+  it("an empty Modal Produk takes Harga Beli of the catalog, an empty Harga Jual the Harga SRP", () => {
+    const m = [[...CALC_HEADER], [1, "9078737678", "", "", "", "Shopee", "Star", "Elektronik", "AC", "AC Split", 0, 0, 0, "", "", "", "", ""]];
+    expect(parseCalcMatrix(m, catalog, fees).rows[0]).toMatchObject({ modal_produk_rp: 5600000, harga_jual_rp: 7500000 });
   });
 
   it("an explicit Harga Jual wins, a fee that does not exist stays unlinked, and the bad rows are reported", () => {

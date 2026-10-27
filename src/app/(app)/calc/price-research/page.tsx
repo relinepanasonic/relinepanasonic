@@ -5,7 +5,6 @@ import { Fragment, useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { createClient } from "@/lib/supabase/client";
 import Loader from "@/components/Loader";
-import { fmtDateTime } from "@/lib/dates";
 import { PLATFORMS, cleanUrl, detectPlatform, estimateCost, type Platform } from "@/lib/priceResearch";
 import { CATALOG_EXAMPLE, CATALOG_HEADER, parseCatalogMatrix } from "@/lib/catalogXls";
 
@@ -15,18 +14,20 @@ export const dynamic = "force-dynamic";
 //   Price Guard   per product: the SRP first (Baseline), then every connected store: Price Input (the price before the shop's discount),
 //                 Price Discount (what a buyer pays after it), promo labels, and Higher / Under / Same against the SRP.
 //   Product URL   which product is sold by which store, and its Product URL (one product, many stores). Store names come from a dropdown.
-//   Product Catalog  our own products: Product Name, Prod ID, SRP ID, Price SRP (every SRP change is logged); typed by hand or imported from an XLS.
-//                 The Massive Calculator uses the same catalog.
+//   Product Catalog  the SRP log (SRP ID automatic | Date Create | Date Active | Total SKU) and, per SRP, its products: Product Name, Prod ID,
+//                 Harga Beli (the calculator's Modal Produk), Harga SRP; typed by hand or imported from an XLS. The SRP in force feeds Price Guard,
+//                 Product URL and the Massive Calculator.
 // Prices are scraped ON DEMAND (button) through Apify.
 type Supabase = ReturnType<typeof createClient>;
-type SrpProduct = { id: string; prod_id: string; product_name: string; srp_id: string | null; price_srp: number | null; created_at: string };
+type CatalogItem = { prod_id: string; product_name: string; harga_beli: number | null; harga_srp: number | null; srp_no: string | null };
+type SrpLogRow = { id: string; srp_no: string; created_at: string; active_from: string; created_by: string | null; total_sku: number; in_force: boolean };
+type SrpItem = { id: string; prod_id: string; product_name: string; harga_beli: number | null; harga_srp: number | null };
 type Store = { id: string; name: string };
 type LinkRow = { id: string; kode_produk: string; platform: Platform; store_id: string | null; store_name: string | null; product_url: string };
 type RunInfo = { id: string; platform: Platform; status: "running" | "done" | "failed"; scraped: number; failed: number; error: string | null; started_at: string; links: number };
 type GuardStore = { link_id: string; store: string; platform: Platform; product_url: string; scraped_at: string | null; ok: boolean | null; error: string | null;
   price_original: number | null; price_sell: number | null; discount_pct: number | null; labels: string[] | null };
 type GuardProduct = { product_id: string; prod_id: string; product_name: string; srp: number | null; srp_id: string | null; scraped_at: string | null; stores: GuardStore[] };
-type LogRow = { id: number; srp_id: string | null; price_srp: number | null; old_srp_id: string | null; old_price_srp: number | null; effective_from: string; changed_by: string | null; changed_at: string };
 type TabKey = "guard" | "urls" | "products";
 
 const rp = (n: number | null | undefined) => n == null ? "—" : "Rp " + Math.round(n).toLocaleString("id-ID");
@@ -149,7 +150,7 @@ export default function PriceResearchPage() {
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 10, marginBottom: 12 }}>
           <div>
             <h3 style={{ margin: 0 }}>Price Research</h3>
-            <div className="hint">Enter our products and their SRP in the <b>Product Catalog</b> (or import them from an XLS), connect them to the stores&apos; pages in <b>Product URL</b>, scrape, and read the result in <b>Price Guard</b>.</div>
+            <div className="hint">Create an SRP with your products in the <b>Product Catalog</b> (or import them from an XLS), connect them to the stores&apos; pages in <b>Product URL</b>, scrape, and read the result in <b>Price Guard</b>.</div>
           </div>
           {isAdmin && (
             <button className="btn-gold" disabled={busy || !allLinks.length} onClick={() => scrape(allLinks.map((l) => l.id), "all Product URLs")} style={{ padding: "10px 22px" }}>
@@ -167,7 +168,7 @@ export default function PriceResearchPage() {
 
         {clientId && tab === "guard" && <GuardTab supabase={supabase} clientId={clientId} tick={tick} />}
         {clientId && tab === "urls" && <UrlsTab supabase={supabase} clientId={clientId} isAdmin={isAdmin} tick={tick} busy={busy} filter={urlFilter} setFilter={setUrlFilter} onScrape={scrape} onChanged={() => setTick((t) => t + 1)} />}
-        {clientId && tab === "products" && <ProductsTab supabase={supabase} clientId={clientId} isAdmin={isAdmin} tick={tick} onUrls={(p) => { setUrlFilter(p.prod_id); setTab("urls"); }} onChanged={() => setTick((t) => t + 1)} />}
+        {clientId && tab === "products" && <CatalogTab supabase={supabase} clientId={clientId} isAdmin={isAdmin} tick={tick} onChanged={() => setTick((t) => t + 1)} />}
       </div>
     </>
   );
@@ -255,7 +256,7 @@ function UrlsTab({ supabase, clientId, isAdmin, tick, busy, filter, setFilter, o
   supabase: Supabase; clientId: string; isAdmin: boolean; tick: number; busy: boolean; filter: string; setFilter: (v: string) => void;
   onScrape: (ids: string[], label: string) => Promise<boolean>; onChanged: () => void;
 }) {
-  const [products, setProducts] = useState<SrpProduct[] | null>(null);
+  const [products, setProducts] = useState<CatalogItem[] | null>(null);
   const [stores, setStores] = useState<Store[]>([]);
   const [links, setLinks] = useState<LinkRow[]>([]);
   const [f, setF] = useState({ product_id: "", store_id: "", url: "" });
@@ -265,11 +266,11 @@ function UrlsTab({ supabase, clientId, isAdmin, tick, busy, filter, setFilter, o
   useEffect(() => {
     (async () => {
       const [{ data: p }, { data: s }, { data: l }] = await Promise.all([
-        supabase.from("pr_srp_products").select("id, prod_id, product_name, srp_id, price_srp, created_at").eq("client_id", clientId).order("product_name"),
+        supabase.rpc("pr_srp_catalog", { p_client_id: clientId }),
         supabase.from("pr_stores").select("id, name").eq("client_id", clientId).order("name"),
         supabase.from("price_research_links").select("id, kode_produk, platform, store_id, store_name, product_url").eq("client_id", clientId).order("created_at"),
       ]);
-      setProducts((p as SrpProduct[]) || []); setStores((s as Store[]) || []); setLinks((l as LinkRow[]) || []);
+      setProducts((p as CatalogItem[]) || []); setStores((s as Store[]) || []); setLinks((l as LinkRow[]) || []);
     })();
   }, [supabase, clientId, tick]);
 
@@ -290,7 +291,7 @@ function UrlsTab({ supabase, clientId, isAdmin, tick, busy, filter, setFilter, o
   }
   async function connect() {
     setErr("");
-    const product = products?.find((p) => p.id === f.product_id);
+    const product = products?.find((p) => p.prod_id === f.product_id);
     const store = stores.find((s) => s.id === f.store_id);
     const url = cleanUrl(f.url);
     if (!product) { setErr("Pick a product."); return; }
@@ -327,7 +328,7 @@ function UrlsTab({ supabase, clientId, isAdmin, tick, busy, filter, setFilter, o
           <div className="fld" style={{ minWidth: 240, flex: "1 1 240px" }}><label>Product</label>
             <select value={f.product_id} onChange={(e) => setF({ ...f, product_id: e.target.value })}>
               <option value="">{products && products.length ? "Select product…" : "Add products first (Product Catalog tab)"}</option>
-              {(products || []).map((p) => <option key={p.id} value={p.id}>{p.product_name} · {p.prod_id}</option>)}
+              {(products || []).map((p) => <option key={p.prod_id} value={p.prod_id}>{p.product_name} · {p.prod_id}</option>)}
             </select>
           </div>
           <div className="fld" style={{ minWidth: 190, flex: "0 1 200px" }}><label>Store name</label>
@@ -434,133 +435,6 @@ function StoresModal({ supabase, clientId, stores, links, onClose }: { supabase:
   );
 }
 
-/* ── Products: our products with their SRP (manual) ── */
-function ProductsTab({ supabase, clientId, isAdmin, tick, onUrls, onChanged }: {
-  supabase: Supabase; clientId: string; isAdmin: boolean; tick: number; onUrls: (p: SrpProduct) => void; onChanged: () => void;
-}) {
-  const [rows, setRows] = useState<SrpProduct[] | null>(null);
-  const [counts, setCounts] = useState<Record<string, number>>({});
-  const [q, setQ] = useState("");
-  const [edit, setEdit] = useState<Partial<SrpProduct> | null>(null);
-  const [logOf, setLogOf] = useState<SrpProduct | null>(null);
-  const [importing, setImporting] = useState(false);
-  const [importMsg, setImportMsg] = useState<{ ok: boolean; text: string } | null>(null);
-  const [effective, setEffective] = useState(today());
-
-  useEffect(() => {
-    (async () => {
-      const { data } = await supabase.from("pr_srp_products").select("id, prod_id, product_name, srp_id, price_srp, created_at").eq("client_id", clientId).order("created_at");
-      setRows((data as SrpProduct[]) || []);
-      const { data: l } = await supabase.from("price_research_links").select("kode_produk").eq("client_id", clientId);
-      const m: Record<string, number> = {};
-      for (const x of (l as { kode_produk: string }[]) || []) m[x.kode_produk] = (m[x.kode_produk] || 0) + 1;
-      setCounts(m);
-    })();
-  }, [supabase, clientId, tick]);
-
-  const shown = (rows || []).filter((r) => { const t = q.trim().toLowerCase(); return !t || r.product_name.toLowerCase().includes(t) || r.prod_id.toLowerCase().includes(t) || (r.srp_id || "").toLowerCase().includes(t); });
-  async function del(p: SrpProduct) {
-    if (!window.confirm(`Delete ${p.product_name}? Its Product URLs and scraped prices are deleted too.`)) return;
-    await supabase.from("price_research_links").delete().eq("client_id", clientId).eq("kode_produk", p.prod_id);
-    await supabase.from("pr_srp_products").delete().eq("id", p.id);
-    onChanged();
-  }
-
-  // the XLS template is the empty sheet (one example row); the export is the catalog as it is now, so it can be edited and imported back
-  async function downloadXls(withRows: boolean) {
-    const XLSX = await import("xlsx");
-    const body: (string | number)[][] = withRows ? (rows || []).map((r, i) => [i + 1, r.srp_id || "", r.product_name, r.prod_id, r.price_srp ?? ""]) : [CATALOG_EXAMPLE as (string | number)[]];
-    const wb = XLSX.utils.book_new();
-    const ws = XLSX.utils.aoa_to_sheet([[...CATALOG_HEADER], ...body]);
-    ws["!cols"] = [{ wch: 6 }, { wch: 16 }, { wch: 46 }, { wch: 18 }, { wch: 16 }];
-    XLSX.utils.book_append_sheet(wb, ws, "Product Catalog");
-    const guide = XLSX.utils.aoa_to_sheet([
-      ["How to fill"], [""],
-      ["Prod ID", "Required and unique: it is the key. A Prod ID that is already in the catalog is UPDATED, a new one is ADDED."],
-      ["Product Name", "Required."],
-      ["SRP ID", "Your own name for the SRP version, e.g. SRP-2026-10."],
-      ["Price SRP", "In Rp (7500000 or Rp 7.500.000)."],
-      ["SRP changes", "When the SRP ID or the Price SRP of a known Prod ID changes, the old SRP stays in the SRP log and the new one counts from the date you choose when you import."],
-      ["No", "Only a counter, it is ignored."],
-    ]);
-    guide["!cols"] = [{ wch: 18 }, { wch: 110 }];
-    XLSX.utils.book_append_sheet(wb, guide, "Guide");
-    XLSX.writeFile(wb, withRows ? "product-catalog-export.xlsx" : "product-catalog-template.xlsx");
-  }
-
-  async function importXls(file: File) {
-    setImporting(true); setImportMsg(null);
-    try {
-      const XLSX = await import("xlsx");
-      const wb = XLSX.read(await file.arrayBuffer(), { type: "array" });
-      const matrix = XLSX.utils.sheet_to_json<unknown[]>(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: "", raw: true });
-      const parsed = parseCatalogMatrix(matrix);
-      if (parsed.error) { setImportMsg({ ok: false, text: parsed.error }); return; }
-      if (!parsed.rows.length) { setImportMsg({ ok: false, text: "No product row found in the sheet." }); return; }
-      const total = { added: 0, updated: 0, unchanged: 0, errors: [] as { row: number; error: string }[] };
-      for (let i = 0; i < parsed.rows.length; i += 500) {
-        const { data, error } = await supabase.rpc("pr_srp_import", { p_client_id: clientId, p_rows: parsed.rows.slice(i, i + 500), p_effective: effective || null });
-        if (error) { setImportMsg({ ok: false, text: error.message }); return; }
-        const r = data as typeof total;
-        total.added += r.added; total.updated += r.updated; total.unchanged += r.unchanged; total.errors.push(...r.errors.map((e) => ({ row: e.row + i, error: e.error })));
-      }
-      const bad = [...parsed.skipped.map((x) => `row ${x.row}: ${x.reason}`), ...total.errors.map((x) => `product ${x.row}: ${x.error}`)];
-      setImportMsg({ ok: bad.length === 0, text: `${total.added} added · ${total.updated} updated · ${total.unchanged} unchanged${bad.length ? ` · ${bad.length} skipped: ${bad.slice(0, 3).join("; ")}${bad.length > 3 ? "…" : ""}` : ""}` });
-      onChanged();
-    } finally { setImporting(false); }
-  }
-
-  return (
-    <>
-      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 12 }}>
-        <div className="fld" style={{ minWidth: 260, flex: 1 }}><label>Search</label><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Product name, Prod ID or SRP ID" /></div>
-        <button className="btn-ghost" onClick={() => downloadXls(false)}>⬇ Template XLS</button>
-        <button className="btn-ghost" onClick={() => downloadXls(true)} disabled={!rows?.length}>⬇ Export XLS</button>
-        {isAdmin && (
-          <>
-            <div className="fld" style={{ minWidth: 150 }}><label>SRP valid from (import)</label><input type="date" value={effective} onChange={(e) => setEffective(e.target.value)} style={{ colorScheme: "dark" }} /></div>
-            <label className="btn-ghost" style={{ cursor: importing ? "not-allowed" : "pointer", opacity: importing ? 0.6 : 1 }}>
-              {importing ? "Importing…" : "Import XLS"}
-              <input type="file" accept=".xlsx,.xls,.csv" style={{ display: "none" }} disabled={importing}
-                onChange={(e) => { const f = e.target.files?.[0]; if (f) importXls(f); e.target.value = ""; }} />
-            </label>
-            <button className="btn-gold" onClick={() => setEdit({})} style={{ padding: "10px 22px" }}>+ Add product</button>
-          </>
-        )}
-      </div>
-      {importMsg && <div style={{ color: importMsg.ok ? "var(--gold)" : "#f87171", fontSize: 13, marginBottom: 10 }}>{importMsg.ok ? "✓" : "✗"} {importMsg.text}</div>}
-      {rows === null ? <Loader center /> : (
-        <div className="tbl-wrap" style={{ maxHeight: "66vh" }}>
-          <table className="tbl day-tbl">
-            <thead><tr><th className="num">No</th><th>SRP ID</th><th>Product Name</th><th>Prod ID</th><th className="num">Price SRP</th><th className="num">Product URLs</th><th></th></tr></thead>
-            <tbody>
-              {shown.map((r, i) => (
-                <tr key={r.id}>
-                  <td className="num">{i + 1}</td>
-                  <td style={{ fontFamily: "monospace", fontSize: 12.5 }}>{r.srp_id || "—"}</td>
-                  <td style={{ minWidth: 220, maxWidth: 380, whiteSpace: "normal", overflowWrap: "anywhere" }}>{r.product_name}</td>
-                  <td style={{ fontFamily: "monospace", fontSize: 12.5 }}>{r.prod_id}</td>
-                  <td className="num" style={{ fontWeight: 700 }}>{rp(r.price_srp)}</td>
-                  <td className="num">{counts[r.prod_id] ? <b style={{ color: "var(--gold)" }}>{counts[r.prod_id]}</b> : <span style={{ color: "var(--muted)" }}>0</span>}</td>
-                  <td style={{ whiteSpace: "nowrap" }}>
-                    <button className="btn-ghost" onClick={() => onUrls(r)}>{counts[r.prod_id] ? "Product URL" : "+ Product URL"}</button>{" "}
-                    <button className="btn-ghost" onClick={() => setLogOf(r)}>SRP log</button>{" "}
-                    {isAdmin && <button className="btn-ghost" onClick={() => setEdit(r)}>Edit</button>}{" "}
-                    {isAdmin && <button className="btn-ghost" onClick={() => del(r)} style={{ color: "#f87171" }}>✕</button>}
-                  </td>
-                </tr>
-              ))}
-              {shown.length === 0 && <tr><td colSpan={7} style={{ textAlign: "center", color: "var(--muted)", padding: 24 }}>{rows.length ? "No product matches." : "No product yet — press + Add product, or fill the XLS template and Import it."}</td></tr>}
-            </tbody>
-          </table>
-        </div>
-      )}
-      {edit && <ProductModal supabase={supabase} clientId={clientId} product={edit} onClose={(saved) => { setEdit(null); if (saved) onChanged(); }} />}
-      {logOf && <SrpLogModal supabase={supabase} product={logOf} onClose={() => setLogOf(null)} />}
-    </>
-  );
-}
-
 function Modal({ children, onClose, width = 640 }: { children: React.ReactNode; onClose: () => void; width?: number }) {
   return createPortal(
     <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(2,6,16,.72)", backdropFilter: "blur(6px)", display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "6vh 16px", overflowY: "auto" }}>
@@ -570,77 +444,260 @@ function Modal({ children, onClose, width = 640 }: { children: React.ReactNode; 
   );
 }
 
-function ProductModal({ supabase, clientId, product, onClose }: { supabase: Supabase; clientId: string; product: Partial<SrpProduct>; onClose: (saved: boolean) => void }) {
-  const isNew = !product.id;
-  const [f, setF] = useState({ prod_id: product.prod_id || "", product_name: product.product_name || "", srp_id: product.srp_id || "", price_srp: product.price_srp != null ? String(product.price_srp) : "", effective: today() });
+/* ── Product Catalog: the SRP log first (SRP ID | Date Create | Date Active | Total SKU), then the products of one SRP ── */
+function CatalogTab({ supabase, clientId, isAdmin, tick, onChanged }: { supabase: Supabase; clientId: string; isAdmin: boolean; tick: number; onChanged: () => void }) {
+  const [listId, setListId] = useState<string | null>(null);
+  const [rows, setRows] = useState<SrpLogRow[] | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [err, setErr] = useState("");
+  const [nowMs] = useState(() => Date.now());
+
+  useEffect(() => {
+    (async () => {
+      const { data, error } = await supabase.rpc("pr_srp_lists_log", { p_client_id: clientId });
+      setErr(error ? error.message : "");
+      setRows((data as SrpLogRow[]) || []);
+    })();
+  }, [supabase, clientId, tick, listId]);
+
+  if (listId) return <SrpListView supabase={supabase} isAdmin={isAdmin} listId={listId} onBack={() => { setListId(null); onChanged(); }} onChanged={onChanged} />;
+
+  return (
+    <>
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center", marginBottom: 12 }}>
+        <div className="hint" style={{ flex: 1, margin: 0 }}>Every SRP is a saved version of the product list with its Harga Beli and Harga SRP. The SRP in force (latest Date Active up to today) feeds Price Guard, Product URL and the Massive Calculator. Open an SRP to see or change its products.</div>
+        {isAdmin && <button className="btn-gold" onClick={() => setCreating(true)} style={{ padding: "10px 22px" }}>+ Create New SRP</button>}
+      </div>
+      {err && <div style={{ color: "#f87171", fontSize: 13, marginBottom: 10 }}>✗ {err}</div>}
+      {rows === null ? <Loader center /> : (
+        <div className="tbl-wrap" style={{ maxHeight: "66vh" }}>
+          <table className="tbl day-tbl">
+            <thead><tr><th>SRP ID</th><th>Date Create</th><th>Date Active</th><th className="num">Total SKU</th><th>Created by</th><th></th></tr></thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.id} onClick={() => setListId(r.id)} style={{ cursor: "pointer" }}>
+                  <td style={{ fontFamily: "monospace", fontWeight: 700 }}>{r.srp_no}</td>
+                  <td>{dmy(r.created_at)}</td>
+                  <td>{dmy(r.active_from + "T00:00:00+07:00")}</td>
+                  <td className="num" style={{ fontWeight: 700 }}>{r.total_sku}</td>
+                  <td>{r.created_by || "—"}</td>
+                  <td>{r.in_force ? <span style={{ padding: "2px 10px", borderRadius: 999, fontSize: 11.5, fontWeight: 800, border: "1px solid rgba(201,162,39,.5)", color: "var(--gold)" }}>In force</span> : new Date(r.active_from + "T00:00:00+07:00").getTime() > nowMs ? <span style={{ color: "var(--muted)", fontSize: 12 }}>Scheduled</span> : <span style={{ color: "var(--muted)", fontSize: 12 }}>Replaced</span>}</td>
+                </tr>
+              ))}
+              {rows.length === 0 && <tr><td colSpan={6} style={{ textAlign: "center", color: "var(--muted)", padding: 24 }}>No SRP yet — press + Create New SRP, then add the products or import them from an XLS.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {creating && <CreateSrpModal supabase={supabase} clientId={clientId} hasCurrent={!!rows?.length} onClose={(id) => { setCreating(false); if (id) { onChanged(); setListId(id); } }} />}
+    </>
+  );
+}
+
+function CreateSrpModal({ supabase, clientId, hasCurrent, onClose }: { supabase: Supabase; clientId: string; hasCurrent: boolean; onClose: (newId: string | null) => void }) {
+  const [active, setActive] = useState(today());
+  const [copy, setCopy] = useState(true);
   const [err, setErr] = useState("");
   const [saving, setSaving] = useState(false);
-  const srpChanged = !isNew && (f.srp_id.trim() !== (product.srp_id || "") || Number(f.price_srp || 0) !== Number(product.price_srp || 0));
+  async function create() {
+    setErr(""); setSaving(true);
+    const { data, error } = await supabase.rpc("pr_srp_list_create", { p_client_id: clientId, p_active_from: active || null, p_copy: hasCurrent && copy });
+    setSaving(false);
+    if (error) { setErr(error.message.replace(/^[A-Z_]+:\s*/, "")); return; }
+    onClose(data as string);
+  }
+  return (
+    <Modal onClose={() => onClose(null)} width={520}>
+      <div style={{ fontSize: 18, fontWeight: 800, color: "#fff", marginBottom: 6 }}>Create New SRP</div>
+      <div style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 14 }}>The SRP ID is given automatically (SRP-YYMM-NNN).</div>
+      <div className="fld" style={{ maxWidth: 220 }}><label>Date Active</label><input type="date" value={active} onChange={(e) => setActive(e.target.value)} style={{ colorScheme: "dark" }} /></div>
+      {hasCurrent && (
+        <label style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 14, fontSize: 13.5, cursor: "pointer" }}>
+          <input type="checkbox" checked={copy} onChange={(e) => setCopy(e.target.checked)} /> Start as a copy of the SRP in force now (then change the prices that changed)
+        </label>
+      )}
+      {err && <div style={{ color: "#f87171", fontSize: 13, marginTop: 10 }}>✗ {err}</div>}
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 18 }}>
+        <button className="btn-ghost" onClick={() => onClose(null)}>Cancel</button>
+        <button className="btn-gold" disabled={saving} onClick={create} style={{ padding: "10px 24px" }}>{saving ? "Creating…" : "Create"}</button>
+      </div>
+    </Modal>
+  );
+}
+
+function SrpListView({ supabase, isAdmin, listId, onBack, onChanged }: { supabase: Supabase; isAdmin: boolean; listId: string; onBack: () => void; onChanged: () => void }) {
+  const [head, setHead] = useState<{ srp_no: string; created_at: string; active_from: string } | null>(null);
+  const [rows, setRows] = useState<SrpItem[] | null>(null);
+  const [q, setQ] = useState("");
+  const [edit, setEdit] = useState<Partial<SrpItem> | null>(null);
+  const [activeEdit, setActiveEdit] = useState("");
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [importing, setImporting] = useState(false);
+  const [local, setLocal] = useState(0);
+
+  useEffect(() => {
+    (async () => {
+      const { data: h } = await supabase.from("pr_srp_lists").select("srp_no, created_at, active_from").eq("id", listId).single();
+      setHead(h as typeof head); setActiveEdit((h as { active_from: string } | null)?.active_from || "");
+      const { data } = await supabase.from("pr_srp_items").select("id, prod_id, product_name, harga_beli, harga_srp").eq("list_id", listId).order("product_name");
+      setRows((data as SrpItem[]) || []);
+    })();
+  }, [supabase, listId, local]);
+
+  const shown = (rows || []).filter((r) => { const t = q.trim().toLowerCase(); return !t || r.product_name.toLowerCase().includes(t) || r.prod_id.toLowerCase().includes(t); });
+  const refresh = () => { setLocal((n) => n + 1); onChanged(); };
+
+  async function saveActive() {
+    const { error } = await supabase.from("pr_srp_lists").update({ active_from: activeEdit }).eq("id", listId);
+    setMsg(error ? { ok: false, text: error.message } : { ok: true, text: "Date Active saved." }); refresh();
+  }
+  async function delList() {
+    if (!window.confirm(`Delete ${head?.srp_no} with all its ${rows?.length ?? 0} products? Price Guard and the calculator go back to the SRP in force before it.`)) return;
+    const { error } = await supabase.from("pr_srp_lists").delete().eq("id", listId);
+    if (error) { setMsg({ ok: false, text: error.message }); return; }
+    onBack();
+  }
+  async function delItem(r: SrpItem) {
+    if (!window.confirm(`Remove ${r.product_name} from ${head?.srp_no}?`)) return;
+    await supabase.from("pr_srp_items").delete().eq("id", r.id); refresh();
+  }
+
+  // the XLS template is the empty sheet (one example row); the export is this SRP as it is now, so it can be edited and imported back
+  async function downloadXls(withRows: boolean) {
+    const XLSX = await import("xlsx");
+    const body: (string | number)[][] = withRows ? (rows || []).map((r, i) => [i + 1, r.product_name, r.prod_id, r.harga_beli ?? "", r.harga_srp ?? ""]) : [CATALOG_EXAMPLE as (string | number)[]];
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet([[...CATALOG_HEADER], ...body]);
+    ws["!cols"] = [{ wch: 6 }, { wch: 46 }, { wch: 18 }, { wch: 16 }, { wch: 16 }];
+    XLSX.utils.book_append_sheet(wb, ws, "Product Catalog");
+    const guide = XLSX.utils.aoa_to_sheet([
+      ["How to fill"], [""],
+      ["Prod ID", "Required and unique inside the SRP: it is the key. A Prod ID that is already in this SRP is UPDATED, a new one is ADDED."],
+      ["Product Name", "Required."],
+      ["Harga Beli", "Cost price in Rp. The Massive Calculator uses it as Modal Produk."],
+      ["Harga SRP", "Selling price guide in Rp. Price Guard compares the competitors with it."],
+      ["SRP ID", "Not in the sheet: it is automatic, one per SRP."],
+      ["No", "Only a counter, it is ignored."],
+    ]);
+    guide["!cols"] = [{ wch: 18 }, { wch: 110 }];
+    XLSX.utils.book_append_sheet(wb, guide, "Guide");
+    XLSX.writeFile(wb, `${head?.srp_no || "srp"}-${withRows ? "export" : "template"}.xlsx`);
+  }
+
+  async function importXls(file: File) {
+    setImporting(true); setMsg(null);
+    try {
+      const XLSX = await import("xlsx");
+      const wb = XLSX.read(await file.arrayBuffer(), { type: "array" });
+      const matrix = XLSX.utils.sheet_to_json<unknown[]>(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: "", raw: true });
+      const parsed = parseCatalogMatrix(matrix);
+      if (parsed.error) { setMsg({ ok: false, text: parsed.error }); return; }
+      if (!parsed.rows.length) { setMsg({ ok: false, text: "No product row found in the sheet." }); return; }
+      const total = { added: 0, updated: 0, unchanged: 0, errors: [] as { row: number; error: string }[] };
+      for (let i = 0; i < parsed.rows.length; i += 500) {
+        const { data, error } = await supabase.rpc("pr_srp_items_import", { p_list: listId, p_rows: parsed.rows.slice(i, i + 500) });
+        if (error) { setMsg({ ok: false, text: error.message }); return; }
+        const r = data as typeof total;
+        total.added += r.added; total.updated += r.updated; total.unchanged += r.unchanged; total.errors.push(...r.errors.map((e) => ({ row: e.row + i, error: e.error })));
+      }
+      const bad = [...parsed.skipped.map((x) => `row ${x.row}: ${x.reason}`), ...total.errors.map((x) => `product ${x.row}: ${x.error}`)];
+      setMsg({ ok: bad.length === 0, text: `${total.added} added · ${total.updated} updated · ${total.unchanged} unchanged${bad.length ? ` · ${bad.length} skipped: ${bad.slice(0, 3).join("; ")}${bad.length > 3 ? "…" : ""}` : ""}` });
+      refresh();
+    } finally { setImporting(false); }
+  }
+
+  return (
+    <>
+      <div style={{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "center", marginBottom: 12 }}>
+        <button className="btn-ghost" onClick={onBack}>← SRP log</button>
+        <div style={{ fontSize: 20, fontWeight: 800, color: "#fff", fontFamily: "monospace" }}>{head?.srp_no || "…"}</div>
+        <div style={{ fontSize: 12.5, color: "var(--muted)" }}>Created {dmy(head?.created_at)} · {rows?.length ?? 0} SKU</div>
+        {isAdmin && head && (
+          <div style={{ display: "flex", gap: 6, alignItems: "center", marginLeft: "auto" }}>
+            <span style={{ fontSize: 12.5, color: "var(--muted)" }}>Date Active</span>
+            <input type="date" value={activeEdit} onChange={(e) => setActiveEdit(e.target.value)} style={{ colorScheme: "dark" }} />
+            {activeEdit !== head.active_from && <button className="btn-gold" onClick={saveActive} style={{ padding: "7px 14px" }}>Save date</button>}
+            <button className="btn-ghost" onClick={delList} style={{ color: "#f87171" }}>Delete SRP</button>
+          </div>
+        )}
+        {!isAdmin && head && <div style={{ marginLeft: "auto", fontSize: 12.5, color: "var(--muted)" }}>Date Active {dmy(head.active_from + "T00:00:00+07:00")}</div>}
+      </div>
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 12 }}>
+        <div className="fld" style={{ minWidth: 260, flex: 1 }}><label>Search</label><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Product name or Prod ID" /></div>
+        <button className="btn-ghost" onClick={() => downloadXls(false)}>⬇ Template XLS</button>
+        <button className="btn-ghost" onClick={() => downloadXls(true)} disabled={!rows?.length}>⬇ Export XLS</button>
+        {isAdmin && (
+          <>
+            <label className="btn-ghost" style={{ cursor: importing ? "not-allowed" : "pointer", opacity: importing ? 0.6 : 1 }}>
+              {importing ? "Importing…" : "Import XLS"}
+              <input type="file" accept=".xlsx,.xls,.csv" style={{ display: "none" }} disabled={importing}
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) importXls(f); e.target.value = ""; }} />
+            </label>
+            <button className="btn-gold" onClick={() => setEdit({})} style={{ padding: "10px 22px" }}>+ Add product</button>
+          </>
+        )}
+      </div>
+      {msg && <div style={{ color: msg.ok ? "var(--gold)" : "#f87171", fontSize: 13, marginBottom: 10 }}>{msg.ok ? "✓" : "✗"} {msg.text}</div>}
+      {rows === null ? <Loader center /> : (
+        <div className="tbl-wrap" style={{ maxHeight: "62vh" }}>
+          <table className="tbl day-tbl">
+            <thead><tr><th className="num">No</th><th>Product Name</th><th>Prod ID</th><th className="num">Harga Beli</th><th className="num">Harga SRP</th><th></th></tr></thead>
+            <tbody>
+              {shown.map((r, i) => (
+                <tr key={r.id}>
+                  <td className="num">{i + 1}</td>
+                  <td style={{ minWidth: 240, maxWidth: 420, whiteSpace: "normal", overflowWrap: "anywhere" }}>{r.product_name}</td>
+                  <td style={{ fontFamily: "monospace", fontSize: 12.5 }}>{r.prod_id}</td>
+                  <td className="num">{rp(r.harga_beli)}</td>
+                  <td className="num" style={{ fontWeight: 700 }}>{rp(r.harga_srp)}</td>
+                  <td style={{ whiteSpace: "nowrap" }}>
+                    {isAdmin && <button className="btn-ghost" onClick={() => setEdit(r)}>Edit</button>}{" "}
+                    {isAdmin && <button className="btn-ghost" onClick={() => delItem(r)} style={{ color: "#f87171" }}>✕</button>}
+                  </td>
+                </tr>
+              ))}
+              {shown.length === 0 && <tr><td colSpan={6} style={{ textAlign: "center", color: "var(--muted)", padding: 24 }}>{rows.length ? "No product matches." : "No product in this SRP yet — press + Add product, or fill the XLS template and Import it."}</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {edit && <ItemModal supabase={supabase} listId={listId} srpNo={head?.srp_no || ""} item={edit} onClose={(saved) => { setEdit(null); if (saved) refresh(); }} />}
+    </>
+  );
+}
+
+function ItemModal({ supabase, listId, srpNo, item, onClose }: { supabase: Supabase; listId: string; srpNo: string; item: Partial<SrpItem>; onClose: (saved: boolean) => void }) {
+  const isNew = !item.id;
+  const [f, setF] = useState({ prod_id: item.prod_id || "", product_name: item.product_name || "", harga_beli: item.harga_beli != null ? String(item.harga_beli) : "", harga_srp: item.harga_srp != null ? String(item.harga_srp) : "" });
+  const [err, setErr] = useState("");
+  const [saving, setSaving] = useState(false);
+  const num = (s: string) => (s.trim() === "" ? null : Number(s.replace(/[^\d]/g, "")));
 
   async function save() {
     setErr("");
-    const price = f.price_srp.trim() === "" ? null : Number(f.price_srp.replace(/[^\d]/g, ""));
     if (!f.prod_id.trim() || !f.product_name.trim()) { setErr("Prod ID and Product Name are required."); return; }
     setSaving(true);
-    const { error } = await supabase.rpc("pr_srp_save", { p_client_id: clientId, p_id: product.id || null, p_prod_id: f.prod_id, p_product_name: f.product_name, p_srp_id: f.srp_id, p_price_srp: price, p_effective: f.effective || null });
+    const { error } = await supabase.rpc("pr_srp_item_save", { p_list: listId, p_item: item.id || null, p_prod_id: f.prod_id, p_product_name: f.product_name, p_harga_beli: num(f.harga_beli), p_harga_srp: num(f.harga_srp) });
     setSaving(false);
-    if (error) { setErr(/duplicate|unique/i.test(error.message) ? "This Prod ID is already in the list." : error.message.replace(/^[A-Z_]+:\s*/, "")); return; }
+    if (error) { setErr(/duplicate|unique/i.test(error.message) ? "This Prod ID is already in this SRP." : error.message.replace(/^[A-Z_]+:\s*/, "")); return; }
     onClose(true);
   }
 
   return (
     <Modal onClose={() => onClose(false)}>
-      <div style={{ fontSize: 18, fontWeight: 800, color: "#fff", marginBottom: 14 }}>{isNew ? "Add product" : "Edit product"}</div>
+      <div style={{ fontSize: 18, fontWeight: 800, color: "#fff", marginBottom: 4 }}>{isNew ? "Add product" : "Edit product"}</div>
+      <div style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 14, fontFamily: "monospace" }}>{srpNo}</div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
         <div className="fld" style={{ gridColumn: "1 / -1" }}><label>Product Name</label><input value={f.product_name} onChange={(e) => setF({ ...f, product_name: e.target.value })} placeholder="AC Panasonic 2 PK CS-YN18AKJ" /></div>
-        <div className="fld"><label>Prod ID</label><input value={f.prod_id} onChange={(e) => setF({ ...f, prod_id: e.target.value })} placeholder="e.g. 9078737678 or CS-YN18AKJ" /></div>
-        <div className="fld"><label>SRP ID</label><input value={f.srp_id} onChange={(e) => setF({ ...f, srp_id: e.target.value })} placeholder="e.g. SRP-2026-10" /></div>
-        <div className="fld"><label>Price SRP (Rp)</label><input inputMode="numeric" value={f.price_srp} onChange={(e) => setF({ ...f, price_srp: e.target.value.replace(/[^\d]/g, "") })} placeholder="7500000" /></div>
-        <div className="fld"><label>SRP valid from</label><input type="date" value={f.effective} onChange={(e) => setF({ ...f, effective: e.target.value })} style={{ colorScheme: "dark" }} /></div>
-      </div>
-      <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 10 }}>
-        {isNew ? "The first SRP is logged from the date above." : srpChanged ? <span style={{ color: "var(--gold)" }}>The SRP changes: the old SRP stays in the log, and the new one counts from the date above (Price Guard as of an earlier date keeps the old SRP).</span> : "Changing the SRP ID or the price adds a line to the SRP log."}
+        <div className="fld" style={{ gridColumn: "1 / -1" }}><label>Prod ID</label><input value={f.prod_id} onChange={(e) => setF({ ...f, prod_id: e.target.value })} placeholder="e.g. 9078737678 or CS/CU-YN18AKJ" /></div>
+        <div className="fld"><label>Harga Beli (Rp)</label><input inputMode="numeric" value={f.harga_beli} onChange={(e) => setF({ ...f, harga_beli: e.target.value.replace(/[^\d]/g, "") })} placeholder="5800000" /></div>
+        <div className="fld"><label>Harga SRP (Rp)</label><input inputMode="numeric" value={f.harga_srp} onChange={(e) => setF({ ...f, harga_srp: e.target.value.replace(/[^\d]/g, "") })} placeholder="7500000" /></div>
       </div>
       {err && <div style={{ color: "#f87171", fontSize: 13, marginTop: 10 }}>✗ {err}</div>}
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 16 }}>
         <button className="btn-ghost" onClick={() => onClose(false)}>Cancel</button>
         <button className="btn-gold" disabled={saving} onClick={save} style={{ padding: "10px 24px" }}>{saving ? "Saving…" : "Save"}</button>
       </div>
-    </Modal>
-  );
-}
-
-function SrpLogModal({ supabase, product, onClose }: { supabase: Supabase; product: SrpProduct; onClose: () => void }) {
-  const [rows, setRows] = useState<LogRow[] | null>(null);
-  useEffect(() => {
-    (async () => {
-      const { data } = await supabase.from("pr_srp_log").select("id, srp_id, price_srp, old_srp_id, old_price_srp, effective_from, changed_by, changed_at").eq("product_id", product.id).order("effective_from", { ascending: false }).order("id", { ascending: false });
-      setRows((data as LogRow[]) || []);
-    })();
-  }, [supabase, product.id]);
-  return (
-    <Modal onClose={onClose} width={760}>
-      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12 }}>
-        <div><div style={{ fontSize: 18, fontWeight: 800, color: "#fff" }}>SRP log</div><div style={{ fontSize: 12.5, color: "var(--muted)" }}>{product.product_name} · {product.prod_id}</div></div>
-        <button className="btn-ghost" onClick={onClose} style={{ alignSelf: "flex-start" }}>✕ Close</button>
-      </div>
-      {rows === null ? <Loader center /> : (
-        <div className="tbl-wrap">
-          <table className="tbl day-tbl">
-            <thead><tr><th>Valid from</th><th>SRP ID</th><th className="num">Price SRP</th><th>Before</th><th>Changed by</th><th>Changed at</th></tr></thead>
-            <tbody>
-              {rows.map((r) => (
-                <tr key={r.id}>
-                  <td>{dmy(r.effective_from + "T00:00:00+07:00")}</td><td style={{ fontFamily: "monospace" }}>{r.srp_id || "—"}</td><td className="num" style={{ fontWeight: 700 }}>{rp(r.price_srp)}</td>
-                  <td style={{ color: "var(--muted)" }}>{r.old_srp_id || r.old_price_srp != null ? `${r.old_srp_id || "—"} · ${rp(r.old_price_srp)}` : "first SRP"}</td>
-                  <td>{r.changed_by || "—"}</td><td>{fmtDateTime(r.changed_at)}</td>
-                </tr>
-              ))}
-              {rows.length === 0 && <tr><td colSpan={6} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>No SRP saved yet.</td></tr>}
-            </tbody>
-          </table>
-        </div>
-      )}
     </Modal>
   );
 }
