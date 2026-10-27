@@ -6,7 +6,7 @@ import { createPortal } from "react-dom";
 import { createClient } from "@/lib/supabase/client";
 import Loader from "@/components/Loader";
 import { fmtDate, fmtDateTime } from "@/lib/dates";
-import { PLATFORMS, estimateCost, urlMatchesPlatform, type Platform } from "@/lib/priceResearch";
+import { PLATFORMS, cleanUrl, estimateCost, urlMatchesPlatform, type Platform } from "@/lib/priceResearch";
 
 export const dynamic = "force-dynamic";
 
@@ -16,6 +16,7 @@ type Product = { kode_produk: string; item_name: string | null; product_type: st
   links: number; min_price: number | null; last_scraped: string | null };
 type Listing = { refreshed_at: string | null; categories: string[]; total: number; rows: Product[] };
 type LinkRow = { id: string; kode_produk: string; platform: Platform; store_name: string | null; store_url: string | null; product_url: string; note: string | null };
+type RunInfo = { id: string; platform: Platform; status: "running" | "done" | "failed"; scraped: number; failed: number; error: string | null; started_at: string; links: number };
 type Snap = { id: number; link_id: string; scraped_at: string; ok: boolean; error: string | null; price: number | null; original_price: number | null; sold: number | null; rating: number | null; title: string | null };
 
 const PAGE = 100;
@@ -35,7 +36,9 @@ export default function PriceResearchPage() {
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [open, setOpen] = useState<Product | null>(null);
   const [allLinks, setAllLinks] = useState<{ id: string; platform: Platform }[]>([]);
-  const [busy, setBusy] = useState(false);
+  const [starting, setStarting] = useState(false);
+  const [runs, setRuns] = useState<RunInfo[]>([]);
+  const [now, setNow] = useState(() => Date.now());
   const [building, setBuilding] = useState(false);
 
   useEffect(() => {
@@ -51,6 +54,7 @@ export default function PriceResearchPage() {
     })();
   }, [supabase]);
 
+  const [loadTick, setLoadTick] = useState(0);
   const load = useCallback(async () => {
     if (!clientId) return;
     setLoading(true);
@@ -64,7 +68,7 @@ export default function PriceResearchPage() {
   useEffect(() => {
     const h = setTimeout(load, q ? 300 : 0);
     return () => clearTimeout(h);
-  }, [load, q]);
+  }, [load, q, loadTick]);
 
   // the product list is rebuilt from the sales data once a day (Super Admin / Admin open the page)
   useEffect(() => {
@@ -75,18 +79,47 @@ export default function PriceResearchPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAdmin, clientId, data?.refreshed_at]);
 
+  const running = runs.filter((r) => r.status === "running");
+  const busy = starting || running.length > 0;
+
+  // the runs of this workspace: running ones are polled every 4 seconds (the server asks Apify and saves the prices when it has finished)
+  const pollRuns = useCallback(async (): Promise<RunInfo[]> => {
+    const res = await fetch("/api/price-research/runs");
+    if (!res.ok) return [];
+    const j = await res.json().catch(() => ({ runs: [] }));
+    const list = (j.runs as RunInfo[]) || [];
+    setRuns(list); setNow(Date.now());
+    return list;
+  }, []);
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => { if (isAdmin) pollRuns(); }, [isAdmin, pollRuns]);
+  useEffect(() => {
+    if (!running.length) return;
+    const h = setInterval(async () => {
+      const list = await pollRuns();
+      if (!list.some((r) => r.status === "running")) {
+        const done = list.filter((r) => r.status === "done"), bad = list.filter((r) => r.status === "failed");
+        const saved = done.reduce((x, r) => x + r.scraped, 0), failed = done.reduce((x, r) => x + r.failed, 0) + bad.reduce((x, r) => x + r.failed, 0);
+        setMsg({ ok: failed === 0, text: `Scrape finished: ${saved} price${saved === 1 ? "" : "s"} saved${failed ? ` · ${failed} failed (open the product to see why)` : ""}` });
+        setLoadTick((t) => t + 1);
+      }
+    }, 4000);
+    return () => clearInterval(h);
+  }, [running.length, pollRuns]);
+  useEffect(() => { const h = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(h); }, []);
+
   async function scrape(ids: string[], label: string) {
     if (!ids.length) { setMsg({ ok: false, text: "No competitor links to scrape yet." }); return false; }
     const counts: Partial<Record<Platform, number>> = {};
     for (const id of ids) { const p = allLinks.find((l) => l.id === id)?.platform; if (p) counts[p] = (counts[p] || 0) + 1; }
-    if (!window.confirm(`Scrape ${ids.length} competitor price${ids.length === 1 ? "" : "s"} (${label}) now?\nEstimated Apify cost: about US$ ${estimateCost(counts).toFixed(2)}.`)) return false;
-    setBusy(true); setMsg(null);
+    if (!window.confirm(`Scrape ${ids.length} competitor price${ids.length === 1 ? "" : "s"} (${label}) now?\nEstimated Apify cost: about US$ ${estimateCost(counts).toFixed(2)}.\nIt runs on Apify and takes a few minutes; you can keep working.`)) return false;
+    setStarting(true); setMsg(null);
     const res = await fetch("/api/price-research/scrape", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ link_ids: ids }) });
     const j = await res.json().catch(() => ({}));
-    setBusy(false);
-    if (!res.ok) { setMsg({ ok: false, text: j.error || `Scrape failed (${res.status})` }); return false; }
-    setMsg({ ok: j.failed === 0, text: `${j.scraped} price${j.scraped === 1 ? "" : "s"} saved${j.failed ? ` · ${j.failed} failed: ${(j.errors || []).join(" | ")}` : ""}` });
-    load();
+    if (!res.ok) { setStarting(false); setMsg({ ok: false, text: j.error || `Scrape failed (${res.status})` }); return false; }
+    await pollRuns();
+    setStarting(false);
+    if (j.failed) setMsg({ ok: false, text: `${j.failed} link${j.failed === 1 ? "" : "s"} could not start: ${(j.errors || []).join(" | ")}` });
     return true;
   }
 
@@ -115,7 +148,7 @@ export default function PriceResearchPage() {
           </div>
           {isAdmin && (
             <button className="btn-gold" disabled={busy || !allLinks.length} onClick={() => scrape(allLinks.map((l) => l.id), "all linked products")} style={{ padding: "10px 22px" }}>
-              {busy ? "Scraping…" : `Scrape all linked (${allLinks.length})`}
+              {busy ? "Scraping on Apify…" : `Scrape all linked (${allLinks.length})`}
             </button>
           )}
         </div>
@@ -133,6 +166,11 @@ export default function PriceResearchPage() {
             <button style={pill(linkedOnly)} onClick={() => setLinkedOnly(true)}>With competitors ({allLinks.length ? new Set(rows.filter((r) => r.links > 0).map((r) => r.kode_produk)).size || "…" : 0})</button>
           </div>
         </div>
+        {running.length > 0 && (
+          <div style={{ color: "var(--gold)", fontSize: 13, marginBottom: 10 }}>
+            ⏳ Scraping on Apify: {running.map((r) => `${PLATFORM_LABEL[r.platform]} · ${r.links} link${r.links === 1 ? "" : "s"} · ${Math.max(0, Math.round((now - new Date(r.started_at).getTime()) / 1000))}s`).join("   |   ")} — the prices appear here when it finishes (usually 1 to 5 minutes).
+          </div>
+        )}
         {msg && <div style={{ color: msg.ok ? "var(--gold)" : "#f87171", fontSize: 13, marginBottom: 10 }}>{msg.ok ? "✓" : "✗"} {msg.text}</div>}
 
         {!data ? <Loader center /> : (
@@ -204,11 +242,11 @@ function LinksModal({ supabase, clientId, product, isAdmin, busy, onScrape, onCl
     } else setSnaps([]);
   }, [supabase, clientId, product.kode_produk]);
   // eslint-disable-next-line react-hooks/set-state-in-effect
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load(); }, [load, busy]);   // reloads when a scrape starts or finishes
 
   async function add() {
     setErr("");
-    const url = f.product_url.trim();
+    const url = cleanUrl(f.product_url);
     if (!urlMatchesPlatform(f.platform, url)) { setErr(`The product URL must be a ${PLATFORM_LABEL[f.platform]} link (${PLATFORMS.find((p) => p.v === f.platform)?.hint}).`); return; }
     if (f.store_url.trim() && !/^https?:\/\//i.test(f.store_url.trim())) { setErr("The store URL must start with https://"); return; }
     const { error } = await supabase.from("price_research_links").insert({
@@ -295,7 +333,7 @@ function LinksModal({ supabase, clientId, product, isAdmin, busy, onScrape, onCl
             {err && <div style={{ color: "#f87171", fontSize: 12.5, marginTop: 8 }}>✗ {err}</div>}
             <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 14 }}>
               <button className="btn-gold" disabled={busy || !links.length} onClick={async () => { if (await onScrape(links.map((l) => l.id), "this product")) load(); }} style={{ padding: "10px 24px" }}>
-                {busy ? "Scraping…" : `Scrape this product (${links.length})`}
+                {busy ? "Scraping on Apify…" : `Scrape this product (${links.length})`}
               </button>
             </div>
           </>

@@ -90,3 +90,8 @@ export function parseItem(p: Platform, it: Item): Parsed {
 export function estimateCost(counts: Partial<Record<Platform, number>>): number {
   return PLATFORMS.reduce((a, x) => a + (counts[x.v] || 0) * x.estPerResult, 0);
 }
+
+// A pasted product URL carries tracking junk (?extraParams=…&image_ids=…): keep the address only (TikTok Shop links keep their path)
+export function cleanUrl(url: string): string {
+  try { const u = new URL(url.trim()); return `${u.origin}${u.pathname}`; } catch { return url.trim(); }
+}
