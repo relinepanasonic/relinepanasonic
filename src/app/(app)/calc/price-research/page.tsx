@@ -100,7 +100,7 @@ export default function PriceResearchPage() {
       if (!list.some((r) => r.status === "running")) {
         const done = list.filter((r) => r.status === "done"), bad = list.filter((r) => r.status === "failed");
         const saved = done.reduce((x, r) => x + r.scraped, 0), failed = done.reduce((x, r) => x + r.failed, 0) + bad.reduce((x, r) => x + r.failed, 0);
-        setMsg({ ok: failed === 0, text: `Scrape finished: ${saved} price${saved === 1 ? "" : "s"} saved${failed ? ` · ${failed} failed (open the product to see why)` : ""}` });
+        setMsg({ ok: failed === 0, text: `Scrape finished: ${saved} price${saved === 1 ? "" : "s"} saved${failed ? ` · ${failed} failed: ${[...done, ...bad].map((r) => r.error).find(Boolean) || "open the product to see why"}` : ""}` });
         setLoadTick((t) => t + 1);
       }
     }, 4000);

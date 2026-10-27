@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { currentSchema } from "@/lib/workspace-server";
-import { keyOfUrl, parseItem, type Platform } from "@/lib/priceResearch";
+import { keyOfUrl, logHint, parseItem, shopeeCookieLooksLoggedIn, type Platform } from "@/lib/priceResearch";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -41,16 +41,24 @@ export async function GET() {
         const ds = info.defaultDatasetId || run.dataset_id;
         const ir = await fetch(`https://api.apify.com/v2/datasets/${ds}/items?clean=true&token=${encodeURIComponent(token)}`);
         const items = ir.ok ? ((await ir.json()) as Record<string, unknown>[]) : [];
+        // Apify says it succeeded but returned nothing: read its log so the page can say why
+        let why = "";
+        if (!items.length) {
+          const lr = await fetch(`https://api.apify.com/v2/actor-runs/${run.apify_run_id}/log?token=${encodeURIComponent(token)}`).catch(() => null);
+          const hint = lr && lr.ok ? logHint(await lr.text()) : "";
+          const cookieNote = run.platform === "shopee" && !shopeeCookieLooksLoggedIn(process.env.APIFY_SHOPEE_COOKIE) ? " The saved Shopee cookie has no login token (SPC_EC): copy it again while logged in." : "";
+          why = `Apify returned 0 results.${hint ? ` Log: ${hint}` : ""}${cookieNote}`;
+        }
         const { data: ls } = await admin.from("price_research_links").select("id, client_id, platform, product_url").in("id", run.link_ids);
         const byKey = new Map(items.map((it) => { const p = parseItem(run.platform, it); return [p.key, p] as const; }));
         const snaps = ((ls as Link[]) || []).map((l) => {
           const p = byKey.get(keyOfUrl(run.platform, l.product_url));
-          if (!p || p.price == null) return { client_id: l.client_id, link_id: l.id, ok: false, error: p ? "The result has no price" : "No result for this URL (blocked, sold out or removed)", run_id: run.apify_run_id };
+          if (!p || p.price == null) return { client_id: l.client_id, link_id: l.id, ok: false, error: p ? "The result has no price" : (why || "No result for this URL (blocked, sold out or removed)"), run_id: run.apify_run_id };
           return { client_id: l.client_id, link_id: l.id, ok: true, price: p.price, original_price: p.original, sold: p.sold, rating: p.rating, title: p.title, shop_name: p.shop, run_id: run.apify_run_id };
         });
         if (snaps.length) await admin.from("price_research_snapshots").insert(snaps);
         const ok = snaps.filter((s) => s.ok).length;
-        await admin.from("price_research_runs").update({ status: "done", scraped: ok, failed: snaps.length - ok, finished_at: new Date().toISOString() }).eq("id", run.id);
+        await admin.from("price_research_runs").update({ status: "done", scraped: ok, failed: snaps.length - ok, error: why || null, finished_at: new Date().toISOString() }).eq("id", run.id);
       } else if (DEAD.has(info.status) || age > GIVE_UP_MS) {
         if (!DEAD.has(info.status)) await fetch(`https://api.apify.com/v2/actor-runs/${run.apify_run_id}/abort?token=${encodeURIComponent(token)}`, { method: "POST" }).catch(() => null);
         const msg = DEAD.has(info.status) ? `Apify run ${info.status.toLowerCase()}${info.statusMessage ? `: ${info.statusMessage}` : ""}` : "Apify took longer than 15 minutes and was stopped";

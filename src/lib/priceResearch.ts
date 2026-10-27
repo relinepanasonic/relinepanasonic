@@ -95,3 +95,14 @@ export function estimateCost(counts: Partial<Record<Platform, number>>): number 
 export function cleanUrl(url: string): string {
   try { const u = new URL(url.trim()); return `${u.origin}${u.pathname}`; } catch { return url.trim(); }
 }
+
+// Why did an actor that "succeeded" return nothing? The run log usually says (login needed, blocked, captcha ...): keep the few telling lines,
+// with every cookie-looking value removed (the log can echo the input).
+export function logHint(log: string): string {
+  const clean = log.replace(/\u001b\[[0-9;]*m/g, "").replace(/SPC_[A-Z_]*=[^;\s"']+/g, "SPC_…=[hidden]").replace(/\b(cookie["']?\s*[:=]\s*)["']?[^"'\n]{20,}/gi, "$1[hidden]");
+  const lines = clean.split(/\r?\n/).map((l) => l.replace(/^\d{4}-\d{2}-\d{2}T\S+\s+/, "").trim()).filter(Boolean);
+  const telling = lines.filter((l) => /error|warn|cookie|login|log in|blocked|captcha|forbidden|403|429|no results|0 results|failed|denied|expired/i.test(l));
+  return (telling.length ? telling : lines).slice(-3).join(" · ").slice(0, 400);
+}
+// A Shopee login cookie carries SPC_EC (the login token); without it the actor sees a logged-out visitor and usually returns nothing.
+export const shopeeCookieLooksLoggedIn = (cookie: string | undefined) => !!cookie && /(^|;\s*)SPC_EC=/.test(cookie);

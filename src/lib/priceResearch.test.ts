@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { actorFor, buildInput, estimateCost, keyOfUrl, parseItem, urlMatchesPlatform } from "./priceResearch";
+import { actorFor, buildInput, estimateCost, keyOfUrl, logHint, parseItem, shopeeCookieLooksLoggedIn, urlMatchesPlatform } from "./priceResearch";
 
 describe("price research helpers", () => {
   it("accepts a product URL only on its own marketplace", () => {
@@ -33,6 +33,20 @@ describe("price research helpers", () => {
     expect(parseItem("tokopedia", { url: "https://www.tokopedia.com/s/p", price: "Rp1.250.000" }).price).toBe(1250000);
     expect(parseItem("tiktok", { product_id: "1729653353364556550", sale_price_value: 99000, origin_price: "Rp120.000", sold_count: 33, shop_name: "X" }))
       .toMatchObject({ key: "1729653353364556550", price: 99000, original: 120000, sold: 33, shop: "X" });
+  });
+
+  it("turns an actor log into a short hint without any cookie value", () => {
+    const log = ["2026-10-27T07:00:00.000Z INFO  Starting", "2026-10-27T07:00:01.000Z WARN  Login required: cookie SPC_EC=abcdef123456 is not valid", "2026-10-27T07:00:02.000Z INFO  Done, 0 results"].join("\n");
+    const h = logHint(log);
+    expect(h).toMatch(/Login required/);
+    expect(h).not.toMatch(/abcdef123456/);
+    expect(logHint("")).toBe("");
+  });
+
+  it("tells a logged-in Shopee cookie from a visitor cookie", () => {
+    expect(shopeeCookieLooksLoggedIn("SPC_F=1; SPC_EC=xyz; SPC_ST=abc")).toBe(true);
+    expect(shopeeCookieLooksLoggedIn("SPC_R_T_IV=1; SPC_T_ID=2; SPC_SI=3")).toBe(false);
+    expect(shopeeCookieLooksLoggedIn(undefined)).toBe(false);
   });
 
   it("estimates the Apify cost", () => {
