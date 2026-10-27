@@ -7,6 +7,7 @@ import { createClient } from "@/lib/supabase/client";
 import Loader from "@/components/Loader";
 import { fmtDateTime } from "@/lib/dates";
 import { PLATFORMS, cleanUrl, detectPlatform, estimateCost, type Platform } from "@/lib/priceResearch";
+import { CATALOG_EXAMPLE, CATALOG_HEADER, parseCatalogMatrix } from "@/lib/catalogXls";
 
 export const dynamic = "force-dynamic";
 
@@ -14,7 +15,8 @@ export const dynamic = "force-dynamic";
 //   Price Guard   per product: the SRP first (Baseline), then every connected store: Price Input (the price before the shop's discount),
 //                 Price Discount (what a buyer pays after it), promo labels, and Higher / Under / Same against the SRP.
 //   Product URL   which product is sold by which store, and its Product URL (one product, many stores). Store names come from a dropdown.
-//   Products      our own products, entered by hand: Product Name, Prod ID, SRP ID, Price SRP (every SRP change is logged).
+//   Product Catalog  our own products: Product Name, Prod ID, SRP ID, Price SRP (every SRP change is logged); typed by hand or imported from an XLS.
+//                 The Massive Calculator uses the same catalog.
 // Prices are scraped ON DEMAND (button) through Apify.
 type Supabase = ReturnType<typeof createClient>;
 type SrpProduct = { id: string; prod_id: string; product_name: string; srp_id: string | null; price_srp: number | null; created_at: string };
@@ -147,7 +149,7 @@ export default function PriceResearchPage() {
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 10, marginBottom: 12 }}>
           <div>
             <h3 style={{ margin: 0 }}>Price Research</h3>
-            <div className="hint">Enter our products and their SRP in <b>Products</b>, connect them to the stores&apos; pages in <b>Product URL</b>, scrape, and read the result in <b>Price Guard</b>.</div>
+            <div className="hint">Enter our products and their SRP in the <b>Product Catalog</b> (or import them from an XLS), connect them to the stores&apos; pages in <b>Product URL</b>, scrape, and read the result in <b>Price Guard</b>.</div>
           </div>
           {isAdmin && (
             <button className="btn-gold" disabled={busy || !allLinks.length} onClick={() => scrape(allLinks.map((l) => l.id), "all Product URLs")} style={{ padding: "10px 22px" }}>
@@ -155,7 +157,7 @@ export default function PriceResearchPage() {
             </button>
           )}
         </div>
-        <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>{subTab("guard", "Price Guard")}{subTab("urls", "Product URL")}{subTab("products", "Products")}</div>
+        <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>{subTab("guard", "Price Guard")}{subTab("urls", "Product URL")}{subTab("products", "Product Catalog")}</div>
         {running.length > 0 && (
           <div style={{ color: "var(--gold)", fontSize: 13, marginBottom: 10 }}>
             ⏳ Scraping on Apify: {running.map((r) => `${PLATFORM_LABEL[r.platform]} · ${r.links} link${r.links === 1 ? "" : "s"} · ${Math.max(0, Math.round((now - new Date(r.started_at).getTime()) / 1000))}s`).join("   |   ")} — the prices appear when it finishes.
@@ -236,7 +238,7 @@ function GuardTab({ supabase, clientId, tick }: { supabase: Supabase; clientId: 
                   })}
                 </Fragment>
               ))}
-              {rows.length === 0 && <tr><td colSpan={7} style={{ textAlign: "center", color: "var(--muted)", padding: 24 }}>Nothing to compare yet. Add products in Products, connect them to a Product URL, then press Scrape.</td></tr>}
+              {rows.length === 0 && <tr><td colSpan={7} style={{ textAlign: "center", color: "var(--muted)", padding: 24 }}>Nothing to compare yet. Add products in the Product Catalog, connect them to a Product URL, then press Scrape.</td></tr>}
             </tbody>
           </table>
         </div>
@@ -324,7 +326,7 @@ function UrlsTab({ supabase, clientId, isAdmin, tick, busy, filter, setFilter, o
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 14, paddingBottom: 14, borderBottom: "1px solid var(--line)" }}>
           <div className="fld" style={{ minWidth: 240, flex: "1 1 240px" }}><label>Product</label>
             <select value={f.product_id} onChange={(e) => setF({ ...f, product_id: e.target.value })}>
-              <option value="">{products && products.length ? "Select product…" : "Add products first (Products tab)"}</option>
+              <option value="">{products && products.length ? "Select product…" : "Add products first (Product Catalog tab)"}</option>
               {(products || []).map((p) => <option key={p.id} value={p.id}>{p.product_name} · {p.prod_id}</option>)}
             </select>
           </div>
@@ -372,7 +374,7 @@ function UrlsTab({ supabase, clientId, isAdmin, tick, busy, filter, setFilter, o
                   </tr>
                 ));
               })}
-              {linked.length === 0 && <tr><td colSpan={5} style={{ textAlign: "center", color: "var(--muted)", padding: 24 }}>{(products || []).length ? "No Product URL connected yet — choose a product, a store and paste the URL above." : "No product yet. Add your products in the Products tab first."}</td></tr>}
+              {linked.length === 0 && <tr><td colSpan={5} style={{ textAlign: "center", color: "var(--muted)", padding: 24 }}>{(products || []).length ? "No Product URL connected yet — choose a product, a store and paste the URL above." : "No product yet. Add your products in the Product Catalog tab first."}</td></tr>}
             </tbody>
           </table>
         </div>
@@ -441,6 +443,9 @@ function ProductsTab({ supabase, clientId, isAdmin, tick, onUrls, onChanged }: {
   const [q, setQ] = useState("");
   const [edit, setEdit] = useState<Partial<SrpProduct> | null>(null);
   const [logOf, setLogOf] = useState<SrpProduct | null>(null);
+  const [importing, setImporting] = useState(false);
+  const [importMsg, setImportMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [effective, setEffective] = useState(today());
 
   useEffect(() => {
     (async () => {
@@ -461,12 +466,69 @@ function ProductsTab({ supabase, clientId, isAdmin, tick, onUrls, onChanged }: {
     onChanged();
   }
 
+  // the XLS template is the empty sheet (one example row); the export is the catalog as it is now, so it can be edited and imported back
+  async function downloadXls(withRows: boolean) {
+    const XLSX = await import("xlsx");
+    const body: (string | number)[][] = withRows ? (rows || []).map((r, i) => [i + 1, r.srp_id || "", r.product_name, r.prod_id, r.price_srp ?? ""]) : [CATALOG_EXAMPLE as (string | number)[]];
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet([[...CATALOG_HEADER], ...body]);
+    ws["!cols"] = [{ wch: 6 }, { wch: 16 }, { wch: 46 }, { wch: 18 }, { wch: 16 }];
+    XLSX.utils.book_append_sheet(wb, ws, "Product Catalog");
+    const guide = XLSX.utils.aoa_to_sheet([
+      ["How to fill"], [""],
+      ["Prod ID", "Required and unique: it is the key. A Prod ID that is already in the catalog is UPDATED, a new one is ADDED."],
+      ["Product Name", "Required."],
+      ["SRP ID", "Your own name for the SRP version, e.g. SRP-2026-10."],
+      ["Price SRP", "In Rp (7500000 or Rp 7.500.000)."],
+      ["SRP changes", "When the SRP ID or the Price SRP of a known Prod ID changes, the old SRP stays in the SRP log and the new one counts from the date you choose when you import."],
+      ["No", "Only a counter, it is ignored."],
+    ]);
+    guide["!cols"] = [{ wch: 18 }, { wch: 110 }];
+    XLSX.utils.book_append_sheet(wb, guide, "Guide");
+    XLSX.writeFile(wb, withRows ? "product-catalog-export.xlsx" : "product-catalog-template.xlsx");
+  }
+
+  async function importXls(file: File) {
+    setImporting(true); setImportMsg(null);
+    try {
+      const XLSX = await import("xlsx");
+      const wb = XLSX.read(await file.arrayBuffer(), { type: "array" });
+      const matrix = XLSX.utils.sheet_to_json<unknown[]>(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: "", raw: true });
+      const parsed = parseCatalogMatrix(matrix);
+      if (parsed.error) { setImportMsg({ ok: false, text: parsed.error }); return; }
+      if (!parsed.rows.length) { setImportMsg({ ok: false, text: "No product row found in the sheet." }); return; }
+      const total = { added: 0, updated: 0, unchanged: 0, errors: [] as { row: number; error: string }[] };
+      for (let i = 0; i < parsed.rows.length; i += 500) {
+        const { data, error } = await supabase.rpc("pr_srp_import", { p_client_id: clientId, p_rows: parsed.rows.slice(i, i + 500), p_effective: effective || null });
+        if (error) { setImportMsg({ ok: false, text: error.message }); return; }
+        const r = data as typeof total;
+        total.added += r.added; total.updated += r.updated; total.unchanged += r.unchanged; total.errors.push(...r.errors.map((e) => ({ row: e.row + i, error: e.error })));
+      }
+      const bad = [...parsed.skipped.map((x) => `row ${x.row}: ${x.reason}`), ...total.errors.map((x) => `product ${x.row}: ${x.error}`)];
+      setImportMsg({ ok: bad.length === 0, text: `${total.added} added · ${total.updated} updated · ${total.unchanged} unchanged${bad.length ? ` · ${bad.length} skipped: ${bad.slice(0, 3).join("; ")}${bad.length > 3 ? "…" : ""}` : ""}` });
+      onChanged();
+    } finally { setImporting(false); }
+  }
+
   return (
     <>
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 12 }}>
         <div className="fld" style={{ minWidth: 260, flex: 1 }}><label>Search</label><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Product name, Prod ID or SRP ID" /></div>
-        {isAdmin && <button className="btn-gold" onClick={() => setEdit({})} style={{ padding: "10px 22px" }}>+ Add product</button>}
+        <button className="btn-ghost" onClick={() => downloadXls(false)}>⬇ Template XLS</button>
+        <button className="btn-ghost" onClick={() => downloadXls(true)} disabled={!rows?.length}>⬇ Export XLS</button>
+        {isAdmin && (
+          <>
+            <div className="fld" style={{ minWidth: 150 }}><label>SRP valid from (import)</label><input type="date" value={effective} onChange={(e) => setEffective(e.target.value)} style={{ colorScheme: "dark" }} /></div>
+            <label className="btn-ghost" style={{ cursor: importing ? "not-allowed" : "pointer", opacity: importing ? 0.6 : 1 }}>
+              {importing ? "Importing…" : "Import XLS"}
+              <input type="file" accept=".xlsx,.xls,.csv" style={{ display: "none" }} disabled={importing}
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) importXls(f); e.target.value = ""; }} />
+            </label>
+            <button className="btn-gold" onClick={() => setEdit({})} style={{ padding: "10px 22px" }}>+ Add product</button>
+          </>
+        )}
       </div>
+      {importMsg && <div style={{ color: importMsg.ok ? "var(--gold)" : "#f87171", fontSize: 13, marginBottom: 10 }}>{importMsg.ok ? "✓" : "✗"} {importMsg.text}</div>}
       {rows === null ? <Loader center /> : (
         <div className="tbl-wrap" style={{ maxHeight: "66vh" }}>
           <table className="tbl day-tbl">
@@ -488,7 +550,7 @@ function ProductsTab({ supabase, clientId, isAdmin, tick, onUrls, onChanged }: {
                   </td>
                 </tr>
               ))}
-              {shown.length === 0 && <tr><td colSpan={7} style={{ textAlign: "center", color: "var(--muted)", padding: 24 }}>{rows.length ? "No product matches." : "No product yet — press + Add product."}</td></tr>}
+              {shown.length === 0 && <tr><td colSpan={7} style={{ textAlign: "center", color: "var(--muted)", padding: 24 }}>{rows.length ? "No product matches." : "No product yet — press + Add product, or fill the XLS template and Import it."}</td></tr>}
             </tbody>
           </table>
         </div>

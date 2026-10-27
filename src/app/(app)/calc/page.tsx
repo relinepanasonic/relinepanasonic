@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { CALC_EXAMPLE, CALC_HEADER } from "@/lib/calcTemplate";
 
 export const dynamic = "force-dynamic";
 
@@ -17,7 +18,7 @@ type Fee = {
 };
 
 type CalcRow = {
-  id: string; item_product: string | null; product_line: string | null;
+  id: string; item_product: string | null; prod_id: string | null; product_line: string | null;
   modal_produk_rp: number; harga_jual_rp: number;
   fee_id: string | null; target_roas: number;
   berat_kg: number; ukuran_cm3: number;
@@ -26,6 +27,8 @@ type CalcRow = {
   biaya_lain_rp: number;
 };
 
+// the Product Catalog (Price Research > Product Catalog): the one list of products, shared with Price Guard
+type CatalogItem = { prod_id: string; product_name: string; srp_id: string | null; price_srp: number | null };
 type FeeSel = { category: string; sub_category: string; jenis_product: string; platform: string; jenis_toko: string };
 const FEE_FIELDS: (keyof FeeSel)[] = ["category", "sub_category", "jenis_product", "platform", "jenis_toko"];
 const emptySel: FeeSel = { category: "", sub_category: "", jenis_product: "", platform: "", jenis_toko: "" };
@@ -145,18 +148,30 @@ export default function MassiveCalculatorPage() {
   const [adding, setAdding] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadMsg, setUploadMsg] = useState("");
+  const [catalog, setCatalog] = useState<CatalogItem[]>([]);
+  const [lowest, setLowest] = useState<Map<string, number>>(new Map());   // Prod ID -> the lowest competitor price (Price Guard)
 
   const feesById = useMemo(() => new Map(fees.map((f) => [f.id, f])), [fees]);
+  const catalogById = useMemo(() => new Map(catalog.map((c) => [c.prod_id, c])), [catalog]);
 
   const reload = useCallback(async (cid: string) => {
     if (!cid) { setRows([]); setFees([]); setLoading(false); return; }
     setLoading(true);
-    const [f, r] = await Promise.all([
+    const [f, r, cat, guard] = await Promise.all([
       fetchAll<Fee>(supabase, "market_fees", cid, "category"),
       fetchAll<CalcRow>(supabase, "massive_calc_rows", cid, "created_at"),
+      supabase.from("pr_srp_products").select("prod_id, product_name, srp_id, price_srp").eq("client_id", cid).order("product_name"),
+      supabase.rpc("price_guard", { p_client_id: cid }),
     ]);
     setFees(f);
     setRows(r);
+    setCatalog((cat.data as CatalogItem[]) || []);
+    const m = new Map<string, number>();
+    for (const g of ((guard.data as { prod_id: string; stores: { ok: boolean | null; price_sell: number | null }[] }[]) || [])) {
+      const prices = g.stores.filter((x) => x.ok && x.price_sell).map((x) => x.price_sell as number);
+      if (prices.length) m.set(g.prod_id, Math.min(...prices));
+    }
+    setLowest(m);
     setLoading(false);
   }, [supabase]);
 
@@ -172,6 +187,37 @@ export default function MassiveCalculatorPage() {
       reload(cid);
     })();
   }, [supabase, reload]);
+
+  // The flat XLS: empty template (one example row) or an export of the lines on the screen. Same columns as the import, so an export can be edited and imported back.
+  async function downloadXls(withRows: boolean) {
+    const XLSX = await import("xlsx");
+    const body: (string | number)[][] = withRows
+      ? rows.map((r, i) => {
+          const f = r.fee_id ? feesById.get(r.fee_id) : null;
+          return [i + 1, r.prod_id || "", catalogById.get(r.prod_id || "")?.product_name || r.item_product || "", r.modal_produk_rp, r.harga_jual_rp, f?.platform || "", f?.jenis_toko || "", f?.category || "", f?.sub_category || "",
+            f?.jenis_product || "", r.target_roas, r.berat_kg, r.ukuran_cm3, r.gratis_ongkir_on ? "Yes" : "No", r.promo_xtra_on ? "Yes" : "No", r.paylater_3mo_on ? "Yes" : "No", r.paylater_6mo_on ? "Yes" : "No", r.biaya_lain_rp];
+        })
+      : [CALC_EXAMPLE as (string | number)[]];
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet([[...CALC_HEADER], ...body]);
+    ws["!cols"] = CALC_HEADER.map((h) => ({ wch: h === "Product Name" ? 38 : Math.max(12, h.length + 2) }));
+    XLSX.utils.book_append_sheet(wb, ws, "Massive Calculator");
+    const feeSheet = XLSX.utils.aoa_to_sheet([["Platform", "Jenis Toko", "Category", "Sub Category", "Jenis Product"], ...fees.map((f) => [f.platform, f.jenis_toko || "", f.category, f.sub_category || "", f.jenis_product || ""])]);
+    feeSheet["!cols"] = [18, 18, 28, 28, 28].map((wch) => ({ wch }));
+    XLSX.utils.book_append_sheet(wb, feeSheet, "Fee options");
+    const guide = XLSX.utils.aoa_to_sheet([
+      ["How to fill"], [""],
+      ["Prod ID", "Required. Must be a Prod ID of the Product Catalog (Price Research > Product Catalog). The product name is read from the catalog."],
+      ["Modal Produk", "Cost price in Rp."],
+      ["Harga Jual", "Selling price in Rp. Leave EMPTY to use the SRP of the catalog."],
+      ["Platform / Jenis Toko / Category / Sub Category / Jenis Product", "Copy the five values of ONE row of the sheet Fee options. They link the line to its marketplace fee row."],
+      ["Gratis Ongkir / Promo Xtra / Paylater 3 Bln / Paylater 6 Bln", "Yes or No."],
+      ["Importing again", "A line is identified by Prod ID + Platform + Jenis Toko: importing it again updates the line instead of adding a duplicate."],
+    ]);
+    guide["!cols"] = [{ wch: 52 }, { wch: 100 }];
+    XLSX.utils.book_append_sheet(wb, guide, "Guide");
+    XLSX.writeFile(wb, withRows ? "massive-calculator-export.xlsx" : "massive-calculator-template.xlsx");
+  }
 
   async function addRow() {
     if (!clientId) return;
@@ -196,7 +242,8 @@ export default function MassiveCalculatorPage() {
       });
       const j = await res.json();
       if (!res.ok) { setUploadMsg(`✗ ${j.error}`); return; }
-      setUploadMsg(`✓ Imported ${j.imported.toLocaleString("id-ID")} rows (${j.matched} linked to a fee, ${j.unmatched} need “Pick Product” manually)`);
+      const sk = (j.skipped as { row: number; reason: string }[] | undefined) || [];
+      setUploadMsg(`✓ ${j.imported.toLocaleString("id-ID")} added${j.updated ? ` · ${j.updated} updated` : ""} (${j.matched} linked to a fee, ${j.unmatched} need the fee columns picked)${sk.length ? ` · ${sk.length} skipped: ${sk.slice(0, 3).map((x) => `row ${x.row}: ${x.reason}`).join("; ")}${sk.length > 3 ? "…" : ""}` : ""}`);
       reload(clientId);
     } finally {
       setUploading(false);
@@ -239,8 +286,10 @@ export default function MassiveCalculatorPage() {
             <div className="hint">{rows.length.toLocaleString("id-ID")} product rows · pick Category/Sub Category/Jenis Product/Platform/Jenis Toko to link a fee row, fill in price and weight, Total Biaya / Profit update live.</div>
           </div>
           <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+            <button className="btn-ghost" onClick={() => downloadXls(false)} disabled={!clientId}>⬇ Template XLS</button>
+            <button className="btn-ghost" onClick={() => downloadXls(true)} disabled={!clientId || !rows.length}>⬇ Export XLS</button>
             <label className="btn-ghost" style={{ cursor: uploading || !clientId ? "not-allowed" : "pointer", opacity: uploading || !clientId ? .6 : 1 }}>
-              {uploading ? "Importing…" : "Upload Bulk"}
+              {uploading ? "Importing…" : "Import XLS"}
               <input type="file" accept=".csv,.xlsx,.xls" style={{ display: "none" }} disabled={uploading || !clientId}
                 onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadBulk(f); e.target.value = ""; }} />
             </label>
@@ -256,7 +305,11 @@ export default function MassiveCalculatorPage() {
             <thead>
               <tr>
                 <th style={stickyTh}>No</th>
-                <th style={stickyTh}>Item Product</th>
+                <th style={stickyTh}>Product Name</th>
+                <th style={stickyTh}>Product ID</th>
+                <th style={stickyTh}>SRP ID</th>
+                <th className="num" style={stickyTh}>Price SRP</th>
+                <th className="num" style={stickyTh}>Lowest Competitor</th>
                 <th style={stickyTh}>Category</th>
                 <th className="num" style={stickyTh}>Modal Produk</th>
                 <th className="num" style={stickyTh}>Harga Jual (Rp)</th>
@@ -294,13 +347,13 @@ export default function MassiveCalculatorPage() {
             <tbody>
               {rows.map((r, i) => (
                 <CalcRowLine key={r.id} no={i + 1} row={r} fee={r.fee_id ? feesById.get(r.fee_id) ?? null : null} fees={fees}
-                  onSave={saveRow} onDelete={deleteRow} />
+                  catalog={catalog} catalogById={catalogById} lowest={lowest} onSave={saveRow} onDelete={deleteRow} />
               ))}
               {!loading && rows.length === 0 && (
-                <tr><td colSpan={33} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>No product rows yet — click “+ Add Product” to start.</td></tr>
+                <tr><td colSpan={37} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>No product rows yet — click “+ Add Product”, or fill the XLS template and Import it.</td></tr>
               )}
               {loading && (
-                <tr><td colSpan={33} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>Loading…</td></tr>
+                <tr><td colSpan={37} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>Loading…</td></tr>
               )}
             </tbody>
           </table>
@@ -310,13 +363,15 @@ export default function MassiveCalculatorPage() {
   );
 }
 
-function CalcRowLine({ no, row, fee, fees, onSave, onDelete }: {
+function CalcRowLine({ no, row, fee, fees, catalog, catalogById, lowest, onSave, onDelete }: {
   no: number; row: CalcRow; fee: Fee | null; fees: Fee[];
+  catalog: CatalogItem[]; catalogById: Map<string, CatalogItem>; lowest: Map<string, number>;
   onSave: (id: string, patch: Partial<CalcRow>) => void;
   onDelete: (id: string) => void;
 }) {
   const [v, setV] = useState(() => ({
     item_product: row.item_product || "",
+    prod_id: row.prod_id || "",
     product_line: row.product_line || "",
     modal_produk_rp: formatRp(row.modal_produk_rp),
     harga_jual_rp: formatRp(row.harga_jual_rp),
@@ -333,6 +388,7 @@ function CalcRowLine({ no, row, fee, fees, onSave, onDelete }: {
 
   const parsed = {
     item_product: v.item_product,
+    prod_id: v.prod_id || null,
     product_line: v.product_line,
     modal_produk_rp: parseRp(v.modal_produk_rp),
     harga_jual_rp: parseRp(v.harga_jual_rp),
@@ -346,6 +402,7 @@ function CalcRowLine({ no, row, fee, fees, onSave, onDelete }: {
     paylater_6mo_on: v.paylater_6mo_on,
   };
   const dirty = parsed.item_product !== (row.item_product || "")
+    || parsed.prod_id !== (row.prod_id || null)
     || parsed.product_line !== (row.product_line || "")
     || parsed.modal_produk_rp !== row.modal_produk_rp
     || parsed.harga_jual_rp !== row.harga_jual_rp
@@ -366,10 +423,18 @@ function CalcRowLine({ no, row, fee, fees, onSave, onDelete }: {
     biayaLain: parsed.biaya_lain_rp,
   }, fee);
 
+  const cat = v.prod_id ? catalogById.get(v.prod_id) ?? null : null;
+  const low = v.prod_id ? lowest.get(v.prod_id) ?? null : null;
+  // picking a catalog product fills the name, the Prod ID and (as the starting point) Harga Jual = its SRP
+  function pickProduct(prodId: string) {
+    const c = prodId ? catalogById.get(prodId) : null;
+    setV((st) => ({ ...st, prod_id: prodId, item_product: c ? c.product_name : st.item_product, harga_jual_rp: c && c.price_srp != null ? formatRp(c.price_srp) : st.harga_jual_rp }));
+  }
+
   function save() { onSave(row.id, parsed); }
   function reset() {
     setV({
-      item_product: row.item_product || "", product_line: row.product_line || "",
+      item_product: row.item_product || "", prod_id: row.prod_id || "", product_line: row.product_line || "",
       modal_produk_rp: formatRp(row.modal_produk_rp), harga_jual_rp: formatRp(row.harga_jual_rp),
       target_roas: String(row.target_roas || ""), berat_kg: String(row.berat_kg || ""), ukuran_cm3: String(row.ukuran_cm3 || ""),
       biaya_lain_rp: formatRp(row.biaya_lain_rp), gratis_ongkir_on: row.gratis_ongkir_on, promo_xtra_on: row.promo_xtra_on,
@@ -422,9 +487,17 @@ function CalcRowLine({ no, row, fee, fees, onSave, onDelete }: {
     <tr style={dirty ? { background: "rgba(201,162,39,.06)" } : undefined}>
       <td>{no}</td>
       <td>
-        <input type="text" value={v.item_product} onChange={(e) => setV((s) => ({ ...s, item_product: e.target.value }))}
-          placeholder="Product name" style={{ width: 150, background: "rgba(10,22,40,.5)", border: "1px solid rgba(201,162,39,.25)", borderRadius: 6, padding: "4px 6px", color: "var(--text)", fontSize: 12.5 }} />
+        <select className="calc-sel" value={v.prod_id} onChange={(e) => pickProduct(e.target.value)} style={{ width: 230, maxWidth: 230 }} title="The product comes from the Product Catalog">
+          <option value="">{v.item_product ? `${v.item_product} (not in catalog)` : "— pick product —"}</option>
+          {catalog.map((c) => <option key={c.prod_id} value={c.prod_id}>{c.product_name}</option>)}
+        </select>
       </td>
+      <td className="calc-ro" style={{ fontFamily: "monospace" }}>{cat?.prod_id || "—"}</td>
+      <td className="calc-ro" style={{ fontFamily: "monospace" }}>{cat?.srp_id || "—"}</td>
+      <td className="num" style={{ fontWeight: 600 }}>{cat?.price_srp != null ? `Rp ${formatRp(cat.price_srp)}` : "—"}
+        {cat?.price_srp != null && parsed.harga_jual_rp !== cat.price_srp && <div><button onClick={() => setV((s) => ({ ...s, harga_jual_rp: formatRp(cat.price_srp as number) }))} className="btn-ghost" style={{ padding: "0 6px", fontSize: 10 }} title="Use the SRP as Harga Jual">= SRP</button></div>}
+      </td>
+      <td className="num calc-ro">{low != null ? `Rp ${formatRp(low)}` : "—"}{low != null && parsed.harga_jual_rp > 0 && <div style={{ fontSize: 11, color: parsed.harga_jual_rp > low ? "#ff9a9a" : "#4ade80" }}>{parsed.harga_jual_rp > low ? "+" : ""}{((parsed.harga_jual_rp / low - 1) * 100).toFixed(1)}% vs ours</div>}</td>
       <td>
         <input type="text" value={v.product_line} onChange={(e) => setV((s) => ({ ...s, product_line: e.target.value }))}
           placeholder="e.g. RAC" style={{ width: 70, background: "rgba(10,22,40,.5)", border: "1px solid rgba(201,162,39,.25)", borderRadius: 6, padding: "4px 6px", color: "var(--text)", fontSize: 12.5 }} />

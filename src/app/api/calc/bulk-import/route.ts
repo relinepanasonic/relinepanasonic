@@ -3,6 +3,7 @@ import * as XLSX from "xlsx";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { currentSchema } from "@/lib/workspace-server";
+import { isFlatTemplate, parseCalcMatrix, type FeeKey } from "@/lib/calcTemplate";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -66,6 +67,42 @@ export async function POST(req: NextRequest) {
   const wb = XLSX.read(buf, { type: "buffer" });
   const ws = wb.Sheets[wb.SheetNames[0]];
   const matrix: unknown[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
+
+  // The flat template (Prod ID + Modal Produk ...): products come from the Product Catalog, one line = Prod ID + Platform + Jenis Toko.
+  if (isFlatTemplate(matrix)) {
+    const [{ data: cat }, { data: feeRows }] = await Promise.all([
+      admin.from("pr_srp_products").select("prod_id, product_name, price_srp").eq("client_id", clientId),
+      admin.from("market_fees").select("id, category, sub_category, jenis_product, platform, jenis_toko").eq("client_id", clientId),
+    ]);
+    const catalog = new Map(((cat as { prod_id: string; product_name: string; price_srp: number | null }[]) || []).map((c) => [c.prod_id, { name: c.product_name, srp: c.price_srp }]));
+    const fees = (feeRows as FeeKey[]) || [];
+    const parsed = parseCalcMatrix(matrix, catalog, fees);
+    if (parsed.error) return NextResponse.json({ error: parsed.error }, { status: 400 });
+    if (!parsed.rows.length) return NextResponse.json({ error: "No valid row. " + (parsed.skipped[0] ? `Row ${parsed.skipped[0].row}: ${parsed.skipped[0].reason}` : "The sheet is empty."), skipped: parsed.skipped }, { status: 400 });
+
+    const feeById = new Map(fees.map((f) => [f.id, f]));
+    const { data: existing } = await admin.from("massive_calc_rows").select("id, prod_id, fee_id").eq("client_id", clientId).in("prod_id", Array.from(new Set(parsed.rows.map((r) => r.prod_id))));
+    const idOf = new Map<string, string>();
+    for (const e of (existing as { id: string; prod_id: string; fee_id: string | null }[]) || []) {
+      const f = e.fee_id ? feeById.get(e.fee_id) : null;
+      idOf.set(`${e.prod_id}|${(f?.platform ?? "").toLowerCase()}|${(f?.jenis_toko ?? "").toLowerCase()}`, e.id);
+    }
+    const createdBy = profile.display_name || profile.email?.split("@")[0] || "Admin";
+    const inserts: Record<string, unknown>[] = []; let updated = 0;
+    for (const { platform, toko, ...payload } of parsed.rows) {
+      const id = idOf.get(`${payload.prod_id}|${platform}|${toko}`);
+      if (id) {
+        const { error } = await admin.from("massive_calc_rows").update(payload).eq("id", id);
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+        updated++;
+      } else inserts.push({ ...payload, client_id: clientId, created_by: createdBy });
+    }
+    for (let i = 0; i < inserts.length; i += 500) {
+      const { error } = await admin.from("massive_calc_rows").insert(inserts.slice(i, i + 500));
+      if (error) return NextResponse.json({ error: error.message, imported: i }, { status: 500 });
+    }
+    return NextResponse.json({ ok: true, imported: inserts.length, updated, matched: parsed.matched, unmatched: parsed.unmatched, skipped: parsed.skipped });
+  }
 
   const headerIdx = findHeaderRow(matrix);
   if (headerIdx === -1) return NextResponse.json({ error: "Couldn't find a header row with Item Product/Platform columns" }, { status: 400 });
