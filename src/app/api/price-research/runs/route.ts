@@ -37,7 +37,13 @@ export async function GET() {
       if (!res.ok) continue;
       const info = (await res.json()).data as { status: string; defaultDatasetId?: string; statusMessage?: string };
       const age = Date.now() - new Date(run.started_at).getTime();
-      if (DONE.has(info.status)) {
+      // some actors exit with an error code AFTER saving their results (the TikTok Shop actor does): when a run is dead but its dataset has items, use them
+      let finished = DONE.has(info.status);
+      if (!finished && DEAD.has(info.status)) {
+        const dr = await fetch(`https://api.apify.com/v2/datasets/${info.defaultDatasetId || run.dataset_id}?token=${encodeURIComponent(token)}`).catch(() => null);
+        finished = !!dr && dr.ok && Number(((await dr.json()) as { data?: { itemCount?: number } }).data?.itemCount) > 0;
+      }
+      if (finished) {
         const ds = info.defaultDatasetId || run.dataset_id;
         const ir = await fetch(`https://api.apify.com/v2/datasets/${ds}/items?clean=true&token=${encodeURIComponent(token)}`);
         const items = ir.ok ? ((await ir.json()) as Record<string, unknown>[]) : [];
