@@ -59,7 +59,8 @@ export async function GET() {
         const snaps = ((ls as Link[]) || []).map((l) => {
           const p = byKey.get(keyOfUrl(run.platform, l.product_url));
           if (!p || p.price == null) return { client_id: l.client_id, link_id: l.id, ok: false, error: p ? "The result has no price" : (why || "No result for this URL (blocked, sold out or removed)"), run_id: run.apify_run_id };
-          return { client_id: l.client_id, link_id: l.id, ok: true, price: p.price, original_price: p.original, sold: p.sold, rating: p.rating, title: p.title, shop_name: p.shop, run_id: run.apify_run_id };
+          return { client_id: l.client_id, link_id: l.id, ok: true, price: p.price, original_price: p.original, sold: p.sold, rating: p.rating, title: p.title, shop_name: p.shop,
+            labels: p.labels ?? null, discount_pct: p.discount ?? null, seller_location: p.location ?? null, run_id: run.apify_run_id };
         });
         if (snaps.length) await admin.from("price_research_snapshots").insert(snaps);
         const ok = snaps.filter((s) => s.ok).length;

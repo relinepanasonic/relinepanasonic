@@ -11,9 +11,9 @@ describe("price research helpers", () => {
   });
 
   it("builds each actor's input and lets an env var replace the actor", () => {
-    expect(buildInput("shopee", ["u"], {})).toEqual({ mode: "product", country: "ID", startUrls: ["u"], maxItems: 1 });   // no cookie
-    expect(buildInput("tokopedia", ["u"], {})).toMatchObject({ startUrls: ["u"], maxResults: 1 });
-    expect(buildInput("tiktok", ["u"], {})).toMatchObject({ productUrls: ["u"] });
+    expect(buildInput("shopee", ["u"])).toEqual({ mode: "product", country: "ID", startUrls: ["u"], maxItems: 1 });   // no cookie
+    expect(buildInput("tokopedia", ["u"])).toMatchObject({ startUrls: ["u"], maxResults: 1 });
+    expect(buildInput("tiktok", ["u"])).toMatchObject({ productUrls: ["u"] });
     expect(actorFor("tiktok", {})).toBe("kulqiz~tiktok-shop-scraper");
     expect(actorFor("tiktok", { APIFY_ACTOR_TIKTOK: "me/other-actor" })).toBe("me~other-actor");
   });

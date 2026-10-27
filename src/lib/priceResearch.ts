@@ -31,7 +31,7 @@ export function urlMatchesPlatform(p: Platform, url: string): boolean {
   return host.endsWith("tiktok.com") || host === "shop-id.tokopedia.com" || host.endsWith(".tokopedia.com");
 }
 
-export function buildInput(p: Platform, urls: string[], env: Record<string, string | undefined> = process.env): Record<string, unknown> {
+export function buildInput(p: Platform, urls: string[]): Record<string, unknown> {
   if (p === "shopee") return { mode: "product", country: "ID", startUrls: urls, maxItems: urls.length };
   if (p === "tokopedia") return { startUrls: urls, maxResults: urls.length, proxyConfiguration: { useApifyProxy: true } };
   return { productUrls: urls, includeReviews: false };
@@ -51,7 +51,9 @@ export function keyOfUrl(p: Platform, url: string): string | null {
   try { return digits(new URL(url).pathname); } catch { return digits(url); }
 }
 
-export type Parsed = { key: string | null; price: number | null; original: number | null; sold: number | null; rating: number | null; title: string | null; shop: string | null };
+export type Parsed = { key: string | null; price: number | null; original: number | null; sold: number | null; rating: number | null; title: string | null; shop: string | null;
+  labels?: string[] | null; discount?: number | null; location?: string | null };
+const strList = (v: unknown): string[] | null => Array.isArray(v) ? v.map((x) => String(x)).filter(Boolean) : null;
 type Item = Record<string, unknown>;
 const toNum = (v: unknown): number | null => {
   if (v == null || v === "") return null;
@@ -72,6 +74,7 @@ export function parseItem(p: Platform, it: Item): Parsed {
       key: str(it.itemId) ?? keyOfUrl("shopee", String(it.url ?? "")),
       price: rupiah(toNum(it.price ?? it.displayPrice)), original: rupiah(toNum(it.originalPrice)),
       sold: toNum(it.sold ?? it.totalSales), rating: toNum(it.rating), title: str(it.title ?? it.name), shop: str(seller.name ?? it["seller.name"] ?? it.shopName),
+      labels: strList(it.labels), discount: toNum(it.discountPercent), location: str(it.location),
     };
   }
   if (p === "tokopedia") {
@@ -84,7 +87,7 @@ export function parseItem(p: Platform, it: Item): Parsed {
   return {
     key: str(it.product_id) ? String(it.product_id) : keyOfUrl("tiktok", String(it.url ?? "")),
     price: toNum(it.sale_price_value ?? it.sale_price), original: toNum(it.origin_price), sold: toNum(it.sold_count), rating: toNum(it.rating),
-    title: str(it.title), shop: str(it.shop_name),
+    title: str(it.title), shop: str(it.shop_name), discount: toNum(it.discount),
   };
 }
 
