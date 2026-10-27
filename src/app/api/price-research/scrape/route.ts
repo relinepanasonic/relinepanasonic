@@ -12,7 +12,7 @@ const MAX_LINKS = 150;
 
 // POST { link_ids: string[] } -> STARTS the scrape of those competitor links on Apify and returns at once (one Apify run per marketplace).
 // The page then polls GET /api/price-research/runs, which saves the prices as snapshots when Apify has finished; a scrape can take minutes,
-// far more than a request may wait. Super Admin and Admin only. Needs APIFY_TOKEN (Vercel env); the Shopee actor also needs APIFY_SHOPEE_COOKIE.
+// far more than a request may wait. Super Admin and Admin only. Needs APIFY_TOKEN (Vercel env). None of the actors needs a marketplace login.
 export async function POST(req: NextRequest) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -45,10 +45,6 @@ export async function POST(req: NextRequest) {
     const busy = new Set(((running as { link_ids: string[] }[]) || []).flatMap((r) => r.link_ids));
     const todo = group.filter((l) => !busy.has(l.id));
     if (!todo.length) { started.push({ platform, links: 0 }); continue; }
-    if (platform === "shopee" && !process.env.APIFY_SHOPEE_COOKIE) {
-      todo.forEach((l) => failLink(l, "APIFY_SHOPEE_COOKIE is not set (the Shopee actor needs a Shopee login cookie)"));
-      continue;
-    }
     try {
       const res = await fetch(`https://api.apify.com/v2/acts/${actorFor(platform)}/runs?token=${encodeURIComponent(token)}`, {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(buildInput(platform, todo.map((l) => cleanUrl(l.product_url)))),

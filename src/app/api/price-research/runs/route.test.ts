@@ -54,9 +54,8 @@ describe("GET /api/price-research/runs", () => {
     vi.unstubAllGlobals();
   });
 
-  it("an Apify run that succeeded with 0 results says why (log hint, no cookie value, cookie note)", async () => {
+  it("an Apify run that succeeded with 0 results says why (the log hint, with any cookie value removed)", async () => {
     runs = [run({ platform: "shopee" })];
-    process.env.APIFY_SHOPEE_COOKIE = "SPC_R_T_IV=1; SPC_SI=2";
     vi.stubGlobal("fetch", vi.fn(async (url: string) => {
       if (String(url).includes("/log")) return new Response("2026-10-27T07:00:01.000Z WARN  Login required, SPC_EC=secretvalue99 rejected", { status: 200 });
       if (String(url).includes("/datasets/")) return new Response("[]", { status: 200 });
@@ -67,8 +66,6 @@ describe("GET /api/price-research/runs", () => {
     const err = String(snaps.find((s) => s.link_id === "L1")!.error);
     expect(err).toMatch(/Apify returned 0 results/);
     expect(err).toMatch(/Login required/);
-    expect(err).toMatch(/no login token/);
-    expect(err).toMatch(/SPC_SI/);
     expect(err).not.toMatch(/secretvalue99/);
     vi.unstubAllGlobals();
   });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { actorFor, buildInput, buyerCookie, estimateCost, keyOfUrl, logHint, parseItem, shopeeCookieLooksLoggedIn, urlMatchesPlatform } from "./priceResearch";
+import { actorFor, buildInput, estimateCost, keyOfUrl, logHint, parseItem, urlMatchesPlatform } from "./priceResearch";
 
 describe("price research helpers", () => {
   it("accepts a product URL only on its own marketplace", () => {
@@ -11,7 +11,7 @@ describe("price research helpers", () => {
   });
 
   it("builds each actor's input and lets an env var replace the actor", () => {
-    expect(buildInput("shopee", ["u"], { APIFY_SHOPEE_COOKIE: "c" })).toMatchObject({ mode: "product_detail", urls: ["u"], region: "id", cookie: "c" });
+    expect(buildInput("shopee", ["u"], {})).toEqual({ mode: "product", country: "ID", startUrls: ["u"], maxItems: 1 });   // no cookie
     expect(buildInput("tokopedia", ["u"], {})).toMatchObject({ startUrls: ["u"], maxResults: 1 });
     expect(buildInput("tiktok", ["u"], {})).toMatchObject({ productUrls: ["u"] });
     expect(actorFor("tiktok", {})).toBe("kulqiz~tiktok-shop-scraper");
@@ -25,9 +25,10 @@ describe("price research helpers", () => {
   });
 
   it("reads the price fields of each actor", () => {
-    expect(parseItem("shopee", { itemId: 987654321, priceMin: 4500000, originalPrice: 5000000, totalSales: 120, ratingAverage: 4.9, name: "AC", shopName: "Rival" }))
-      .toMatchObject({ key: "987654321", price: 4500000, original: 5000000, sold: 120, rating: 4.9, title: "AC", shop: "Rival" });
-    expect(parseItem("shopee", { itemId: 1, priceMin: 450000000000 }).price).toBe(4500000);   // Shopee's x100,000 money unit
+    // the real output of lergassy/shopee-scraper for a competitor AC (SM.Elektro), 2026-10-27
+    expect(parseItem("shopee", { type: "product_detail", itemId: "41383087111", shopId: "1372273443", title: "AC Panasonic 2 PK CS-YN18AKJ", price: 7900000, displayPrice: 7900000, originalPrice: null, discountPercent: null, rating: 4.9, ratingCount: null, location: "Pekanbaru", seller: { name: "SM.Elektro", rating: 4.93, ratingCount: 821 } }))
+      .toMatchObject({ key: "41383087111", price: 7900000, original: null, sold: null, rating: 4.9, title: "AC Panasonic 2 PK CS-YN18AKJ", shop: "SM.Elektro" });
+    expect(parseItem("shopee", { itemId: 1, price: 450000000000 }).price).toBe(4500000);   // Shopee's x100,000 money unit
     expect(parseItem("tokopedia", { url: "https://www.tokopedia.com/s/p", priceInt: 123000, price: "Rp123.000", rating: "4.8" }))
       .toMatchObject({ key: "/s/p", price: 123000, rating: 4.8 });
     expect(parseItem("tokopedia", { url: "https://www.tokopedia.com/s/p", price: "Rp1.250.000" }).price).toBe(1250000);
@@ -43,22 +44,8 @@ describe("price research helpers", () => {
     expect(logHint("")).toBe("");
   });
 
-  it("tells a logged-in Shopee cookie from a visitor cookie", () => {
-    expect(shopeeCookieLooksLoggedIn("SPC_F=1; SPC_EC=xyzxyzxyzxyz; SPC_ST=abcabcabcabc")).toBe(true);
-    expect(shopeeCookieLooksLoggedIn("SPC_R_T_IV=1; SPC_T_ID=2; SPC_SI=3")).toBe(false);
-    expect(shopeeCookieLooksLoggedIn("SPC_F=1; SPC_U=26308820; SPC_ST=Pgn0DEU6jWfYRJdlPqLzCeECT")).toBe(true);   // SPC_EC is not always there
-    expect(shopeeCookieLooksLoggedIn("SPC_F=1; SPC_U=-")).toBe(false);
-    expect(shopeeCookieLooksLoggedIn(undefined)).toBe(false);
-  });
-
-  it("never sends the Seller Centre session to Apify", () => {
-    const c = "SPC_F=1; SPC_ST=abc; SPC_SC_SESSION=sellersecret; SPC_SC_MAIN_SHOP_SA_UD=0; SPC_U=26308820";
-    expect(buyerCookie(c)).toBe("SPC_F=1; SPC_ST=abc; SPC_U=26308820");
-    expect(String(buildInput("shopee", ["u"], { APIFY_SHOPEE_COOKIE: c }).cookie)).not.toMatch(/sellersecret|SPC_SC_/);
-  });
-
   it("estimates the Apify cost", () => {
-    expect(estimateCost({ shopee: 100, tokopedia: 100, tiktok: 100 })).toBeCloseTo(1.6, 5);
+    expect(estimateCost({ shopee: 100, tokopedia: 100, tiktok: 100 })).toBeCloseTo(0.7, 5);
     expect(estimateCost({})).toBe(0);
   });
 });

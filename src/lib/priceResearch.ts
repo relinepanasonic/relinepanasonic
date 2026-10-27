@@ -1,19 +1,19 @@
 // Price Research: competitor price scraping through Apify (Price Calculator > Price Research).
 // One Apify "actor" per marketplace. The actor ids can be replaced with env vars (APIFY_ACTOR_SHOPEE / _TOKOPEDIA / _TIKTOK) the day a
 // better actor is found; only buildInput / parseItem / the two key functions below know an actor's input and output format.
-//   shopee     enrico_7/shopee-scraper         needs a Shopee login cookie (APIFY_SHOPEE_COOKIE, it expires every 1-2 days)
+//   shopee     lergassy/shopee-scraper         no login / cookie needed (tested: price, original price, rating, seller in 7 s for $0.0007)
 //   tokopedia  khadinakbar/tokopedia-scraper   product-detail URLs
 //   tiktok     kulqiz/tiktok-shop-scraper      TikTok Shop Indonesia (shop-id.tokopedia.com) product URLs
 
 export type Platform = "shopee" | "tokopedia" | "tiktok";
 export const PLATFORMS: { v: Platform; label: string; hint: string; estPerResult: number }[] = [
-  { v: "shopee", label: "Shopee", hint: "https://shopee.co.id/…-i.<shop>.<item>", estPerResult: 0.01 },
+  { v: "shopee", label: "Shopee", hint: "https://shopee.co.id/…-i.<shop>.<item>", estPerResult: 0.001 },
   { v: "tokopedia", label: "Tokopedia", hint: "https://www.tokopedia.com/<shop>/<product>", estPerResult: 0.005 },
   { v: "tiktok", label: "TikTok Shop", hint: "https://shop-id.tokopedia.com/pdp/…/<product id>", estPerResult: 0.001 },
 ];
 
 export const DEFAULT_ACTORS: Record<Platform, string> = {
-  shopee: "enrico_7~shopee-scraper",
+  shopee: "lergassy~shopee-scraper",
   tokopedia: "khadinakbar~tokopedia-scraper",
   tiktok: "kulqiz~tiktok-shop-scraper",
 };
@@ -32,7 +32,7 @@ export function urlMatchesPlatform(p: Platform, url: string): boolean {
 }
 
 export function buildInput(p: Platform, urls: string[], env: Record<string, string | undefined> = process.env): Record<string, unknown> {
-  if (p === "shopee") return { mode: "product_detail", urls, region: "id", maxItems: urls.length, cookie: buyerCookie(env.APIFY_SHOPEE_COOKIE) };
+  if (p === "shopee") return { mode: "product", country: "ID", startUrls: urls, maxItems: urls.length };
   if (p === "tokopedia") return { startUrls: urls, maxResults: urls.length, proxyConfiguration: { useApifyProxy: true } };
   return { productUrls: urls, includeReviews: false };
 }
@@ -67,10 +67,11 @@ const str = (v: unknown) => (v == null || v === "" ? null : String(v));
 
 export function parseItem(p: Platform, it: Item): Parsed {
   if (p === "shopee") {
+    const seller = (it.seller ?? {}) as Record<string, unknown>;
     return {
       key: str(it.itemId) ?? keyOfUrl("shopee", String(it.url ?? "")),
-      price: rupiah(toNum(it.priceMin ?? it.price)), original: rupiah(toNum(it.originalPrice)),
-      sold: toNum(it.totalSales ?? it.sold), rating: toNum(it.ratingAverage ?? it.rating), title: str(it.name ?? it.title), shop: str(it.shopName),
+      price: rupiah(toNum(it.price ?? it.displayPrice)), original: rupiah(toNum(it.originalPrice)),
+      sold: toNum(it.sold ?? it.totalSales), rating: toNum(it.rating), title: str(it.title ?? it.name), shop: str(seller.name ?? it["seller.name"] ?? it.shopName),
     };
   }
   if (p === "tokopedia") {
@@ -103,25 +104,4 @@ export function logHint(log: string): string {
   const lines = clean.split(/\r?\n/).map((l) => l.replace(/^\d{4}-\d{2}-\d{2}T\S+\s+/, "").trim()).filter(Boolean);
   const telling = lines.filter((l) => /error|warn|cookie|login|log in|blocked|captcha|forbidden|403|429|no results|0 results|failed|denied|expired/i.test(l));
   return (telling.length ? telling : lines).slice(-3).join(" · ").slice(0, 400);
-}
-// A Shopee login cookie carries SPC_EC (the login token); without it the actor sees a logged-out visitor and usually returns nothing.
-export const shopeeCookieLooksLoggedIn = (cookie: string | undefined) =>
-  !!cookie && (/(^|;\s*)SPC_(EC|ST)=[^;\s]{10,}/.test(cookie) || /(^|;\s*)SPC_U=\d+/.test(cookie));   // SPC_EC is not always present
-
-// The scraper only needs the BUYER session. A cookie copied from a browser that is also signed in to Seller Centre carries the seller
-// session (SPC_SC_*): those cookies are never sent to Apify.
-export function buyerCookie(cookie: string | undefined): string {
-  return (cookie || "").split(";").map((c) => c.trim()).filter((c) => c && !/^SPC_SC_/i.test(c)).join("; ");
-}
-
-// The NAMES of the cookies (never the values) in a saved cookie string, so a wrong paste can be diagnosed without showing a secret.
-export function cookieNames(cookie: string | undefined): string[] {
-  return (cookie || "").split(";").map((c) => c.split("=")[0].trim()).filter(Boolean);
-}
-export function cookieNote(cookie: string | undefined): string {
-  if (!cookie) return " APIFY_SHOPEE_COOKIE is empty in this deployment (set it in Vercel and redeploy).";
-  const names = cookieNames(cookie);
-  const login = names.filter((n) => /^SPC_(EC|ST)$/.test(n));
-  if (login.length) return ` The saved cookie has ${names.length} cookies including ${login.join(", ")}, so it looks logged in: it may have expired or Shopee blocked this request.`;
-  return ` The saved cookie has ${names.length} cookies (${names.filter((n) => n.startsWith("SPC_")).slice(0, 8).join(", ") || "no SPC_ ones"}) but no login token (SPC_EC / SPC_ST): it was copied while logged out, or Vercel was not redeployed after you changed it.`;
 }

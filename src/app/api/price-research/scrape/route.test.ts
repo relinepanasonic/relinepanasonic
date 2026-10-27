@@ -38,7 +38,7 @@ const started = (id = "run1") => vi.fn(async () => new Response(JSON.stringify({
 describe("POST /api/price-research/scrape (starts the Apify runs and returns at once)", () => {
   beforeEach(() => {
     role = "superadmin"; runningRuns = []; runsInserted = []; snapsInserted = [];
-    process.env.APIFY_TOKEN = "t"; process.env.APIFY_SHOPEE_COOKIE = "cookie";
+    process.env.APIFY_TOKEN = "t";
     links = [
       { id: "L1", client_id: "C", platform: "tokopedia", product_url: "https://www.tokopedia.com/rival/ac-1pk?src=x" },
       { id: "L3", client_id: "C", platform: "tiktok", product_url: "https://shop-id.tokopedia.com/pdp/x/1729653353364556550" },
@@ -69,16 +69,15 @@ describe("POST /api/price-research/scrape (starts the Apify runs and returns at 
     vi.unstubAllGlobals();
   });
 
-  it("does not start a link that is already being scraped; Shopee without a cookie and an Apify error become failed snapshots", async () => {
+  it("does not start a link that is already being scraped; an Apify error becomes a failed snapshot", async () => {
     runningRuns = [{ link_ids: ["L1"] }];
     links.push({ id: "S1", client_id: "C", platform: "shopee", product_url: "https://shopee.co.id/x-i.1.2" });
-    delete process.env.APIFY_SHOPEE_COOKIE;
     vi.stubGlobal("fetch", vi.fn(async () => new Response("quota", { status: 402 })));
     const { POST } = await import("./route");
     const j = await (await POST(post({ link_ids: ["L1", "L3", "S1"] }))).json();
-    expect(runsInserted).toHaveLength(0);                                                  // L1 busy, L3 refused by Apify, S1 has no cookie
+    expect(runsInserted).toHaveLength(0);                                                  // L1 busy, L3 and S1 refused by Apify
     expect(j.failed).toBe(2);
-    expect(String(snapsInserted.find((r) => r.link_id === "S1")!.error)).toMatch(/APIFY_SHOPEE_COOKIE/);
+    expect(String(snapsInserted.find((r) => r.link_id === "S1")!.error)).toMatch(/Apify 402/);
     expect(String(snapsInserted.find((r) => r.link_id === "L3")!.error)).toMatch(/Apify 402/);
     expect(snapsInserted.every((r) => r.ok === false)).toBe(true);
     vi.unstubAllGlobals();
