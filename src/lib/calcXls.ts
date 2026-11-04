@@ -1,13 +1,13 @@
 // XLS export / import of ONE SRP Price Calculation (Perhitungan Harga > an SRP): one flat sheet, one row per calculator line.
 //   No | Prod ID | Product Name | Modal Produk | Harga Jual | Platform | Jenis Toko | Category | Sub Category | Jenis Product | Product Line |
-//   Target ROAS | Berat (kg) | Uk PxLxT (cm3) | Gratis Ongkir | Promo Xtra | Paylater 3 Bln | Paylater 6 Bln | Biaya Lain | Total Biaya | Profit
+//   Target ROAS | Berat (kg) | Uk PxLxT (cm3) | Gratis Ongkir | Promo Xtra | Paylater 3 Bln | Paylater 6 Bln | Biaya Lain | Pajak % | Pajak Rp | Total Biaya | Profit
 // A line is identified by Prod ID + Platform + Jenis Toko: importing a known line UPDATES it (only the cells that are filled), a new one is ADDED.
-// Platform + Jenis Toko + Category + Sub Category + Jenis Product link the line to its Marketplace Fee row. Total Biaya and Profit are only for reading.
+// Platform + Jenis Toko + Category + Sub Category + Jenis Product link the line to its Marketplace Fee row. Pajak %, Pajak Rp, Total Biaya and Profit are only for reading (they come from the fee row and are worked out again on the screen).
 import { parsePrice } from "./catalogXls";
 
 export const CALC_HEADER = [
   "No", "Prod ID", "Product Name", "Modal Produk", "Harga Jual", "Platform", "Jenis Toko", "Category", "Sub Category", "Jenis Product", "Product Line",
-  "Target ROAS", "Berat (kg)", "Uk PxLxT (cm3)", "Gratis Ongkir", "Promo Xtra", "Paylater 3 Bln", "Paylater 6 Bln", "Biaya Lain", "Total Biaya", "Profit",
+  "Target ROAS", "Berat (kg)", "Uk PxLxT (cm3)", "Gratis Ongkir", "Promo Xtra", "Paylater 3 Bln", "Paylater 6 Bln", "Biaya Lain", "Pajak %", "Pajak Rp", "Total Biaya", "Profit",
 ] as const;
 
 export type FeeKeyParts = { category?: string | null; sub_category?: string | null; jenis_product?: string | null; platform?: string | null; jenis_toko?: string | null };

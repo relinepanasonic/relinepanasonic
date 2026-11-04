@@ -300,7 +300,7 @@ export default function MassiveCalculatorPage() {
         gratisOngkirOn: r.gratis_ongkir_on, promoXtraOn: r.promo_xtra_on, paylater3moOn: r.paylater_3mo_on, paylater6moOn: r.paylater_6mo_on, biayaLain: r.biaya_lain_rp }, f);
       return [i + 1, r.prod_id || "", r.item_product || "", Math.round(r.modal_produk_rp), Math.round(r.harga_jual_rp), f?.platform || "", f?.jenis_toko || "", f?.category || "",
         f?.sub_category || "", f?.jenis_product || "", r.product_line || "", r.target_roas, r.berat_kg, r.ukuran_cm3, yn(r.gratis_ongkir_on), yn(r.promo_xtra_on),
-        yn(r.paylater_3mo_on), yn(r.paylater_6mo_on), Math.round(r.biaya_lain_rp), Math.round(c.totalBiaya), Math.round(c.profit)];
+        yn(r.paylater_3mo_on), yn(r.paylater_6mo_on), Math.round(r.biaya_lain_rp), f?.pajak_pct ?? 0, Math.round(c.pajakRp), Math.round(c.totalBiaya), Math.round(c.profit)];
     });
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.aoa_to_sheet([[...CALC_HEADER], ...body]);
@@ -316,7 +316,7 @@ export default function MassiveCalculatorPage() {
       ["Modal Produk / Harga Jual", "Rp. On a NEW line, empty = the Harga Beli / Harga Jual of the Catalog."],
       ["Platform / Jenis Toko / Category / Sub Category / Jenis Product", "Copy the five values of ONE row of the sheet Fee options. They link the line to its Marketplace Fee row."],
       ["Gratis Ongkir / Promo Xtra / Paylater 3 Bln / Paylater 6 Bln", "Yes or No."],
-      ["Total Biaya / Profit", "Only for reading: they are worked out again on the screen."],
+      ["Pajak % / Pajak Rp / Total Biaya / Profit", "Only for reading: the Pajak % comes from the linked fee row; they are worked out again on the screen."],
     ]);
     guide["!cols"] = [{ wch: 52 }, { wch: 100 }];
     XLSX.utils.book_append_sheet(wb, guide, "Guide");
