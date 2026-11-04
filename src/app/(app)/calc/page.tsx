@@ -246,8 +246,8 @@ export default function MassiveCalculatorPage() {
             <thead>
               <tr>
                 <th style={stickyTh}>No</th>
-                <th style={stickyTh}>Product Name</th>
                 <th style={stickyTh}>Product ID</th>
+                <th style={stickyTh}>Product Name</th>
                 <th style={stickyTh}>Catalog ID</th>
                 <th className="num" style={stickyTh}>Harga Beli</th>
                 <th className="num" style={stickyTh}>Harga Jual (Catalog)</th>
@@ -429,13 +429,13 @@ function CalcRowLine({ no, row, fee, fees, catalog, catalogById, lowest, onSave,
   return (
     <tr style={dirty ? { background: "rgba(201,162,39,.06)" } : undefined}>
       <td>{no}</td>
+      <td className="calc-ro" style={{ fontFamily: "monospace" }}>{cat?.prod_id || "—"}</td>
       <td>
         <select className="calc-sel" value={v.prod_id} onChange={(e) => pickProduct(e.target.value)} style={{ width: 230, maxWidth: 230 }} title="The product comes from the Product Catalog">
           <option value="">{v.item_product ? `${v.item_product} (not in catalog)` : "— pick product —"}</option>
-          {catalog.map((c) => <option key={c.prod_id} value={c.prod_id}>{c.product_name}</option>)}
+          {catalog.map((c) => <option key={c.prod_id} value={c.prod_id}>{c.prod_id} · {c.product_name}</option>)}
         </select>
       </td>
-      <td className="calc-ro" style={{ fontFamily: "monospace" }}>{cat?.prod_id || "—"}</td>
       <td className="calc-ro" style={{ fontFamily: "monospace" }}>{cat?.srp_no || "—"}</td>
       <td className="num" style={{ fontWeight: 600 }}>{cat?.harga_beli != null ? `Rp ${formatRp(cat.harga_beli)}` : "—"}
         {cat?.harga_beli != null && parsed.modal_produk_rp !== cat.harga_beli && <div><button onClick={() => setV((s) => ({ ...s, modal_produk_rp: formatRp(cat.harga_beli as number) }))} className="btn-ghost" style={{ padding: "0 6px", fontSize: 10 }} title="Use Harga Beli as Modal Produk">= Beli</button></div>}
@@ -521,13 +521,13 @@ function ProductPicker({ catalog, busy, onClose, onAdd }: { catalog: CatalogItem
           <thead><tr><th style={{ width: 34 }}>
             <input type="checkbox" checked={shown.length > 0 && shown.every((c) => chosen.has(c.prod_id))}
               onChange={(e) => setChosen((st) => { const n = new Set(st); shown.forEach((c) => (e.target.checked ? n.add(c.prod_id) : n.delete(c.prod_id))); return n; })} /></th>
-            <th>Product Name</th><th>Prod ID</th><th className="num">Harga Beli</th><th className="num">Harga Jual</th></tr></thead>
+            <th>Prod ID</th><th>Product Name</th><th className="num">Harga Beli</th><th className="num">Harga Jual</th></tr></thead>
           <tbody>
             {shown.map((c) => (
               <tr key={c.prod_id} onClick={() => toggle(c.prod_id)} style={{ cursor: "pointer" }}>
                 <td><input type="checkbox" checked={chosen.has(c.prod_id)} onChange={() => toggle(c.prod_id)} onClick={(e) => e.stopPropagation()} /></td>
-                <td>{c.product_name}</td>
                 <td style={{ fontFamily: "monospace" }}>{c.prod_id}</td>
+                <td>{c.product_name}</td>
                 <td className="num">{c.harga_beli != null ? `Rp ${formatRp(c.harga_beli)}` : "—"}</td>
                 <td className="num">{c.harga_srp != null ? `Rp ${formatRp(c.harga_srp)}` : "—"}</td>
               </tr>

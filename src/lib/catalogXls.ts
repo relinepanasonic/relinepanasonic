@@ -1,9 +1,9 @@
 // XLS template / import of one Catalog (Price Calculator > Price Research > Product Catalog > an SRP).
-// One flat sheet, one row per product: No | Product Name | Prod ID | Harga Beli | Harga Jual. Prod ID is the key inside the Catalog: a known Prod ID
+// One flat sheet, one row per product: No | Prod ID | Product Name | Harga Beli | Harga Jual. Prod ID is the key inside the Catalog: a known Prod ID
 // is updated, a new one is added. The Catalog ID is automatic and is not in the sheet.
 
-export const CATALOG_HEADER = ["No", "Product Name", "Prod ID", "Harga Beli", "Harga Jual"] as const;
-export const CATALOG_EXAMPLE = [1, "AC Panasonic 2 PK CS-YN18AKJ", "9078737678", 5800000, 7500000];
+export const CATALOG_HEADER = ["No", "Prod ID", "Product Name", "Harga Beli", "Harga Jual"] as const;
+export const CATALOG_EXAMPLE = [1, "9078737678", "AC Panasonic 2 PK CS-YN18AKJ", 5800000, 7500000];
 
 export type CatalogRow = { prod_id: string; product_name: string; harga_beli: number | null; harga_srp: number | null };
 

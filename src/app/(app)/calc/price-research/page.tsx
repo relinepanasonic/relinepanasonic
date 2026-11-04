@@ -206,8 +206,8 @@ function GuardTab({ supabase, clientId, tick }: { supabase: Supabase; clientId: 
                   <tr style={{ background: "rgba(201,162,39,.07)", borderTop: "2px solid rgba(201,162,39,.25)" }}>
                     <td style={{ whiteSpace: "nowrap", fontWeight: 700 }}>{dmy(p.scraped_at)}</td>
                     <td style={{ minWidth: 240, maxWidth: 380, whiteSpace: "normal", overflowWrap: "anywhere", fontWeight: 700 }}>
-                      {p.product_name}
                       <div style={{ fontSize: 11, fontWeight: 400, color: "var(--muted)", fontFamily: "monospace" }}>{p.prod_id}{p.srp_id ? ` · ${p.srp_id}` : ""}</div>
+                      {p.product_name}
                     </td>
                     <td style={{ fontWeight: 800, color: "var(--gold)" }}>Catalog</td>
                     <td className="num" style={{ fontWeight: 800 }}>{rp(p.srp)}</td>
@@ -325,7 +325,7 @@ function UrlsTab({ supabase, clientId, isAdmin, tick, busy, filter, setFilter, o
           <div className="fld" style={{ minWidth: 240, flex: "1 1 240px" }}><label>Product</label>
             <select value={f.product_id} onChange={(e) => setF({ ...f, product_id: e.target.value })}>
               <option value="">{products && products.length ? "Select product…" : "Add products first (Product Catalog tab)"}</option>
-              {(products || []).map((p) => <option key={p.prod_id} value={p.prod_id}>{p.product_name} · {p.prod_id}</option>)}
+              {(products || []).map((p) => <option key={p.prod_id} value={p.prod_id}>{p.prod_id} · {p.product_name}</option>)}
             </select>
           </div>
           <div className="fld" style={{ minWidth: 190, flex: "0 1 200px" }}><label>Store name</label>
@@ -347,14 +347,14 @@ function UrlsTab({ supabase, clientId, isAdmin, tick, busy, filter, setFilter, o
       {products === null ? <Loader center /> : (
         <div className="tbl-wrap" style={{ maxHeight: "62vh" }}>
           <table className="tbl day-tbl">
-            <thead><tr><th>Product Name</th><th>Product ID</th><th>Store Name</th><th>Product URL</th><th></th></tr></thead>
+            <thead><tr><th>Product ID</th><th>Product Name</th><th>Store Name</th><th>Product URL</th><th></th></tr></thead>
             <tbody>
               {linked.map((p) => {
                 const ls = links.filter((l) => l.kode_produk === p.prod_id);
                 return ls.map((l, i) => (
                   <tr key={l.id} style={i === 0 ? { borderTop: "2px solid rgba(201,162,39,.2)" } : undefined}>
-                    <td style={{ minWidth: 220, maxWidth: 340, whiteSpace: "normal", overflowWrap: "anywhere", fontWeight: 700 }}>{i === 0 ? p.product_name : ""}</td>
                     <td style={{ fontFamily: "monospace", fontSize: 12.5 }}>{i === 0 ? p.prod_id : ""}</td>
+                    <td style={{ minWidth: 220, maxWidth: 340, whiteSpace: "normal", overflowWrap: "anywhere", fontWeight: 700 }}>{i === 0 ? p.product_name : ""}</td>
                     <td style={{ whiteSpace: "nowrap" }}>
                       {isAdmin ? (
                         <select value={l.store_id || ""} onChange={(e) => changeStore(l, e.target.value)} style={{ minWidth: 150 }}>

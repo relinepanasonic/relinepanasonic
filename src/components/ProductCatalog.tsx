@@ -153,7 +153,7 @@ function SrpListView({ supabase, isAdmin, listId, onBack, onChanged }: { supabas
   // the XLS template is the empty sheet (one example row); the export is this Catalog as it is now, so it can be edited and imported back
   async function downloadXls(withRows: boolean) {
     const XLSX = await import("xlsx");
-    const body: (string | number)[][] = withRows ? (rows || []).map((r, i) => [i + 1, r.product_name, r.prod_id, r.harga_beli ?? "", r.harga_srp ?? ""]) : [CATALOG_EXAMPLE as (string | number)[]];
+    const body: (string | number)[][] = withRows ? (rows || []).map((r, i) => [i + 1, r.prod_id, r.product_name, r.harga_beli ?? "", r.harga_srp ?? ""]) : [CATALOG_EXAMPLE as (string | number)[]];
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.aoa_to_sheet([[...CATALOG_HEADER], ...body]);
     ws["!cols"] = [{ wch: 6 }, { wch: 46 }, { wch: 18 }, { wch: 16 }, { wch: 16 }];
@@ -229,13 +229,13 @@ function SrpListView({ supabase, isAdmin, listId, onBack, onChanged }: { supabas
       {rows === null ? <Loader center /> : (
         <div className="tbl-wrap" style={{ maxHeight: "62vh" }}>
           <table className="tbl day-tbl">
-            <thead><tr><th className="num">No</th><th>Product Name</th><th>Prod ID</th><th className="num">Harga Beli</th><th className="num">Harga Jual</th><th></th></tr></thead>
+            <thead><tr><th className="num">No</th><th>Prod ID</th><th>Product Name</th><th className="num">Harga Beli</th><th className="num">Harga Jual</th><th></th></tr></thead>
             <tbody>
               {shown.map((r, i) => (
                 <tr key={r.id}>
                   <td className="num">{i + 1}</td>
-                  <td style={{ minWidth: 240, maxWidth: 420, whiteSpace: "normal", overflowWrap: "anywhere" }}>{r.product_name}</td>
                   <td style={{ fontFamily: "monospace", fontSize: 12.5 }}>{r.prod_id}</td>
+                  <td style={{ minWidth: 240, maxWidth: 420, whiteSpace: "normal", overflowWrap: "anywhere" }}>{r.product_name}</td>
                   <td className="num">{rp(r.harga_beli)}</td>
                   <td className="num" style={{ fontWeight: 700 }}>{rp(r.harga_srp)}</td>
                   <td style={{ whiteSpace: "nowrap" }}>
@@ -276,8 +276,8 @@ function ItemModal({ supabase, listId, srpNo, item, onClose }: { supabase: Supab
       <div style={{ fontSize: 18, fontWeight: 800, color: "#fff", marginBottom: 4 }}>{isNew ? "Add product" : "Edit product"}</div>
       <div style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 14, fontFamily: "monospace" }}>{srpNo}</div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-        <div className="fld" style={{ gridColumn: "1 / -1" }}><label>Product Name</label><input value={f.product_name} onChange={(e) => setF({ ...f, product_name: e.target.value })} placeholder="AC Panasonic 2 PK CS-YN18AKJ" /></div>
         <div className="fld" style={{ gridColumn: "1 / -1" }}><label>Prod ID</label><input value={f.prod_id} onChange={(e) => setF({ ...f, prod_id: e.target.value })} placeholder="e.g. 9078737678 or CS/CU-YN18AKJ" /></div>
+        <div className="fld" style={{ gridColumn: "1 / -1" }}><label>Product Name</label><input value={f.product_name} onChange={(e) => setF({ ...f, product_name: e.target.value })} placeholder="AC Panasonic 2 PK CS-YN18AKJ" /></div>
         <div className="fld"><label>Harga Beli (Rp)</label><input inputMode="numeric" value={f.harga_beli} onChange={(e) => setF({ ...f, harga_beli: e.target.value.replace(/[^\d]/g, "") })} placeholder="5800000" /></div>
         <div className="fld"><label>Harga Jual (Rp)</label><input inputMode="numeric" value={f.harga_srp} onChange={(e) => setF({ ...f, harga_srp: e.target.value.replace(/[^\d]/g, "") })} placeholder="7500000" /></div>
       </div>
