@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react";
 import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Modal } from "@/components/ProductCatalog";
@@ -215,6 +216,71 @@ export default function MassiveCalculatorPage() {
   }, [rows, platformFilter, tokoFilter, typeQuery, platformOf, tokoOf]);
   const toggleOne = useCallback((id: string) => setSelected((st) => { const n = new Set(st); if (n.has(id)) n.delete(id); else n.add(id); return n; }), []);
   const selectedRows = rows.filter((r) => selected.has(r.id));
+  const [sort, setSort] = useState<{ k: string; dir: "asc" | "desc" } | null>(null);
+  const catByProd = useMemo(() => new Map(srpItems.map((c) => [c.prod_id, c])), [srpItems]);
+  // the value a column sorts by, for one line (the calculated ones are worked out the same way as on the line)
+  const sortValue = useCallback((r: CalcRow, k: string): number | string | null => {
+    const fee = r.fee_id ? feesById.get(r.fee_id) ?? null : null;
+    const cat = catByProd.get(r.prod_id || "") ?? null;
+    const c = computeCalc({ hargaJual: r.harga_jual_rp, modalProduk: r.modal_produk_rp, targetRoas: r.target_roas, beratKg: r.berat_kg, ukuranCm3: r.ukuran_cm3,
+      gratisOngkirOn: r.gratis_ongkir_on, promoXtraOn: r.promo_xtra_on, paylater3moOn: r.paylater_3mo_on, paylater6moOn: r.paylater_6mo_on, biayaLain: r.biaya_lain_rp }, fee);
+    const yn = (b: boolean) => (b ? 1 : 0);
+    switch (k) {
+      case "no": return rows.indexOf(r);
+      case "platform": return r.fee_platform || "";
+      case "toko": return r.fee_jenis_toko || "";
+      case "prod": return r.prod_id || "";
+      case "name": return r.item_product || "";
+      case "catalog": return cat?.srp_no ?? "";
+      case "beli": return cat?.harga_beli ?? null;
+      case "jualcat": return cat?.harga_srp ?? null;
+      case "lowest": return lowest.get(r.prod_id || "") ?? null;
+      case "line": return r.product_line || "";
+      case "modal": return r.modal_produk_rp;
+      case "jual": return r.harga_jual_rp;
+      case "markup": return c.hargaMarkupPct;
+      case "biaya": return c.totalBiaya;
+      case "profit": return c.profit;
+      case "fcat": return r.fee_category || "";
+      case "fsub": return r.fee_sub_category || "";
+      case "fjenis": return r.fee_jenis_product || "";
+      case "roas": return r.target_roas;
+      case "pctads": return c.pctAds;
+      case "biayaads": return c.biayaAds;
+      case "pfpct": return fee?.platform_fee_pct ?? 0;
+      case "pfrp": return c.platformFeeRp;
+      case "proses": return c.biayaProsesRp;
+      case "mallpct": return fee?.biaya_layanan_mall_pct ?? 0;
+      case "mallrp": return c.biayaLayananRp;
+      case "ongkir": return yn(r.gratis_ongkir_on);
+      case "berat": return r.berat_kg;
+      case "uk": return r.ukuran_cm3;
+      case "ongkirrp": return c.biayaOngkir;
+      case "promo": return yn(r.promo_xtra_on);
+      case "promorp": return c.promoXtraRp;
+      case "p3": return yn(r.paylater_3mo_on);
+      case "p3rp": return c.paylater3moRp;
+      case "p6": return yn(r.paylater_6mo_on);
+      case "p6rp": return c.paylater6moRp;
+      case "pajakpct": return pajakPctOf(fee);
+      case "pajakrp": return c.pajakRp;
+      case "lain": return r.biaya_lain_rp;
+      case "nett": return c.profit;
+      default: return null;
+    }
+  }, [feesById, catByProd, lowest, rows]);
+  const shown = useMemo(() => {
+    if (!sort) return visible;
+    const sign = sort.dir === "asc" ? 1 : -1;
+    return [...visible].sort((a, b) => {
+      const x = sortValue(a, sort.k), y = sortValue(b, sort.k);
+      if (x === null || x === "") return y === null || y === "" ? 0 : 1;   // empty values always go last
+      if (y === null || y === "") return -1;
+      return typeof x === "number" && typeof y === "number" ? sign * (x - y) : sign * String(x).localeCompare(String(y));
+    });
+  }, [visible, sort, sortValue]);
+  // click: ascending, then descending, then back to the order of the lines
+  const toggleSort = (k: string) => setSort((st) => (!st || st.k !== k ? { k, dir: "asc" } : st.dir === "asc" ? { k, dir: "desc" } : null));
 
   const loadLog = useCallback(async (cid: string) => {
     const { data } = await supabase.rpc("calc_srp_log", { p_client_id: cid });
@@ -600,51 +666,51 @@ export default function MassiveCalculatorPage() {
                   <th style={stickyTh}><input type="checkbox" title="Tick all the lines shown"
                     checked={visible.length > 0 && visible.every((r) => selected.has(r.id))}
                     onChange={(e) => setSelected((st) => { const n = new Set(st); visible.forEach((r) => (e.target.checked ? n.add(r.id) : n.delete(r.id))); return n; })} /></th>
-                  <th style={stickyTh}>No</th>
-                  <th style={stickyTh}>Platform</th>
-                  <th style={stickyTh}>Jenis Toko</th>
-                  <th style={stickyTh}>Product ID</th>
-                  <th style={stickyTh}>Product Name</th>
-                  <th style={stickyTh}>Catalog ID</th>
-                  <th className="num" style={stickyTh}>Harga Beli</th>
-                  <th className="num" style={stickyTh}>Harga Jual (Catalog)</th>
-                  <th className="num" style={stickyTh}>Lowest Competitor</th>
-                  <th style={stickyTh}>Category</th>
-                  <th className="num" style={stickyTh}>Modal Produk</th>
-                  <th className="num" style={stickyTh}>Harga Jual (Rp)</th>
-                  <th className="num" style={stickyTh}>Harga Jual (%)</th>
-                  <th className="num" style={stickyTh}>Total Biaya</th>
-                  <th className="num" style={stickyTh}>Profit</th>
-                  <th style={stickyTh}>Category (Fee)</th>
-                  <th style={stickyTh}>Sub Category</th>
-                  <th style={stickyTh}>Jenis Product</th>
-                  <th className="num" style={stickyTh}>Target ROAS</th>
-                  <th className="num" style={stickyTh}>% Ads</th>
-                  <th className="num" style={stickyTh}>Biaya Ads</th>
-                  <th className="num" style={stickyTh}>Platform Fee %</th>
-                  <th className="num" style={stickyTh}>Platform Fee Rp</th>
-                  <th className="num" style={stickyTh}>Biaya Proses Pesanan</th>
-                  <th className="num" style={stickyTh}>Biaya Layanan Mall %</th>
-                  <th className="num" style={stickyTh}>Biaya Layanan Mall Rp</th>
-                  <th style={stickyTh}>Gratis Ongkir</th>
-                  <th className="num" style={stickyTh}>Berat (kg)</th>
-                  <th className="num" style={stickyTh}>Uk PxLxT (cm³)</th>
-                  <th className="num" style={stickyTh}>Biaya Ongkir</th>
-                  <th style={stickyTh}>Promo Xtra</th>
-                  <th className="num" style={stickyTh}>Promo Xtra Rp</th>
-                  <th style={stickyTh}>Paylater 3 Bln</th>
-                  <th className="num" style={stickyTh}>Paylater 3mo Rp</th>
-                  <th style={stickyTh}>Paylater 6 Bln</th>
-                  <th className="num" style={stickyTh}>Paylater 6mo Rp</th>
-                  <th className="num" style={stickyTh}>Pajak %</th>
-                  <th className="num" style={stickyTh}>Pajak Rp</th>
-                  <th className="num" style={stickyTh}>Biaya Lain</th>
-                  <th className="num" style={stickyTh}>Nett Profit</th>
+                  <SortTh style={stickyTh} k="no" label="No" sort={sort} onSort={toggleSort} />
+                  <SortTh style={stickyTh} k="platform" label="Platform" sort={sort} onSort={toggleSort} />
+                  <SortTh style={stickyTh} k="toko" label="Jenis Toko" sort={sort} onSort={toggleSort} />
+                  <SortTh style={stickyTh} k="prod" label="Product ID" sort={sort} onSort={toggleSort} />
+                  <SortTh style={stickyTh} k="name" label="Product Name" sort={sort} onSort={toggleSort} />
+                  <SortTh style={stickyTh} k="catalog" label="Catalog ID" sort={sort} onSort={toggleSort} />
+                  <SortTh className="num" style={stickyTh} k="beli" label="Harga Beli" sort={sort} onSort={toggleSort} />
+                  <SortTh className="num" style={stickyTh} k="jualcat" label="Harga Jual (Catalog)" sort={sort} onSort={toggleSort} />
+                  <SortTh className="num" style={stickyTh} k="lowest" label="Lowest Competitor" sort={sort} onSort={toggleSort} />
+                  <SortTh style={stickyTh} k="line" label="Category" sort={sort} onSort={toggleSort} />
+                  <SortTh className="num" style={stickyTh} k="modal" label="Modal Produk" sort={sort} onSort={toggleSort} />
+                  <SortTh className="num" style={stickyTh} k="jual" label="Harga Jual (Rp)" sort={sort} onSort={toggleSort} />
+                  <SortTh className="num" style={stickyTh} k="markup" label="Harga Jual (%)" sort={sort} onSort={toggleSort} />
+                  <SortTh className="num" style={stickyTh} k="biaya" label="Total Biaya" sort={sort} onSort={toggleSort} />
+                  <SortTh className="num" style={stickyTh} k="profit" label="Profit" sort={sort} onSort={toggleSort} />
+                  <SortTh style={stickyTh} k="fcat" label="Category (Fee)" sort={sort} onSort={toggleSort} />
+                  <SortTh style={stickyTh} k="fsub" label="Sub Category" sort={sort} onSort={toggleSort} />
+                  <SortTh style={stickyTh} k="fjenis" label="Jenis Product" sort={sort} onSort={toggleSort} />
+                  <SortTh className="num" style={stickyTh} k="roas" label="Target ROAS" sort={sort} onSort={toggleSort} />
+                  <SortTh className="num" style={stickyTh} k="pctads" label="% Ads" sort={sort} onSort={toggleSort} />
+                  <SortTh className="num" style={stickyTh} k="biayaads" label="Biaya Ads" sort={sort} onSort={toggleSort} />
+                  <SortTh className="num" style={stickyTh} k="pfpct" label="Platform Fee %" sort={sort} onSort={toggleSort} />
+                  <SortTh className="num" style={stickyTh} k="pfrp" label="Platform Fee Rp" sort={sort} onSort={toggleSort} />
+                  <SortTh className="num" style={stickyTh} k="proses" label="Biaya Proses Pesanan" sort={sort} onSort={toggleSort} />
+                  <SortTh className="num" style={stickyTh} k="mallpct" label="Biaya Layanan Mall %" sort={sort} onSort={toggleSort} />
+                  <SortTh className="num" style={stickyTh} k="mallrp" label="Biaya Layanan Mall Rp" sort={sort} onSort={toggleSort} />
+                  <SortTh style={stickyTh} k="ongkir" label="Gratis Ongkir" sort={sort} onSort={toggleSort} />
+                  <SortTh className="num" style={stickyTh} k="berat" label="Berat (kg)" sort={sort} onSort={toggleSort} />
+                  <SortTh className="num" style={stickyTh} k="uk" label="Uk PxLxT (cm³)" sort={sort} onSort={toggleSort} />
+                  <SortTh className="num" style={stickyTh} k="ongkirrp" label="Biaya Ongkir" sort={sort} onSort={toggleSort} />
+                  <SortTh style={stickyTh} k="promo" label="Promo Xtra" sort={sort} onSort={toggleSort} />
+                  <SortTh className="num" style={stickyTh} k="promorp" label="Promo Xtra Rp" sort={sort} onSort={toggleSort} />
+                  <SortTh style={stickyTh} k="p3" label="Paylater 3 Bln" sort={sort} onSort={toggleSort} />
+                  <SortTh className="num" style={stickyTh} k="p3rp" label="Paylater 3mo Rp" sort={sort} onSort={toggleSort} />
+                  <SortTh style={stickyTh} k="p6" label="Paylater 6 Bln" sort={sort} onSort={toggleSort} />
+                  <SortTh className="num" style={stickyTh} k="p6rp" label="Paylater 6mo Rp" sort={sort} onSort={toggleSort} />
+                  <SortTh className="num" style={stickyTh} k="pajakpct" label="Pajak %" sort={sort} onSort={toggleSort} />
+                  <SortTh className="num" style={stickyTh} k="pajakrp" label="Pajak Rp" sort={sort} onSort={toggleSort} />
+                  <SortTh className="num" style={stickyTh} k="lain" label="Biaya Lain" sort={sort} onSort={toggleSort} />
+                  <SortTh className="num" style={stickyTh} k="nett" label="Nett Profit" sort={sort} onSort={toggleSort} />
                   <th style={stickyTh}></th>
                 </tr>
               </thead>
               <tbody>
-                {visible.map((r, i) => (
+                {shown.map((r, i) => (
                   <CalcRowLine key={`${r.id}-${rev}`} no={i + 1} selected={selected.has(r.id)} onToggle={toggleOne} row={r} fee={r.fee_id ? feesById.get(r.fee_id) ?? null : null} fees={fees}
                     catalog={srpItems} lowest={lowest}
                     onSave={saveRow} onDelete={deleteRow} onPending={onPending} />
@@ -1022,3 +1088,21 @@ function MassDuplicateModal({ fees, count, busy, onClose, onApply }: { fees: Fee
     </Modal>
   );
 }
+
+// A column header that sorts the lines: an arrow shows the direction of the sort on that column
+function SortTh({ label, k, sort, onSort, className, style }: {
+  label: string; k: string; sort: { k: string; dir: "asc" | "desc" } | null; onSort: (k: string) => void;
+  className?: string; style?: React.CSSProperties;
+}) {
+  const active = sort?.k === k;
+  const Icon = active ? (sort!.dir === "asc" ? ArrowUp : ArrowDown) : ArrowUpDown;
+  return (
+    <th className={className} title="Sort" onClick={() => onSort(k)} style={{ ...style, cursor: "pointer", userSelect: "none", whiteSpace: "nowrap" }}>
+      <span style={{ display: "inline-flex", alignItems: "center", gap: 4, justifyContent: className === "num" ? "flex-end" : "flex-start", width: "100%" }}>
+        {label}
+        <Icon size={12} style={{ opacity: active ? 1 : 0.4, flexShrink: 0 }} />
+      </span>
+    </th>
+  );
+}
+
