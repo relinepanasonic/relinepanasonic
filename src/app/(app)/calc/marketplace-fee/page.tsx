@@ -483,7 +483,7 @@ function AddFeeModal({ onAdd, onClose }: {
     min_gratis_ongkir_biasa_pct: 0, max_gratis_ongkir_biasa_rp: 0,
     min_gratis_ongkir_khusus_pct: 0, max_gratis_ongkir_khusus_rp: 0,
     min_promo_xtra_pct: 0, max_promo_xtra_rp: 0,
-    spaylater_xtra_3mo_pct: 0, spaylater_xtra_6mo_pct: 0, pajak_pct: 0,
+    spaylater_xtra_3mo_pct: 0, spaylater_xtra_6mo_pct: 0, pajak_pct: 0.5,
   });
   return (
     <div style={overlay} onClick={onClose}>

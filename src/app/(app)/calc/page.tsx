@@ -100,6 +100,10 @@ function parseRp(s: string): number { return Number(s.replace(/[^\d-]/g, "")) ||
 // "biasa" tier to the "khusus" tier once the product is over 5kg or
 // 20,000 cm3 (Tiktok has no such tier split, it always uses the one
 // pct/cap pair on the fee row).
+// Pajak of a line: the fee row's Pajak, or the standard 0.5% when the line has no fee row yet
+const PAJAK_DEFAULT_PCT = 0.5;
+const pajakPctOf = (fee: Fee | null) => (fee ? fee.pajak_pct ?? 0 : PAJAK_DEFAULT_PCT);
+
 function computeCalc(input: {
   hargaJual: number; modalProduk: number; targetRoas: number;
   beratKg: number; ukuranCm3: number;
@@ -123,7 +127,8 @@ function computeCalc(input: {
   const paylater6moRp = input.paylater6moOn ? ((fee?.spaylater_xtra_6mo_pct ?? 0) / 100) * hargaJual : 0;
 
   // Pajak: a percent of the selling price (0.50% on the marketplace fee sheet)
-  const pajakRp = ((fee?.pajak_pct ?? 0) / 100) * hargaJual;
+  // a line without a fee row yet still pays the standard Pajak
+  const pajakRp = (pajakPctOf(fee) / 100) * hargaJual;
 
   const biayaAds = input.targetRoas > 0 ? hargaJual / input.targetRoas : 0;
   const pctAds = hargaJual > 0 ? (biayaAds / hargaJual) * 100 : 0;
@@ -333,7 +338,7 @@ export default function MassiveCalculatorPage() {
         gratisOngkirOn: r.gratis_ongkir_on, promoXtraOn: r.promo_xtra_on, paylater3moOn: r.paylater_3mo_on, paylater6moOn: r.paylater_6mo_on, biayaLain: r.biaya_lain_rp }, f);
       return [i + 1, r.prod_id || "", r.item_product || "", Math.round(r.modal_produk_rp), Math.round(r.harga_jual_rp), r.fee_platform || "", r.fee_jenis_toko || "", r.fee_category || "",
         r.fee_sub_category || "", r.fee_jenis_product || "", r.product_line || "", r.target_roas, r.berat_kg, r.ukuran_cm3, yn(r.gratis_ongkir_on), yn(r.promo_xtra_on),
-        yn(r.paylater_3mo_on), yn(r.paylater_6mo_on), Math.round(r.biaya_lain_rp), f?.pajak_pct ?? 0, Math.round(c.pajakRp), Math.round(c.totalBiaya), Math.round(c.profit)];
+        yn(r.paylater_3mo_on), yn(r.paylater_6mo_on), Math.round(r.biaya_lain_rp), pajakPctOf(f), Math.round(c.pajakRp), Math.round(c.totalBiaya), Math.round(c.profit)];
     });
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.aoa_to_sheet([[...CALC_HEADER], ...body]);
@@ -847,7 +852,7 @@ function CalcRowLine({ no, row, fee, fees, catalog, lowest, selected, onToggle, 
       <td className="num calc-ro">Rp {formatRp(calc.paylater3moRp)}</td>
       <td style={{ textAlign: "center" }}>{yesNo(v.paylater_6mo_on, (val) => setV((s) => ({ ...s, paylater_6mo_on: val })))}</td>
       <td className="num calc-ro">Rp {formatRp(calc.paylater6moRp)}</td>
-      <td className="num calc-ro">{fee ? `${fee.pajak_pct ?? 0}%` : "—"}</td>
+      <td className="num calc-ro">{pajakPctOf(fee)}%</td>
       <td className="num calc-ro">Rp {formatRp(calc.pajakRp)}</td>
       <td className="num">Rp {txt(v.biaya_lain_rp, (s) => setV((st) => ({ ...st, biaya_lain_rp: formatRp(parseRp(s)) })), 80)}</td>
       <td className="num" style={{ fontWeight: 700, color: calc.profit >= 0 ? "#4ade80" : "#ff9a9a" }}>
