@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Modal } from "@/components/ProductCatalog";
+import { CALC_HEADER, feeKeyOf, lineKeyOf, parseCalcXls } from "@/lib/calcXls";
 
 export const dynamic = "force-dynamic";
 
@@ -170,6 +171,7 @@ export default function MassiveCalculatorPage() {
   const [srpItems, setSrpItems] = useState<CatalogItem[]>([]);            // the products and prices of the Catalog the open SRP was made from
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [dirtyCount, setDirtyCount] = useState(0);
+  const [rev, setRev] = useState(0);                                     // bumped after an import so every line shows the imported values
   const pending = useRef(new Map<string, Partial<CalcRow>>());
   const feesRef = useRef<Fee[]>([]);
   useEffect(() => { feesRef.current = fees; }, [fees]);
@@ -287,6 +289,98 @@ export default function MassiveCalculatorPage() {
     setMsg({ ok: true, text: `${no} saved${n ? ` (${n} line${n === 1 ? "" : "s"} changed)` : ""}.` });
   }
 
+  // Export XLS: every line of this SRP with all the cells you can edit (same columns as Import XLS), so the SRP can be edited in Excel
+  async function exportXls() {
+    if (!srp) return;
+    const XLSX = await import("xlsx");
+    const yn = (b: boolean) => (b ? "Yes" : "No");
+    const body = rows.map((r, i) => {
+      const f = r.fee_id ? feesById.get(r.fee_id) ?? null : null;
+      const c = computeCalc({ hargaJual: r.harga_jual_rp, modalProduk: r.modal_produk_rp, targetRoas: r.target_roas, beratKg: r.berat_kg, ukuranCm3: r.ukuran_cm3,
+        gratisOngkirOn: r.gratis_ongkir_on, promoXtraOn: r.promo_xtra_on, paylater3moOn: r.paylater_3mo_on, paylater6moOn: r.paylater_6mo_on, biayaLain: r.biaya_lain_rp }, f);
+      return [i + 1, r.prod_id || "", r.item_product || "", Math.round(r.modal_produk_rp), Math.round(r.harga_jual_rp), f?.platform || "", f?.jenis_toko || "", f?.category || "",
+        f?.sub_category || "", f?.jenis_product || "", r.product_line || "", r.target_roas, r.berat_kg, r.ukuran_cm3, yn(r.gratis_ongkir_on), yn(r.promo_xtra_on),
+        yn(r.paylater_3mo_on), yn(r.paylater_6mo_on), Math.round(r.biaya_lain_rp), Math.round(c.totalBiaya), Math.round(c.profit)];
+    });
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet([[...CALC_HEADER], ...body]);
+    ws["!cols"] = CALC_HEADER.map((h) => ({ wch: h === "Product Name" ? 40 : Math.max(12, h.length + 2) }));
+    XLSX.utils.book_append_sheet(wb, ws, "Perhitungan Harga");
+    const feeSheet = XLSX.utils.aoa_to_sheet([["Platform", "Jenis Toko", "Category", "Sub Category", "Jenis Product"], ...fees.map((f) => [f.platform, f.jenis_toko || "", f.category, f.sub_category || "", f.jenis_product || ""])]);
+    feeSheet["!cols"] = [18, 18, 28, 28, 28].map((wch) => ({ wch }));
+    XLSX.utils.book_append_sheet(wb, feeSheet, "Fee options");
+    const guide = XLSX.utils.aoa_to_sheet([
+      ["How to fill"], [""],
+      ["Prod ID", "Required. A line is identified by Prod ID + Platform + Jenis Toko: importing a known line UPDATES it, a new one is ADDED to this SRP."],
+      ["Empty cell", "On a known line an empty cell leaves that value as it is."],
+      ["Modal Produk / Harga Jual", "Rp. On a NEW line, empty = the Harga Beli / Harga Jual of the Catalog."],
+      ["Platform / Jenis Toko / Category / Sub Category / Jenis Product", "Copy the five values of ONE row of the sheet Fee options. They link the line to its Marketplace Fee row."],
+      ["Gratis Ongkir / Promo Xtra / Paylater 3 Bln / Paylater 6 Bln", "Yes or No."],
+      ["Total Biaya / Profit", "Only for reading: they are worked out again on the screen."],
+    ]);
+    guide["!cols"] = [{ wch: 52 }, { wch: 100 }];
+    XLSX.utils.book_append_sheet(wb, guide, "Guide");
+    XLSX.writeFile(wb, `${srp.srp_no}-perhitungan-harga.xlsx`);
+  }
+
+  async function importXls(file: File) {
+    if (!srp) return;
+    if (dirtyCount && !confirm(`${dirtyCount} line${dirtyCount === 1 ? " has" : "s have"} changes that are not saved. The import replaces them. Continue?`)) return;
+    setBusy(true); setMsg(null);
+    try {
+      const XLSX = await import("xlsx");
+      const wb = XLSX.read(await file.arrayBuffer(), { type: "array" });
+      const matrix = XLSX.utils.sheet_to_json<unknown[]>(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: "", raw: true });
+      const parsed = parseCalcXls(matrix);
+      if (parsed.error) { setMsg({ ok: false, text: parsed.error }); return; }
+      const feeMap = new Map<string, string>();
+      for (const f of fees) { const k = feeKeyOf(f); if (!feeMap.has(k)) feeMap.set(k, f.id); }
+      const lineKey = (r: CalcRow) => { const f = r.fee_id ? feesById.get(r.fee_id) : null; return lineKeyOf(r.prod_id || "", f?.platform, f?.jenis_toko); };
+      const byKey = new Map(rows.map((r) => [lineKey(r), r]));
+      const catById = new Map(srpItems.map((c) => [c.prod_id, c]));
+      const updates: [string, Partial<CalcRow>][] = []; const inserts: Record<string, unknown>[] = [];
+      let unlinked = 0;
+      for (const x of parsed.rows) {
+        const feeId = x.fee ? feeMap.get(feeKeyOf(x.fee)) : undefined;
+        if (x.fee && !feeId) unlinked++;
+        const patch: Partial<CalcRow> = {};
+        if (x.item_product !== undefined) patch.item_product = x.item_product;
+        if (x.modal_produk_rp !== undefined) patch.modal_produk_rp = x.modal_produk_rp;
+        if (x.harga_jual_rp !== undefined) patch.harga_jual_rp = x.harga_jual_rp;
+        if (x.product_line !== undefined) patch.product_line = x.product_line;
+        if (x.target_roas !== undefined) patch.target_roas = x.target_roas;
+        if (x.berat_kg !== undefined) patch.berat_kg = x.berat_kg;
+        if (x.ukuran_cm3 !== undefined) patch.ukuran_cm3 = x.ukuran_cm3;
+        if (x.gratis_ongkir_on !== undefined) patch.gratis_ongkir_on = x.gratis_ongkir_on;
+        if (x.promo_xtra_on !== undefined) patch.promo_xtra_on = x.promo_xtra_on;
+        if (x.paylater_3mo_on !== undefined) patch.paylater_3mo_on = x.paylater_3mo_on;
+        if (x.paylater_6mo_on !== undefined) patch.paylater_6mo_on = x.paylater_6mo_on;
+        if (x.biaya_lain_rp !== undefined) patch.biaya_lain_rp = x.biaya_lain_rp;
+        if (feeId) patch.fee_id = feeId;
+        let ex = byKey.get(lineKeyOf(x.prod_id, x.platform, x.toko));
+        if (!ex) { const free = rows.filter((r) => r.prod_id === x.prod_id && !r.fee_id); if (free.length === 1) ex = free[0]; }   // a line without a fee yet gets its fee from the sheet
+        if (ex) { if (Object.keys(patch).length) updates.push([ex.id, patch]); byKey.delete(lineKey(ex)); continue; }
+        const c = catById.get(x.prod_id);
+        inserts.push({
+          client_id: clientId, srp_id: srp.id, prod_id: x.prod_id, item_product: x.item_product ?? c?.product_name ?? "",
+          modal_produk_rp: x.modal_produk_rp ?? c?.harga_beli ?? 0, harga_jual_rp: x.harga_jual_rp ?? c?.harga_srp ?? 0,
+          ...patch,
+        });
+      }
+      const results = await Promise.all(updates.map(([id, patch]) => supabase.from("massive_calc_rows").update(patch).eq("id", id)));
+      const bad = results.find((r) => r.error)?.error;
+      if (bad) { setMsg({ ok: false, text: bad.message }); return; }
+      if (inserts.length) {
+        const { error } = await supabase.from("massive_calc_rows").insert(inserts);
+        if (error) { setMsg({ ok: false, text: error.message }); return; }
+      }
+      pending.current.clear(); setDirtyCount(0);
+      await reloadRows(srp.id); setRev((n) => n + 1);
+      const sk = parsed.skipped;
+      setMsg({ ok: true, text: `Imported: ${updates.length} updated, ${inserts.length} added${unlinked ? ` · ${unlinked} line${unlinked === 1 ? "" : "s"} whose fee row was not found (check Platform / Jenis Toko / Category / Sub Category / Jenis Product against the sheet Fee options)` : ""}${sk.length ? ` · ${sk.length} skipped: ${sk.slice(0, 3).map((x) => `row ${x.row}: ${x.reason}`).join("; ")}${sk.length > 3 ? "…" : ""}` : ""}. Press Save when you are done.` });
+    } finally { setBusy(false); }
+  }
+
   async function backToTable() {
     if (dirtyCount && !confirm(`${dirtyCount} line${dirtyCount === 1 ? " has" : "s have"} changes that are not saved. Go back without saving?`)) return;
     pending.current.clear(); setDirtyCount(0);
@@ -362,11 +456,18 @@ export default function MassiveCalculatorPage() {
             </div>
             <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
               {dirtyCount > 0 && <span style={{ color: "var(--gold)", fontSize: 12.5 }}>{dirtyCount} line{dirtyCount === 1 ? "" : "s"} changed</span>}
+              <button className="btn-ghost" onClick={exportXls} disabled={!rows.length}>⬇ Export XLS</button>
+              <label className="btn-ghost" style={{ cursor: busy ? "not-allowed" : "pointer", opacity: busy ? .6 : 1 }}>
+                Import XLS
+                <input type="file" accept=".xlsx,.xls,.csv" style={{ display: "none" }} disabled={busy}
+                  onChange={(e) => { const f = e.target.files?.[0]; if (f) importXls(f); e.target.value = ""; }} />
+              </label>
               <button className="btn-ghost" onClick={deleteSrp} style={{ color: "#f87171" }}>Delete SRP</button>
               <button className="btn-gold" disabled={busy} onClick={saveAll} style={{ padding: "10px 26px" }}>{busy ? "Saving…" : "Save"}</button>
             </div>
           </div>
-          <div className="hint">Pick Category/Sub Category/Jenis Product/Platform/Jenis Toko to link a fee row, fill in price and weight, Total Biaya / Profit update live. Press Save when you are done: it keeps all the changes and goes back to the SRP table.</div>
+          <div className="hint">Pick Category/Sub Category/Jenis Product/Platform/Jenis Toko to link a fee row, fill in price and weight, Total Biaya / Profit update live. Press Save when you are done: it keeps all the changes and goes back to the SRP table. Export XLS / Import XLS let you edit the lines in Excel.</div>
+          {msg && <div style={{ color: msg.ok ? "var(--gold)" : "#f87171", fontSize: 13, marginTop: 8 }}>{msg.ok ? "✓" : "✗"} {msg.text}</div>}
 
           <div className="tbl-wrap" style={{ marginTop: 14, height: "calc(100vh - 300px)", minHeight: 320, overflowX: "auto", overflowY: "auto" }}>
             <table className="tbl calc-tbl" style={{ width: "max-content", minWidth: "100%" }}>
@@ -417,7 +518,7 @@ export default function MassiveCalculatorPage() {
               </thead>
               <tbody>
                 {rows.map((r, i) => (
-                  <CalcRowLine key={r.id} no={i + 1} row={r} fee={r.fee_id ? feesById.get(r.fee_id) ?? null : null} fees={fees}
+                  <CalcRowLine key={`${r.id}-${rev}`} no={i + 1} row={r} fee={r.fee_id ? feesById.get(r.fee_id) ?? null : null} fees={fees}
                     catalog={srpItems} lowest={lowest}
                     onSave={saveRow} onDelete={deleteRow} onPending={onPending} />
                 ))}
@@ -479,12 +580,12 @@ function CalcRowLine({ no, row, fee, fees, catalog, lowest, onSave, onDelete, on
   const dirty = parsed.item_product !== (row.item_product || "")
     || parsed.prod_id !== (row.prod_id || null)
     || parsed.product_line !== (row.product_line || "")
-    || parsed.modal_produk_rp !== row.modal_produk_rp
-    || parsed.harga_jual_rp !== row.harga_jual_rp
+    || parsed.modal_produk_rp !== Math.round(row.modal_produk_rp)
+    || parsed.harga_jual_rp !== Math.round(row.harga_jual_rp)
     || parsed.target_roas !== row.target_roas
     || parsed.berat_kg !== row.berat_kg
     || parsed.ukuran_cm3 !== row.ukuran_cm3
-    || parsed.biaya_lain_rp !== row.biaya_lain_rp
+    || parsed.biaya_lain_rp !== Math.round(row.biaya_lain_rp)
     || parsed.gratis_ongkir_on !== row.gratis_ongkir_on
     || parsed.promo_xtra_on !== row.promo_xtra_on
     || parsed.paylater_3mo_on !== row.paylater_3mo_on
@@ -570,7 +671,7 @@ function CalcRowLine({ no, row, fee, fees, catalog, lowest, onSave, onDelete, on
       <td>
         <select className="calc-sel" value={v.prod_id} onChange={(e) => pickProduct(e.target.value)} style={{ width: 230, maxWidth: 230 }} title="The product comes from the Product Catalog">
           <option value="">{v.item_product ? `${v.item_product} (not in catalog)` : "— pick product —"}</option>
-          {catalog.map((c) => <option key={c.prod_id} value={c.prod_id}>{c.prod_id} · {c.product_name}</option>)}
+          {catalog.map((c) => <option key={c.prod_id} value={c.prod_id}>{c.product_name}</option>)}
         </select>
       </td>
       <td className="calc-ro" style={{ fontFamily: "monospace" }}>{cat?.srp_no || "—"}</td>
