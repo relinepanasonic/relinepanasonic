@@ -198,17 +198,25 @@ export default function MassiveCalculatorPage() {
     })();
   }, [supabase, reload]);
 
-  // + Add Product: pick one or more products of the Product Catalog; each becomes a line with Modal Produk = its Harga Beli and Harga Jual = its Harga Jual
-  async function addProducts(items: CatalogItem[], store: string) {
-    if (!clientId || !items.length) return;
+  // + Add Catalog: every product of one Catalog becomes a line (Modal Produk = its Harga Beli, Harga Jual = the Harga Jual saved in that Catalog).
+  // Products already on a line for the same store are skipped, so adding a Catalog twice does not duplicate lines.
+  async function addCatalog(listId: string, store: string): Promise<string> {
+    if (!clientId) return "";
     setAdding(true);
-    const { error } = await supabase.from("massive_calc_rows").insert(items.map((c) => ({
-      client_id: clientId, created_by: myName, prod_id: c.prod_id, item_product: c.product_name, modal_produk_rp: c.harga_beli ?? 0, harga_jual_rp: c.harga_srp ?? 0, store_name: store || null,
-    })));
+    const { data: items, error: e1 } = await supabase.from("pr_srp_items").select("prod_id, product_name, harga_beli, harga_srp").eq("list_id", listId).order("product_name");
+    if (e1) { setAdding(false); return e1.message; }
+    const have = new Set(rows.filter((r) => (r.store_name || "") === store).map((r) => r.prod_id));
+    const fresh = ((items as { prod_id: string; product_name: string; harga_beli: number | null; harga_srp: number | null }[]) || []).filter((c) => !have.has(c.prod_id));
+    if (fresh.length) {
+      const { error } = await supabase.from("massive_calc_rows").insert(fresh.map((c) => ({
+        client_id: clientId, created_by: myName, prod_id: c.prod_id, item_product: c.product_name, modal_produk_rp: c.harga_beli ?? 0, harga_jual_rp: c.harga_srp ?? 0, store_name: store || null,
+      })));
+      if (error) { setAdding(false); return error.message; }
+    }
     setAdding(false);
-    if (error) { alert(error.message); return; }
     setPicking(false);
     reload(clientId);
+    return "";
   }
 
   async function saveRow(id: string, patch: Partial<CalcRow>) {
@@ -248,7 +256,7 @@ export default function MassiveCalculatorPage() {
             <div className="hint">{rows.length.toLocaleString("id-ID")} product rows · pick Category/Sub Category/Jenis Product/Platform/Jenis Toko to link a fee row, fill in price and weight, Total Biaya / Profit update live.</div>
           </div>
           <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-            <button className="btn-gold" disabled={!clientId} onClick={() => setPicking(true)}>+ Add Product</button>
+            <button className="btn-gold" disabled={!clientId} onClick={() => setPicking(true)}>+ Add Catalog</button>
           </div>
         </div>
 
@@ -305,7 +313,7 @@ export default function MassiveCalculatorPage() {
                   itemsFor={itemsFor} stores={storeList} vendorNames={vendorNames} vendorOfStore={vendorOfStore} lowest={lowest} onSave={saveRow} onDelete={deleteRow} />
               ))}
               {!loading && rows.length === 0 && (
-                <tr><td colSpan={40} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>No product rows yet — click “+ Add Product” and pick the products from the Product Catalog.</td></tr>
+                <tr><td colSpan={40} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>No product rows yet — click “+ Add Catalog” and pick a Catalog: all its products are added with the Harga Beli and Harga Jual saved in it.</td></tr>
               )}
               {loading && (
                 <tr><td colSpan={40} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>Loading…</td></tr>
@@ -314,7 +322,7 @@ export default function MassiveCalculatorPage() {
           </table>
         </div>
       </div>
-      {picking && <ProductPicker itemsFor={itemsFor} stores={storeList} vendorNames={vendorNames} busy={adding} onClose={() => setPicking(false)} onAdd={addProducts} />}
+      {picking && <CatalogPicker supabase={supabase} clientId={clientId} stores={storeList} vendorNames={vendorNames} busy={adding} onClose={() => setPicking(false)} onAdd={addCatalog} />}
     </>
   );
 }
@@ -536,56 +544,63 @@ const stickyTh: React.CSSProperties = { position: "sticky", top: 0, zIndex: 1 };
 const saveBtnStyle: React.CSSProperties = { background: "linear-gradient(135deg,var(--gold),var(--gold-soft))", border: "none", color: "var(--navy-deep)", borderRadius: 7, padding: "4px 12px", cursor: "pointer", fontSize: 12, fontWeight: 700 };
 const delBtnStyle: React.CSSProperties = { background: "rgba(255,80,80,.12)", border: "1px solid rgba(255,90,90,.3)", color: "#ff9a9a", borderRadius: 7, padding: "4px 10px", cursor: "pointer", fontSize: 12 };
 
-// Modal of the Product Catalog in force: tick the products (search by name or Prod ID) and add them as calculator lines.
-function ProductPicker({ itemsFor, stores, vendorNames, busy, onClose, onAdd }: {
-  itemsFor: (store: string | null) => CatalogItem[]; stores: { store_name: string; vendor_id: string | null }[]; vendorNames: Map<string, string>;
-  busy: boolean; onClose: () => void; onAdd: (items: CatalogItem[], store: string) => void;
+// Modal listing the Catalogs (Product Catalog log): pick one, optionally the store the lines are for, and all its products are added.
+type CatalogLog = { id: string; srp_no: string; active_from: string; total_sku: number; in_force: boolean; vendor_id: string | null; vendor_name: string | null };
+function CatalogPicker({ supabase, clientId, stores, vendorNames, busy, onClose, onAdd }: {
+  supabase: ReturnType<typeof createClient>; clientId: string; stores: { store_name: string; vendor_id: string | null }[]; vendorNames: Map<string, string>;
+  busy: boolean; onClose: () => void; onAdd: (listId: string, store: string) => Promise<string>;
 }) {
+  const [logs, setLogs] = useState<CatalogLog[] | null>(null);
+  const [pick, setPick] = useState("");
   const [store, setStore] = useState("");
-  const catalog = itemsFor(store || null);
-  const vendor = vendorNames.get(stores.find((s) => s.store_name === store)?.vendor_id || "") || "";
-  const [q, setQ] = useState("");
-  const [chosen, setChosen] = useState<Set<string>>(new Set());
-  const shown = catalog.filter((c) => !q.trim() || `${c.product_name} ${c.prod_id}`.toLowerCase().includes(q.trim().toLowerCase()));
-  const toggle = (id: string) => setChosen((st) => { const n = new Set(st); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  const [err, setErr] = useState("");
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase.rpc("pr_srp_lists_log", { p_client_id: clientId });
+      const l = (data as CatalogLog[]) || [];
+      setLogs(l); setPick(l.find((x) => x.in_force)?.id || l[0]?.id || "");
+    })();
+  }, [supabase, clientId]);
+  const chosen = logs?.find((x) => x.id === pick) ?? null;
+  const myStores = stores.filter((s) => !chosen?.vendor_id || s.vendor_id === chosen.vendor_id);
+  const dmy = (d: string) => new Date(d + "T00:00:00+07:00").toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
   return (
     <Modal onClose={onClose} width={760}>
-      <div style={{ fontSize: 18, fontWeight: 800, color: "#fff", marginBottom: 6 }}>Pick products from the Product Catalog</div>
-      <div style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 12 }}>Pick the store first: its vendor decides the Harga Beli. Each product is added with that Harga Beli as Modal Produk and the Harga Jual of the Catalog in force.</div>
-      <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 10, flexWrap: "wrap" }}>
-        <div className="fld" style={{ minWidth: 240 }}><label>Store</label>
-          <select value={store} onChange={(e) => { setStore(e.target.value); setChosen(new Set()); }}>
-            <option value="">— no store (default Catalog) —</option>
-            {stores.map((s) => <option key={s.store_name} value={s.store_name}>{s.store_name}</option>)}
+      <div style={{ fontSize: 18, fontWeight: 800, color: "#fff", marginBottom: 6 }}>Add a Catalog</div>
+      <div style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 12 }}>All the products of the Catalog become lines, each with the Harga Beli as Modal Produk and the Harga Jual saved in that Catalog. Products already on a line for the same store are skipped.</div>
+      {logs === null ? <div style={{ color: "var(--muted)", padding: 20 }}>Loading…</div> : (
+        <div className="tbl-wrap" style={{ maxHeight: "40vh" }}>
+          <table className="tbl">
+            <thead><tr><th style={{ width: 34 }}></th><th>Catalog ID</th><th>Vendor</th><th>Date Active</th><th className="num">Total SKU</th><th></th></tr></thead>
+            <tbody>
+              {logs.map((l) => (
+                <tr key={l.id} onClick={() => { setPick(l.id); setStore(""); }} style={{ cursor: "pointer" }}>
+                  <td><input type="radio" checked={pick === l.id} onChange={() => { setPick(l.id); setStore(""); }} /></td>
+                  <td style={{ fontFamily: "monospace", fontWeight: 700 }}>{l.srp_no}</td>
+                  <td>{l.vendor_name || <span style={{ color: "var(--muted)" }}>Default (all stores)</span>}</td>
+                  <td>{dmy(l.active_from)}</td>
+                  <td className="num">{l.total_sku}</td>
+                  <td>{l.in_force && <span style={{ padding: "2px 10px", borderRadius: 999, fontSize: 11.5, fontWeight: 800, border: "1px solid rgba(201,162,39,.5)", color: "var(--gold)" }}>In force</span>}</td>
+                </tr>
+              ))}
+              {logs.length === 0 && <tr><td colSpan={6} style={{ textAlign: "center", color: "var(--muted)", padding: 24 }}>No Catalog yet. Make one in the Product Catalog page (+ New Harga Beli).</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <div style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 12, flexWrap: "wrap" }}>
+        <div className="fld" style={{ minWidth: 260 }}><label>Store (optional)</label>
+          <select value={store} onChange={(e) => setStore(e.target.value)}>
+            <option value="">— no store —</option>
+            {myStores.map((s) => <option key={s.store_name} value={s.store_name}>{s.store_name}{s.vendor_id && vendorNames.get(s.vendor_id) ? ` · ${vendorNames.get(s.vendor_id)}` : ""}</option>)}
           </select></div>
-        <div style={{ fontSize: 13, color: "var(--muted)" }}>{store ? (vendor ? <>Vendor: <b style={{ color: "var(--gold)" }}>{vendor}</b></> : "This store has no vendor yet (Core > Connector): the default Catalog is used.") : ""}</div>
       </div>
-      <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Product name or Prod ID" autoFocus
-        style={{ width: "100%", marginBottom: 10, background: "rgba(10,22,40,.5)", border: "1px solid rgba(201,162,39,.25)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontSize: 14 }} />
-      <div className="tbl-wrap" style={{ maxHeight: "50vh" }}>
-        <table className="tbl">
-          <thead><tr><th style={{ width: 34 }}>
-            <input type="checkbox" checked={shown.length > 0 && shown.every((c) => chosen.has(c.prod_id))}
-              onChange={(e) => setChosen((st) => { const n = new Set(st); shown.forEach((c) => (e.target.checked ? n.add(c.prod_id) : n.delete(c.prod_id))); return n; })} /></th>
-            <th>Prod ID</th><th>Product Name</th><th className="num">Harga Beli</th><th className="num">Harga Jual</th></tr></thead>
-          <tbody>
-            {shown.map((c) => (
-              <tr key={c.prod_id} onClick={() => toggle(c.prod_id)} style={{ cursor: "pointer" }}>
-                <td><input type="checkbox" checked={chosen.has(c.prod_id)} onChange={() => toggle(c.prod_id)} onClick={(e) => e.stopPropagation()} /></td>
-                <td style={{ fontFamily: "monospace" }}>{c.prod_id}</td>
-                <td>{c.product_name}</td>
-                <td className="num">{c.harga_beli != null ? `Rp ${formatRp(c.harga_beli)}` : "—"}</td>
-                <td className="num">{c.harga_srp != null ? `Rp ${formatRp(c.harga_srp)}` : "—"}</td>
-              </tr>
-            ))}
-            {shown.length === 0 && <tr><td colSpan={5} style={{ textAlign: "center", color: "var(--muted)", padding: 24 }}>{catalog.length ? "No product matches." : "The Product Catalog has no product yet. Add them in the Product Catalog page."}</td></tr>}
-          </tbody>
-        </table>
-      </div>
-      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 14 }}>
+      {err && <div style={{ color: "#f87171", fontSize: 13, marginTop: 10 }}>✗ {err}</div>}
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 16 }}>
         <button className="btn-ghost" onClick={onClose}>Cancel</button>
-        <button className="btn-gold" disabled={!chosen.size || busy} onClick={() => onAdd(catalog.filter((c) => chosen.has(c.prod_id)), store)} style={{ padding: "10px 24px" }}>
-          {busy ? "Adding…" : `Add ${chosen.size || ""} product${chosen.size === 1 ? "" : "s"}`}
+        <button className="btn-gold" disabled={!chosen || busy} style={{ padding: "10px 24px" }}
+          onClick={async () => { setErr(""); const m = await onAdd(pick, store); if (m) setErr(m); }}>
+          {busy ? "Adding…" : chosen ? `Add ${chosen.srp_no} (${chosen.total_sku} products)` : "Add"}
         </button>
       </div>
     </Modal>
