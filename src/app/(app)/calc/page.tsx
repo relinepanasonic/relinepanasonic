@@ -171,12 +171,20 @@ export default function MassiveCalculatorPage() {
   const [srpItems, setSrpItems] = useState<CatalogItem[]>([]);            // the products and prices of the Catalog the open SRP was made from
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [dirtyCount, setDirtyCount] = useState(0);
+  const [selected, setSelected] = useState<Set<string>>(new Set());   // ticked lines (mass edit / mass duplicate)
+  const [platformFilter, setPlatformFilter] = useState("");
+  const [massOpen, setMassOpen] = useState<"edit" | "dup" | null>(null);
   const [rev, setRev] = useState(0);                                     // bumped after an import so every line shows the imported values
   const pending = useRef(new Map<string, Partial<CalcRow>>());
   const feesRef = useRef<Fee[]>([]);
   useEffect(() => { feesRef.current = fees; }, [fees]);
 
   const feesById = useMemo(() => new Map(fees.map((f) => [f.id, f])), [fees]);
+  const platformOf = useCallback((r: CalcRow) => (r.fee_id ? feesById.get(r.fee_id)?.platform : "") || "", [feesById]);
+  const platformOptions = useMemo(() => Array.from(new Set(rows.map(platformOf).filter(Boolean))).sort(), [rows, platformOf]);
+  const visible = useMemo(() => rows.filter((r) => !platformFilter || (platformFilter === "__none" ? !platformOf(r) : platformOf(r) === platformFilter)), [rows, platformFilter, platformOf]);
+  const toggleOne = useCallback((id: string) => setSelected((st) => { const n = new Set(st); if (n.has(id)) n.delete(id); else n.add(id); return n; }), []);
+  const selectedRows = rows.filter((r) => selected.has(r.id));
 
   const loadLog = useCallback(async (cid: string) => {
     const { data } = await supabase.rpc("calc_srp_log", { p_client_id: cid });
@@ -228,7 +236,7 @@ export default function MassiveCalculatorPage() {
   }, [supabase, clientId]);
 
   async function openSrp(id: string) {
-    setLoading(true); setMsg(null); pending.current.clear(); setDirtyCount(0);
+    setLoading(true); setMsg(null); pending.current.clear(); setDirtyCount(0); setSelected(new Set()); setPlatformFilter("");
     const { data: h } = await supabase.from("calc_srp").select("id, srp_no, list_id, created_at").eq("id", id).single();
     const head = h as { id: string; srp_no: string; list_id: string | null; created_at: string } | null;
     if (!head) { setLoading(false); return; }
@@ -381,6 +389,46 @@ export default function MassiveCalculatorPage() {
     } finally { setBusy(false); }
   }
 
+  // Edit selected: the same values on every ticked line (a field left on "keep" is not touched)
+  async function massEdit(patch: Partial<CalcRow>): Promise<string> {
+    if (!srp || !selectedRows.length) return "";
+    if (dirtyCount && !confirm(`${dirtyCount} line${dirtyCount === 1 ? " has" : "s have"} changes that are not saved. The mass edit replaces them. Continue?`)) return "cancel";
+    setBusy(true);
+    try {
+      const ids = selectedRows.map((r) => r.id);
+      for (let i = 0; i < ids.length; i += 100) {
+        const { error } = await supabase.from("massive_calc_rows").update(patch).in("id", ids.slice(i, i + 100));
+        if (error) return error.message;
+      }
+      pending.current.clear(); setDirtyCount(0);
+      await reloadRows(srp.id); setRev((n) => n + 1);
+      setMassOpen(null);
+      setMsg({ ok: true, text: `${ids.length} line${ids.length === 1 ? "" : "s"} edited. Press Save when you are done.` });
+      return "";
+    } finally { setBusy(false); }
+  }
+
+  // Duplicate selected: a copy of every ticked line in this SRP; the copies can take another fee row (for example the same product on another platform)
+  async function massDuplicate(feeId: string | null): Promise<string> {
+    if (!srp || !selectedRows.length) return "";
+    setBusy(true);
+    try {
+      const copies = selectedRows.map((r) => ({
+        client_id: clientId, srp_id: srp.id, prod_id: r.prod_id, item_product: r.item_product, product_line: r.product_line,
+        modal_produk_rp: r.modal_produk_rp, harga_jual_rp: r.harga_jual_rp, fee_id: feeId ?? r.fee_id, target_roas: r.target_roas, berat_kg: r.berat_kg, ukuran_cm3: r.ukuran_cm3,
+        gratis_ongkir_on: r.gratis_ongkir_on, promo_xtra_on: r.promo_xtra_on, paylater_3mo_on: r.paylater_3mo_on, paylater_6mo_on: r.paylater_6mo_on, biaya_lain_rp: r.biaya_lain_rp,
+      }));
+      for (let i = 0; i < copies.length; i += 100) {
+        const { error } = await supabase.from("massive_calc_rows").insert(copies.slice(i, i + 100));
+        if (error) return error.message;
+      }
+      await reloadRows(srp.id);
+      setMassOpen(null); setSelected(new Set());
+      setMsg({ ok: true, text: `${copies.length} line${copies.length === 1 ? "" : "s"} duplicated.` });
+      return "";
+    } finally { setBusy(false); }
+  }
+
   async function backToTable() {
     if (dirtyCount && !confirm(`${dirtyCount} line${dirtyCount === 1 ? " has" : "s have"} changes that are not saved. Go back without saving?`)) return;
     pending.current.clear(); setDirtyCount(0);
@@ -469,10 +517,27 @@ export default function MassiveCalculatorPage() {
           <div className="hint">Pick Category/Sub Category/Jenis Product/Platform/Jenis Toko to link a fee row, fill in price and weight, Total Biaya / Profit update live. Press Save when you are done: it keeps all the changes and goes back to the SRP table. Export XLS / Import XLS let you edit the lines in Excel.</div>
           {msg && <div style={{ color: msg.ok ? "var(--gold)" : "#f87171", fontSize: 13, marginTop: 8 }}>{msg.ok ? "✓" : "✗"} {msg.text}</div>}
 
-          <div className="tbl-wrap" style={{ marginTop: 14, height: "calc(100vh - 300px)", minHeight: 320, overflowX: "auto", overflowY: "auto" }}>
+          <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginTop: 12 }}>
+            <div className="fld" style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+              <label style={{ margin: 0 }}>Platform</label>
+              <select value={platformFilter} onChange={(e) => setPlatformFilter(e.target.value)}>
+                <option value="">All Platforms</option>
+                {platformOptions.map((x) => <option key={x} value={x}>{x}</option>)}
+                <option value="__none">No platform yet</option>
+              </select>
+            </div>
+            <span style={{ color: "var(--muted)", fontSize: 12.5 }}>{visible.length} of {rows.length} lines · {selectedRows.length} ticked</span>
+            <button className="btn-ghost" disabled={!selectedRows.length || busy} onClick={() => setMassOpen("edit")}>✎ Edit selected</button>
+            <button className="btn-ghost" disabled={!selectedRows.length || busy} onClick={() => setMassOpen("dup")}>⧉ Duplicate selected</button>
+            {selectedRows.length > 0 && <button className="btn-ghost" onClick={() => setSelected(new Set())}>Clear ticks</button>}
+          </div>
+          <div className="tbl-wrap" style={{ marginTop: 10, height: "calc(100vh - 340px)", minHeight: 320, overflowX: "auto", overflowY: "auto" }}>
             <table className="tbl calc-tbl" style={{ width: "max-content", minWidth: "100%" }}>
               <thead>
                 <tr>
+                  <th style={stickyTh}><input type="checkbox" title="Tick all the lines shown"
+                    checked={visible.length > 0 && visible.every((r) => selected.has(r.id))}
+                    onChange={(e) => setSelected((st) => { const n = new Set(st); visible.forEach((r) => (e.target.checked ? n.add(r.id) : n.delete(r.id))); return n; })} /></th>
                   <th style={stickyTh}>No</th>
                   <th style={stickyTh}>Product ID</th>
                   <th style={stickyTh}>Product Name</th>
@@ -517,33 +582,36 @@ export default function MassiveCalculatorPage() {
                 </tr>
               </thead>
               <tbody>
-                {rows.map((r, i) => (
-                  <CalcRowLine key={`${r.id}-${rev}`} no={i + 1} row={r} fee={r.fee_id ? feesById.get(r.fee_id) ?? null : null} fees={fees}
+                {visible.map((r, i) => (
+                  <CalcRowLine key={`${r.id}-${rev}`} no={i + 1} selected={selected.has(r.id)} onToggle={toggleOne} row={r} fee={r.fee_id ? feesById.get(r.fee_id) ?? null : null} fees={fees}
                     catalog={srpItems} lowest={lowest}
                     onSave={saveRow} onDelete={deleteRow} onPending={onPending} />
                 ))}
                 {!loading && rows.length === 0 && (
-                  <tr><td colSpan={42} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>This SRP has no lines.</td></tr>
+                  <tr><td colSpan={43} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>This SRP has no lines.</td></tr>
                 )}
                 {loading && (
-                  <tr><td colSpan={42} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>Loading…</td></tr>
+                  <tr><td colSpan={43} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>Loading…</td></tr>
                 )}
               </tbody>
             </table>
           </div>
         </div>
       )}
+      {massOpen === "edit" && <MassEditModal fees={fees} count={selectedRows.length} busy={busy} onClose={() => setMassOpen(null)} onApply={massEdit} />}
+      {massOpen === "dup" && <MassDuplicateModal fees={fees} count={selectedRows.length} busy={busy} onClose={() => setMassOpen(null)} onApply={massDuplicate} />}
       {picking && <CatalogPicker supabase={supabase} clientId={clientId} busy={busy} onClose={() => setPicking(false)} onAdd={createSrp} />}
     </>
   );
 }
 
-function CalcRowLine({ no, row, fee, fees, catalog, lowest, onSave, onDelete, onPending }: {
+function CalcRowLine({ no, row, fee, fees, catalog, lowest, selected, onToggle, onSave, onDelete, onPending }: {
   no: number; row: CalcRow; fee: Fee | null; fees: Fee[];
   catalog: CatalogItem[]; lowest: Map<string, number>;
   onPending: (id: string, patch: Partial<CalcRow> | null) => void;
   onSave: (id: string, patch: Partial<CalcRow>) => void;
   onDelete: (id: string) => void;
+  selected: boolean; onToggle: (id: string) => void;
 }) {
   const [v, setV] = useState(() => ({
     item_product: row.item_product || "",
@@ -666,6 +734,7 @@ function CalcRowLine({ no, row, fee, fees, catalog, lowest, onSave, onDelete, on
 
   return (
     <tr style={dirty ? { background: "rgba(201,162,39,.06)" } : undefined}>
+      <td><input type="checkbox" checked={selected} onChange={() => onToggle(row.id)} /></td>
       <td>{no}</td>
       <td className="calc-ro" style={{ fontFamily: "monospace" }}>{cat?.prod_id || "—"}</td>
       <td>
@@ -793,6 +862,104 @@ function CatalogPicker({ supabase, clientId, busy, onClose, onAdd }: {
           onClick={async () => { setErr(""); const m = await onAdd(pick); if (m) setErr(m); }}>
           {busy ? "Creating…" : chosen ? `Create SRP from ${chosen.srp_no} (${chosen.total_sku} products)` : "Create"}
         </button>
+      </div>
+    </Modal>
+  );
+}
+
+const FEE_LABEL: Record<keyof FeeSel, string> = { category: "Category", sub_category: "Sub Category", jenis_product: "Jenis Product", platform: "Platform", jenis_toko: "Jenis Toko" };
+
+// the five fee values, narrowing each other (like the dropdowns of a line); "blank" is what an untouched one reads
+function FeePicker({ fees, value, onChange, blank }: { fees: Fee[]; value: FeeSel; onChange: (v: FeeSel) => void; blank: string }) {
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+      {FEE_FIELDS.map((field) => (
+        <div className="fld" key={field}><label>{FEE_LABEL[field]}</label>
+          <select value={value[field]} onChange={(e) => onChange(refineSel({ ...value, [field]: e.target.value }, fees))}>
+            <option value="">{blank}</option>
+            {optionsFor(field, value, fees).map((o) => <option key={o} value={o}>{o}</option>)}
+          </select></div>
+      ))}
+    </div>
+  );
+}
+
+type Tri = "" | "Yes" | "No";
+const triSelect = (label: string, v: Tri, set: (x: Tri) => void) => (
+  <div className="fld"><label>{label}</label>
+    <select value={v} onChange={(e) => set(e.target.value as Tri)}><option value="">— keep —</option><option value="Yes">Yes</option><option value="No">No</option></select></div>
+);
+
+function MassEditModal({ fees, count, busy, onClose, onApply }: { fees: Fee[]; count: number; busy: boolean; onClose: () => void; onApply: (patch: Partial<CalcRow>) => Promise<string> }) {
+  const [sel, setSel] = useState<FeeSel>(emptySel);
+  const [f, setF] = useState({ product_line: "", target_roas: "", berat_kg: "", ukuran_cm3: "", biaya_lain_rp: "", modal_produk_rp: "", harga_jual_rp: "" });
+  const [t, setT] = useState<{ ongkir: Tri; promo: Tri; p3: Tri; p6: Tri }>({ ongkir: "", promo: "", p3: "", p6: "" });
+  const [err, setErr] = useState("");
+  const anyFee = FEE_FIELDS.some((k) => sel[k]);
+  const feeRow = anyFee ? resolveFee(sel, fees) : null;
+  const num = (x: string) => (x.trim() === "" ? undefined : parseRp(x));
+  async function apply() {
+    setErr("");
+    if (anyFee && !feeRow) { setErr("Pick all five fee values (Category … Jenis Toko) to link the lines to a fee row, or clear them."); return; }
+    const patch: Partial<CalcRow> = {};
+    if (feeRow) patch.fee_id = feeRow.id;
+    if (f.product_line.trim()) patch.product_line = f.product_line.trim();
+    const n = (k: "target_roas" | "berat_kg" | "ukuran_cm3") => { const v = f[k].trim() === "" ? undefined : Number(f[k].replace(",", ".")); if (v !== undefined && Number.isFinite(v)) patch[k] = v; };
+    n("target_roas"); n("berat_kg"); n("ukuran_cm3");
+    const r = (k: "biaya_lain_rp" | "modal_produk_rp" | "harga_jual_rp") => { const v = num(f[k]); if (v !== undefined && Number.isFinite(v)) patch[k] = v; };
+    r("biaya_lain_rp"); r("modal_produk_rp"); r("harga_jual_rp");
+    if (t.ongkir) patch.gratis_ongkir_on = t.ongkir === "Yes";
+    if (t.promo) patch.promo_xtra_on = t.promo === "Yes";
+    if (t.p3) patch.paylater_3mo_on = t.p3 === "Yes";
+    if (t.p6) patch.paylater_6mo_on = t.p6 === "Yes";
+    if (!Object.keys(patch).length) { setErr("Nothing to change: fill at least one field."); return; }
+    const m = await onApply(patch);
+    if (m && m !== "cancel") setErr(m);
+  }
+  const inp = (k: keyof typeof f, label: string, ph = "") => (
+    <div className="fld"><label>{label}</label><input value={f[k]} placeholder={ph || "keep"} onChange={(e) => setF({ ...f, [k]: e.target.value })} /></div>
+  );
+  return (
+    <Modal onClose={onClose} width={760}>
+      <div style={{ fontSize: 18, fontWeight: 800, color: "#fff", marginBottom: 4 }}>Edit {count} selected line{count === 1 ? "" : "s"}</div>
+      <div style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 12 }}>The same change on every ticked line. A field left on <b>keep</b> / empty is not touched.</div>
+      <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 6 }}>Marketplace fee row</div>
+      <FeePicker fees={fees} value={sel} onChange={setSel} blank="— keep —" />
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginTop: 14 }}>
+        {inp("modal_produk_rp", "Modal Produk (Rp)")}{inp("harga_jual_rp", "Harga Jual (Rp)")}{inp("target_roas", "Target ROAS")}{inp("product_line", "Product Line")}
+        {inp("berat_kg", "Berat (kg)")}{inp("ukuran_cm3", "Uk PxLxT (cm³)")}{inp("biaya_lain_rp", "Biaya Lain (Rp)")}<div />
+        {triSelect("Gratis Ongkir", t.ongkir, (x) => setT({ ...t, ongkir: x }))}{triSelect("Promo Xtra", t.promo, (x) => setT({ ...t, promo: x }))}
+        {triSelect("Paylater 3 Bln", t.p3, (x) => setT({ ...t, p3: x }))}{triSelect("Paylater 6 Bln", t.p6, (x) => setT({ ...t, p6: x }))}
+      </div>
+      {err && <div style={{ color: "#f87171", fontSize: 13, marginTop: 10 }}>✗ {err}</div>}
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 16 }}>
+        <button className="btn-ghost" onClick={onClose}>Cancel</button>
+        <button className="btn-gold" disabled={busy} onClick={apply} style={{ padding: "10px 24px" }}>{busy ? "Applying…" : `Apply to ${count} line${count === 1 ? "" : "s"}`}</button>
+      </div>
+    </Modal>
+  );
+}
+
+function MassDuplicateModal({ fees, count, busy, onClose, onApply }: { fees: Fee[]; count: number; busy: boolean; onClose: () => void; onApply: (feeId: string | null) => Promise<string> }) {
+  const [sel, setSel] = useState<FeeSel>(emptySel);
+  const [err, setErr] = useState("");
+  const anyFee = FEE_FIELDS.some((k) => sel[k]);
+  const feeRow = anyFee ? resolveFee(sel, fees) : null;
+  async function apply() {
+    setErr("");
+    if (anyFee && !feeRow) { setErr("Pick all five fee values to give the copies another fee row, or clear them to keep the fee row of each line."); return; }
+    const m = await onApply(feeRow?.id ?? null);
+    if (m) setErr(m);
+  }
+  return (
+    <Modal onClose={onClose} width={680}>
+      <div style={{ fontSize: 18, fontWeight: 800, color: "#fff", marginBottom: 4 }}>Duplicate {count} selected line{count === 1 ? "" : "s"}</div>
+      <div style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 12 }}>Each ticked line is copied with all its values. To make the copies for another marketplace, pick that fee row here (for example Tiktok Tokped / Tiktok Mall); leave it empty to keep the fee row of each line.</div>
+      <FeePicker fees={fees} value={sel} onChange={setSel} blank="— same as the line —" />
+      {err && <div style={{ color: "#f87171", fontSize: 13, marginTop: 10 }}>✗ {err}</div>}
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 16 }}>
+        <button className="btn-ghost" onClick={onClose}>Cancel</button>
+        <button className="btn-gold" disabled={busy} onClick={apply} style={{ padding: "10px 24px" }}>{busy ? "Duplicating…" : `Duplicate ${count} line${count === 1 ? "" : "s"}`}</button>
       </div>
     </Modal>
   );
