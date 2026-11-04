@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Modal } from "@/components/ProductCatalog";
-import { CALC_HEADER, feeKeyOf, lineKeyOf, parseCalcXls } from "@/lib/calcXls";
+import { CALC_HEADER, lineKeyOf, parseCalcXls } from "@/lib/calcXls";
 
 export const dynamic = "force-dynamic";
 
@@ -26,6 +26,7 @@ type CalcRow = {
   gratis_ongkir_on: boolean; promo_xtra_on: boolean;
   paylater_3mo_on: boolean; paylater_6mo_on: boolean;
   biaya_lain_rp: number; store_name: string | null;
+  fee_category: string | null; fee_sub_category: string | null; fee_jenis_product: string | null; fee_platform: string | null; fee_jenis_toko: string | null;
 };
 
 // the products of the Catalog in force (Price Research > Product Catalog): the one list of products, shared with Price Guard
@@ -34,10 +35,6 @@ type FeeSel = { category: string; sub_category: string; jenis_product: string; p
 const FEE_FIELDS: (keyof FeeSel)[] = ["category", "sub_category", "jenis_product", "platform", "jenis_toko"];
 const emptySel: FeeSel = { category: "", sub_category: "", jenis_product: "", platform: "", jenis_toko: "" };
 
-function selFromFee(f: Fee | null): FeeSel {
-  if (!f) return emptySel;
-  return { category: f.category, sub_category: f.sub_category ?? "", jenis_product: f.jenis_product ?? "", platform: f.platform, jenis_toko: f.jenis_toko ?? "" };
-}
 // Every dropdown filters against the OTHER four current selections (any
 // pick order works, not just left-to-right), and if narrowing the field
 // down leaves exactly one possible value, auto-fill it -- otherwise
@@ -77,14 +74,18 @@ function resolveFee(sel: FeeSel, fees: Fee[]): Fee | null {
     && (f.jenis_toko ?? "") === sel.jenis_toko) ?? null;
 }
 
-// The fee row a line gets when only some of the five fee values are chosen: the chosen ones replace the line's own, the rest stay as they are.
-// null = no fee row matches that combination (the line keeps its fee row).
-function feeRowFor(line: CalcRow, fees: Fee[], choice: FeeSel | null): Fee | null | undefined {
-  if (!choice) return undefined;
-  const base = selFromFee(line.fee_id ? fees.find((f) => f.id === line.fee_id) ?? null : null);
-  const merged = { ...base };
-  for (const k of FEE_FIELDS) if (choice[k]) merged[k] = choice[k];
-  return resolveFee(merged, fees);
+// The five fee values a line carries (stored on the line itself: a line can have Platform and Jenis Toko before it has a fee row)
+function keysOf(r: CalcRow): FeeSel {
+  return { category: r.fee_category ?? "", sub_category: r.fee_sub_category ?? "", jenis_product: r.fee_jenis_product ?? "", platform: r.fee_platform ?? "", jenis_toko: r.fee_jenis_toko ?? "" };
+}
+function keysPatch(v: FeeSel): Partial<CalcRow> {
+  return { fee_category: v.category || null, fee_sub_category: v.sub_category || null, fee_jenis_product: v.jenis_product || null, fee_platform: v.platform || null, fee_jenis_toko: v.jenis_toko || null };
+}
+// the values of a line with the picked ones replaced; the rest stay as the line has them
+function mergeFee(line: CalcRow, choice: FeeSel): FeeSel {
+  const m = { ...keysOf(line) };
+  for (const k of FEE_FIELDS) if (choice[k]) m[k] = choice[k];
+  return m;
 }
 
 function formatRp(n: number): string { return Math.round(n || 0).toLocaleString("id-ID"); }
@@ -192,8 +193,8 @@ export default function MassiveCalculatorPage() {
   useEffect(() => { feesRef.current = fees; }, [fees]);
 
   const feesById = useMemo(() => new Map(fees.map((f) => [f.id, f])), [fees]);
-  const platformOf = useCallback((r: CalcRow) => (r.fee_id ? feesById.get(r.fee_id)?.platform : "") || "", [feesById]);
-  const tokoOf = useCallback((r: CalcRow) => (r.fee_id ? feesById.get(r.fee_id)?.jenis_toko : "") || "", [feesById]);
+  const platformOf = useCallback((r: CalcRow) => r.fee_platform || "", []);
+  const tokoOf = useCallback((r: CalcRow) => r.fee_jenis_toko || "", []);
   const platformOptions = useMemo(() => Array.from(new Set(rows.map(platformOf).filter(Boolean))).sort(), [rows, platformOf]);
   const tokoOptions = useMemo(() => Array.from(new Set(rows.filter((r) => !platformFilter || platformFilter === "__none" || platformOf(r) === platformFilter).map(tokoOf).filter(Boolean))).sort(), [rows, platformFilter, platformOf, tokoOf]);
   const visible = useMemo(() => {
@@ -330,8 +331,8 @@ export default function MassiveCalculatorPage() {
       const f = r.fee_id ? feesById.get(r.fee_id) ?? null : null;
       const c = computeCalc({ hargaJual: r.harga_jual_rp, modalProduk: r.modal_produk_rp, targetRoas: r.target_roas, beratKg: r.berat_kg, ukuranCm3: r.ukuran_cm3,
         gratisOngkirOn: r.gratis_ongkir_on, promoXtraOn: r.promo_xtra_on, paylater3moOn: r.paylater_3mo_on, paylater6moOn: r.paylater_6mo_on, biayaLain: r.biaya_lain_rp }, f);
-      return [i + 1, r.prod_id || "", r.item_product || "", Math.round(r.modal_produk_rp), Math.round(r.harga_jual_rp), f?.platform || "", f?.jenis_toko || "", f?.category || "",
-        f?.sub_category || "", f?.jenis_product || "", r.product_line || "", r.target_roas, r.berat_kg, r.ukuran_cm3, yn(r.gratis_ongkir_on), yn(r.promo_xtra_on),
+      return [i + 1, r.prod_id || "", r.item_product || "", Math.round(r.modal_produk_rp), Math.round(r.harga_jual_rp), r.fee_platform || "", r.fee_jenis_toko || "", r.fee_category || "",
+        r.fee_sub_category || "", r.fee_jenis_product || "", r.product_line || "", r.target_roas, r.berat_kg, r.ukuran_cm3, yn(r.gratis_ongkir_on), yn(r.promo_xtra_on),
         yn(r.paylater_3mo_on), yn(r.paylater_6mo_on), Math.round(r.biaya_lain_rp), f?.pajak_pct ?? 0, Math.round(c.pajakRp), Math.round(c.totalBiaya), Math.round(c.profit)];
     });
     const wb = XLSX.utils.book_new();
@@ -365,16 +366,17 @@ export default function MassiveCalculatorPage() {
       const matrix = XLSX.utils.sheet_to_json<unknown[]>(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: "", raw: true });
       const parsed = parseCalcXls(matrix);
       if (parsed.error) { setMsg({ ok: false, text: parsed.error }); return; }
-      const feeMap = new Map<string, string>();
-      for (const f of fees) { const k = feeKeyOf(f); if (!feeMap.has(k)) feeMap.set(k, f.id); }
-      const lineKey = (r: CalcRow) => { const f = r.fee_id ? feesById.get(r.fee_id) : null; return lineKeyOf(r.prod_id || "", f?.platform, f?.jenis_toko); };
-      const byKey = new Map(rows.map((r) => [lineKey(r), r]));
+      const byKey = new Map(rows.map((r) => [lineKeyOf(r.prod_id || "", r.fee_platform, r.fee_jenis_toko), r]));
       const catById = new Map(srpItems.map((c) => [c.prod_id, c]));
       const updates: [string, Partial<CalcRow>][] = []; const inserts: Record<string, unknown>[] = [];
-      let unlinked = 0;
+      let incomplete = 0;
       for (const x of parsed.rows) {
-        const feeId = x.fee ? feeMap.get(feeKeyOf(x.fee)) : undefined;
-        if (x.fee && !feeId) unlinked++;
+        let ex = byKey.get(lineKeyOf(x.prod_id, x.platform, x.toko));
+        if (!ex) { const free = rows.filter((r) => r.prod_id === x.prod_id && !r.fee_id && !r.fee_platform); if (free.length === 1) ex = free[0]; }
+        const merged: FeeSel = { ...(ex ? keysOf(ex) : emptySel) };
+        for (const k of FEE_FIELDS) if (x.fee?.[k]) merged[k] = x.fee[k] as string;
+        const hit = resolveFee(merged, fees);
+        if (!hit && FEE_FIELDS.some((k) => merged[k])) incomplete++;
         const patch: Partial<CalcRow> = {};
         if (x.item_product !== undefined) patch.item_product = x.item_product;
         if (x.modal_produk_rp !== undefined) patch.modal_produk_rp = x.modal_produk_rp;
@@ -388,18 +390,22 @@ export default function MassiveCalculatorPage() {
         if (x.paylater_3mo_on !== undefined) patch.paylater_3mo_on = x.paylater_3mo_on;
         if (x.paylater_6mo_on !== undefined) patch.paylater_6mo_on = x.paylater_6mo_on;
         if (x.biaya_lain_rp !== undefined) patch.biaya_lain_rp = x.biaya_lain_rp;
-        if (feeId) patch.fee_id = feeId;
-        let ex = byKey.get(lineKeyOf(x.prod_id, x.platform, x.toko));
-        if (!ex) { const free = rows.filter((r) => r.prod_id === x.prod_id && !r.fee_id); if (free.length === 1) ex = free[0]; }   // a line without a fee yet gets its fee from the sheet
-        if (ex) { if (Object.keys(patch).length) updates.push([ex.id, patch]); byKey.delete(lineKey(ex)); continue; }
+        if (x.fee) Object.assign(patch, keysPatch(merged), { fee_id: hit?.id ?? null });
+        if (ex) {
+          if (Object.keys(patch).length) updates.push([ex.id, patch]);
+          byKey.delete(lineKeyOf(ex.prod_id || "", ex.fee_platform, ex.fee_jenis_toko));
+          continue;
+        }
         const c = catById.get(x.prod_id);
+        const rest: Partial<CalcRow> = { ...patch };
+        delete rest.item_product; delete rest.modal_produk_rp; delete rest.harga_jual_rp;
         inserts.push({
           client_id: clientId, srp_id: srp.id, prod_id: x.prod_id, item_product: x.item_product ?? c?.product_name ?? "",
           modal_produk_rp: x.modal_produk_rp ?? c?.harga_beli ?? 0, harga_jual_rp: x.harga_jual_rp ?? c?.harga_srp ?? 0,
-          ...patch,
+          ...keysPatch(merged), fee_id: hit?.id ?? null, ...rest,
         });
       }
-      const results = await Promise.all(updates.map(([id, patch]) => supabase.from("massive_calc_rows").update(patch).eq("id", id)));
+      const results = await Promise.all(updates.map(([id, p]) => supabase.from("massive_calc_rows").update(p).eq("id", id)));
       const bad = results.find((r) => r.error)?.error;
       if (bad) { setMsg({ ok: false, text: bad.message }); return; }
       if (inserts.length) {
@@ -409,54 +415,53 @@ export default function MassiveCalculatorPage() {
       pending.current.clear(); setDirtyCount(0);
       await reloadRows(srp.id); setRev((n) => n + 1);
       const sk = parsed.skipped;
-      setMsg({ ok: true, text: `Imported: ${updates.length} updated, ${inserts.length} added${unlinked ? ` · ${unlinked} line${unlinked === 1 ? "" : "s"} whose fee row was not found (check Platform / Jenis Toko / Category / Sub Category / Jenis Product against the sheet Fee options)` : ""}${sk.length ? ` · ${sk.length} skipped: ${sk.slice(0, 3).map((x) => `row ${x.row}: ${x.reason}`).join("; ")}${sk.length > 3 ? "…" : ""}` : ""}. Press Save when you are done.` });
+      setMsg({ ok: true, text: `Imported: ${updates.length} updated, ${inserts.length} added${incomplete ? ` · ${incomplete} line${incomplete === 1 ? " has" : "s have"} Platform / Jenis Toko saved but no fee row yet (Category, Sub Category and Jenis Product must match the sheet Fee options)` : ""}${sk.length ? ` · ${sk.length} skipped: ${sk.slice(0, 3).map((x) => `row ${x.row}: ${x.reason}`).join("; ")}${sk.length > 3 ? "…" : ""}` : ""}. Press Save when you are done.` });
     } finally { setBusy(false); }
   }
 
-  // Edit selected: the same values on every ticked line. The fee values picked are changed on each line on its own (the line keeps the ones not picked).
+  // Edit selected: the same values on every ticked line. The fee values picked change on each line on its own; a line keeps the ones not picked.
   async function massEdit(patch: Partial<CalcRow>, choice: FeeSel | null): Promise<string> {
     if (!srp || !selectedRows.length) return "";
     if (dirtyCount && !confirm(`${dirtyCount} line${dirtyCount === 1 ? " has" : "s have"} changes that are not saved. The mass edit replaces them. Continue?`)) return "cancel";
     setBusy(true);
     try {
-      const groups = new Map<string, string[]>();   // fee row id ("" = none) -> the lines that take it
-      let unlinked = 0;
-      for (const r of selectedRows) {
-        let feeId: string | null = r.fee_id;
-        const hit = feeRowFor(r, fees, choice);
-        if (hit !== undefined) { if (hit) feeId = hit.id; else unlinked++; }
-        const key = feeId ?? "";
-        groups.set(key, [...(groups.get(key) ?? []), r.id]);
-      }
-      for (const [key, ids] of groups) {
-        const p: Partial<CalcRow> = choice ? { ...patch, fee_id: key || null } : patch;
-        for (let i = 0; i < ids.length; i += 100) {
-          const { error } = await supabase.from("massive_calc_rows").update(p).in("id", ids.slice(i, i + 100));
-          if (error) return error.message;
-        }
+      let incomplete = 0;
+      const jobs = selectedRows.map((r): [string, Partial<CalcRow>] => {
+        if (!choice) return [r.id, patch];
+        const m = mergeFee(r, choice);
+        const hit = resolveFee(m, fees);
+        if (!hit && FEE_FIELDS.some((k) => m[k])) incomplete++;
+        return [r.id, { ...patch, ...keysPatch(m), fee_id: hit?.id ?? null }];
+      });
+      for (let i = 0; i < jobs.length; i += 20) {
+        const res = await Promise.all(jobs.slice(i, i + 20).map(([id, p]) => supabase.from("massive_calc_rows").update(p).eq("id", id)));
+        const bad = res.find((x) => x.error)?.error;
+        if (bad) return bad.message;
       }
       pending.current.clear(); setDirtyCount(0);
       await reloadRows(srp.id); setRev((n) => n + 1);
       setMassOpen(null);
       const n = selectedRows.length;
-      setMsg({ ok: true, text: `${n} line${n === 1 ? "" : "s"} edited.${unlinked ? ` ${unlinked} line${unlinked === 1 ? " has" : "s have"} no fee row for the new combination: their fee row is unchanged.` : ""} Press Save when you are done.` });
+      setMsg({ ok: true, text: `${n} line${n === 1 ? "" : "s"} edited.${incomplete ? ` ${incomplete} line${incomplete === 1 ? " has" : "s have"} Platform / Jenis Toko saved but no fee row yet: add Category, Sub Category and Jenis Product to link ${incomplete === 1 ? "it" : "them"}.` : ""} Press Save when you are done.` });
       return "";
     } finally { setBusy(false); }
   }
 
-  // Duplicate selected: a copy of every ticked line in this SRP; the copies can take another fee row (for example the same product on another platform)
+  // Duplicate selected: a copy of every ticked line; the copies can take other fee values (for example another platform)
   async function massDuplicate(choice: FeeSel | null): Promise<string> {
     if (!srp || !selectedRows.length) return "";
     setBusy(true);
     try {
-      let unlinked = 0;
+      let incomplete = 0;
       const copies = selectedRows.map((r) => {
-        const hit = feeRowFor(r, fees, choice);
-        if (hit === null) unlinked++;
+        const m = choice ? mergeFee(r, choice) : keysOf(r);
+        const hit = resolveFee(m, fees);
+        if (!hit && FEE_FIELDS.some((k) => m[k])) incomplete++;
         return {
-        client_id: clientId, srp_id: srp.id, prod_id: r.prod_id, item_product: r.item_product, product_line: r.product_line,
-        modal_produk_rp: r.modal_produk_rp, harga_jual_rp: r.harga_jual_rp, fee_id: hit ? hit.id : r.fee_id, target_roas: r.target_roas, berat_kg: r.berat_kg, ukuran_cm3: r.ukuran_cm3,
-        gratis_ongkir_on: r.gratis_ongkir_on, promo_xtra_on: r.promo_xtra_on, paylater_3mo_on: r.paylater_3mo_on, paylater_6mo_on: r.paylater_6mo_on, biaya_lain_rp: r.biaya_lain_rp,
+          client_id: clientId, srp_id: srp.id, prod_id: r.prod_id, item_product: r.item_product, product_line: r.product_line,
+          modal_produk_rp: r.modal_produk_rp, harga_jual_rp: r.harga_jual_rp, ...keysPatch(m), fee_id: hit?.id ?? null,
+          target_roas: r.target_roas, berat_kg: r.berat_kg, ukuran_cm3: r.ukuran_cm3,
+          gratis_ongkir_on: r.gratis_ongkir_on, promo_xtra_on: r.promo_xtra_on, paylater_3mo_on: r.paylater_3mo_on, paylater_6mo_on: r.paylater_6mo_on, biaya_lain_rp: r.biaya_lain_rp,
         };
       });
       for (let i = 0; i < copies.length; i += 100) {
@@ -465,7 +470,7 @@ export default function MassiveCalculatorPage() {
       }
       await reloadRows(srp.id);
       setMassOpen(null); setSelected(new Set());
-      setMsg({ ok: true, text: `${copies.length} line${copies.length === 1 ? "" : "s"} duplicated.${unlinked ? ` ${unlinked} cop${unlinked === 1 ? "y has" : "ies have"} no fee row for the new combination: they keep the fee row of the line.` : ""}` });
+      setMsg({ ok: true, text: `${copies.length} line${copies.length === 1 ? "" : "s"} duplicated.${incomplete ? ` ${incomplete} cop${incomplete === 1 ? "y has" : "ies have"} Platform / Jenis Toko but no fee row yet.` : ""}` });
       return "";
     } finally { setBusy(false); }
   }
@@ -680,7 +685,7 @@ function CalcRowLine({ no, row, fee, fees, catalog, lowest, selected, onToggle, 
     paylater_3mo_on: row.paylater_3mo_on,
     paylater_6mo_on: row.paylater_6mo_on,
   }));
-  const [sel, setSel] = useState<FeeSel>(() => selFromFee(fee));
+  const [sel, setSel] = useState<FeeSel>(() => keysOf(row));
 
   const parsed = {
     item_product: v.item_product,
@@ -747,11 +752,11 @@ function CalcRowLine({ no, row, fee, fees, catalog, lowest, selected, onToggle, 
     const next = refineSel({ ...sel, [field]: value }, fees);
     setSel(next);
     const match = resolveFee(next, fees);
-    if ((match?.id ?? null) !== row.fee_id) onSave(row.id, { fee_id: match?.id ?? null });
+    onSave(row.id, { ...keysPatch(next), fee_id: match?.id ?? null });
   }
   function clearFee() {
     setSel(emptySel);
-    if (row.fee_id) onSave(row.id, { fee_id: null });
+    onSave(row.id, { ...keysPatch(emptySel), fee_id: null });
   }
 
   const feeSelect = (field: keyof FeeSel) => {
@@ -819,7 +824,7 @@ function CalcRowLine({ no, row, fee, fees, catalog, lowest, selected, onToggle, 
       <td>{feeSelect("category")}</td>
       <td>{feeSelect("sub_category")}</td>
       <td>{feeSelect("jenis_product")}
-        {fee && <button onClick={clearFee} className="btn-ghost" style={{ padding: "1px 6px", fontSize: 10, marginLeft: 4 }}>✕</button>}
+        {FEE_FIELDS.some((k) => sel[k]) && <button onClick={clearFee} className="btn-ghost" style={{ padding: "1px 6px", fontSize: 10, marginLeft: 4 }}>✕</button>}
       </td>
       <td className="num">{txt(v.target_roas, (s) => setV((st) => ({ ...st, target_roas: s.replace(/[^\d.]/g, "") })), 60)}</td>
       <td className="num calc-ro">{calc.pctAds.toFixed(1)}%</td>

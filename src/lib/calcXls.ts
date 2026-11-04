@@ -63,7 +63,7 @@ export function parseCalcXls(matrix: unknown[][]): ParsedCalcXls {
     const fee: FeeKeyParts = { category: text(row, I.cat), sub_category: text(row, I.sub), jenis_product: text(row, I.jenis), platform, jenis_toko: toko };
     rows.push({
       prod_id: prod, item_product: text(row, I.name) || undefined, modal_produk_rp: numOf(get(row, I.modal)), harga_jual_rp: numOf(get(row, I.harga)),
-      platform, toko, fee: platform && toko && fee.category ? fee : undefined, product_line: filled(get(row, I.line)) ? text(row, I.line) : undefined,
+      platform, toko, fee: Object.values(fee).some(Boolean) ? (Object.fromEntries(Object.entries(fee).filter(([, v]) => v)) as FeeKeyParts) : undefined, product_line: filled(get(row, I.line)) ? text(row, I.line) : undefined,
       target_roas: numOf(get(row, I.roas)), berat_kg: numOf(get(row, I.berat)), ukuran_cm3: numOf(get(row, I.uk)),
       gratis_ongkir_on: yesNo(get(row, I.ongkir)), promo_xtra_on: yesNo(get(row, I.promo)), paylater_3mo_on: yesNo(get(row, I.p3)), paylater_6mo_on: yesNo(get(row, I.p6)),
       biaya_lain_rp: numOf(get(row, I.lain)),
