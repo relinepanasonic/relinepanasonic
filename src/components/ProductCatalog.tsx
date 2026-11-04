@@ -10,7 +10,7 @@ import { CATALOG_EXAMPLE, CATALOG_HEADER, parseCatalogMatrix } from "@/lib/catal
 // Harga Beli (what we pay the dealer, the calculator's Modal Produk) and Harga Jual. "New Harga Beli" starts a new Catalog when we buy from the dealer.
 // The Catalog in force feeds Price Guard, Product URL and Perhitungan Harga.
 type Supabase = ReturnType<typeof createClient>;
-type SrpLogRow = { id: string; srp_no: string; created_at: string; active_from: string; created_by: string | null; total_sku: number; in_force: boolean };
+type SrpLogRow = { id: string; srp_no: string; created_at: string; active_from: string; created_by: string | null; total_sku: number; in_force: boolean; vendor_id: string | null; vendor_name: string | null };
 type SrpItem = { id: string; prod_id: string; product_name: string; harga_beli: number | null; harga_srp: number | null };
 
 const rp = (n: number | null | undefined) => n == null ? "—" : "Rp " + Math.round(n).toLocaleString("id-ID");
@@ -53,18 +53,19 @@ export function CatalogTab({ supabase, clientId, isAdmin, tick, onChanged }: { s
   return (
     <>
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center", marginBottom: 12 }}>
-        <div className="hint" style={{ flex: 1, margin: 0 }}>Every row is a Harga Beli: a saved version of the product list with its Harga Beli (what we pay the dealer) and Harga Jual, made each time we buy from the dealer. The SRP in force (latest Date Active up to today) feeds Price Guard, Product URL and Perhitungan Harga. Open an SRP to see or change its products.</div>
+        <div className="hint" style={{ flex: 1, margin: 0 }}>Every row is a Catalog of one vendor: its product list with the Harga Beli (what we pay that vendor) and Harga Jual, saved each time we buy. The store of a calculator line decides the vendor, so each vendor can have its own Harga Beli. The Catalog in force of a vendor is the one with the latest Date Active up to today; a store whose vendor has no Catalog uses the Default one. Open a Catalog to see or change its products.</div>
         {isAdmin && <button className="btn-gold" onClick={() => setCreating(true)} style={{ padding: "10px 22px" }}>+ New Harga Beli</button>}
       </div>
       {err && <div style={{ color: "#f87171", fontSize: 13, marginBottom: 10 }}>✗ {err}</div>}
       {rows === null ? <Loader center /> : (
         <div className="tbl-wrap" style={{ maxHeight: "66vh" }}>
           <table className="tbl day-tbl">
-            <thead><tr><th>Catalog ID</th><th>Date Create</th><th>Date Active</th><th className="num">Total SKU</th><th>Created by</th><th></th></tr></thead>
+            <thead><tr><th>Catalog ID</th><th>Vendor</th><th>Date Create</th><th>Date Active</th><th className="num">Total SKU</th><th>Created by</th><th></th></tr></thead>
             <tbody>
               {rows.map((r) => (
                 <tr key={r.id} onClick={() => setListId(r.id)} style={{ cursor: "pointer" }}>
                   <td style={{ fontFamily: "monospace", fontWeight: 700 }}>{r.srp_no}</td>
+                  <td>{r.vendor_name || <span style={{ color: "var(--muted)" }}>Default (all stores)</span>}</td>
                   <td>{dmy(r.created_at)}</td>
                   <td>{dmy(r.active_from + "T00:00:00+07:00")}</td>
                   <td className="num" style={{ fontWeight: 700 }}>{r.total_sku}</td>
@@ -72,7 +73,7 @@ export function CatalogTab({ supabase, clientId, isAdmin, tick, onChanged }: { s
                   <td>{r.in_force ? <span style={{ padding: "2px 10px", borderRadius: 999, fontSize: 11.5, fontWeight: 800, border: "1px solid rgba(201,162,39,.5)", color: "var(--gold)" }}>In force</span> : new Date(r.active_from + "T00:00:00+07:00").getTime() > nowMs ? <span style={{ color: "var(--muted)", fontSize: 12 }}>Scheduled</span> : <span style={{ color: "var(--muted)", fontSize: 12 }}>Replaced</span>}</td>
                 </tr>
               ))}
-              {rows.length === 0 && <tr><td colSpan={6} style={{ textAlign: "center", color: "var(--muted)", padding: 24 }}>No Harga Beli yet — press + New Harga Beli, then add the products or import them from an XLS.</td></tr>}
+              {rows.length === 0 && <tr><td colSpan={7} style={{ textAlign: "center", color: "var(--muted)", padding: 24 }}>No Harga Beli yet — press + New Harga Beli, then add the products or import them from an XLS.</td></tr>}
             </tbody>
           </table>
         </div>
@@ -83,13 +84,16 @@ export function CatalogTab({ supabase, clientId, isAdmin, tick, onChanged }: { s
 }
 
 function CreateSrpModal({ supabase, clientId, hasCurrent, onClose }: { supabase: Supabase; clientId: string; hasCurrent: boolean; onClose: (newId: string | null) => void }) {
+  const [vendors, setVendors] = useState<{ id: string; name: string }[]>([]);
+  const [vendor, setVendor] = useState("");
+  useEffect(() => { (async () => { const { data } = await supabase.from("vendors").select("id, name").eq("client_id", clientId).order("name"); setVendors((data as { id: string; name: string }[]) || []); })(); }, [supabase, clientId]);
   const [active, setActive] = useState(today());
   const [copy, setCopy] = useState(true);
   const [err, setErr] = useState("");
   const [saving, setSaving] = useState(false);
   async function create() {
     setErr(""); setSaving(true);
-    const { data, error } = await supabase.rpc("pr_srp_list_create", { p_client_id: clientId, p_active_from: active || null, p_copy: hasCurrent && copy });
+    const { data, error } = await supabase.rpc("pr_srp_list_create", { p_client_id: clientId, p_active_from: active || null, p_copy: hasCurrent && copy, p_vendor_id: vendor || null });
     setSaving(false);
     if (error) { setErr(error.message.replace(/^[A-Z_]+:\s*/, "")); return; }
     onClose(data as string);
@@ -97,7 +101,12 @@ function CreateSrpModal({ supabase, clientId, hasCurrent, onClose }: { supabase:
   return (
     <Modal onClose={() => onClose(null)} width={520}>
       <div style={{ fontSize: 18, fontWeight: 800, color: "#fff", marginBottom: 6 }}>New Harga Beli</div>
-      <div style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 14 }}>Use this when we buy from the dealer at a new price. The Catalog ID is given automatically (CAT-YYMM-NNN).</div>
+      <div style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 14 }}>Use this when we buy from a vendor at a new price. Pick the vendor (Core → Connector): its stores will use this Harga Beli. The Catalog ID is given automatically (CAT-YYMM-NNN).</div>
+      <div className="fld" style={{ marginBottom: 12 }}><label>Vendor</label>
+        <select value={vendor} onChange={(e) => setVendor(e.target.value)}>
+          <option value="">Default (all stores without a vendor Catalog)</option>
+          {vendors.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+        </select></div>
       <div className="fld" style={{ maxWidth: 220 }}><label>Date Active</label><input type="date" value={active} onChange={(e) => setActive(e.target.value)} style={{ colorScheme: "dark" }} /></div>
       {hasCurrent && (
         <label style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 14, fontSize: 13.5, cursor: "pointer" }}>
@@ -114,7 +123,8 @@ function CreateSrpModal({ supabase, clientId, hasCurrent, onClose }: { supabase:
 }
 
 function SrpListView({ supabase, isAdmin, listId, onBack, onChanged }: { supabase: Supabase; isAdmin: boolean; listId: string; onBack: () => void; onChanged: () => void }) {
-  const [head, setHead] = useState<{ srp_no: string; created_at: string; active_from: string } | null>(null);
+  const [head, setHead] = useState<{ srp_no: string; created_at: string; active_from: string; vendor_id: string | null } | null>(null);
+  const [vendorName, setVendorName] = useState("");
   const [rows, setRows] = useState<SrpItem[] | null>(null);
   const [q, setQ] = useState("");
   const [edit, setEdit] = useState<Partial<SrpItem> | null>(null);
@@ -125,8 +135,10 @@ function SrpListView({ supabase, isAdmin, listId, onBack, onChanged }: { supabas
 
   useEffect(() => {
     (async () => {
-      const { data: h } = await supabase.from("pr_srp_lists").select("srp_no, created_at, active_from").eq("id", listId).single();
-      setHead(h as typeof head); setActiveEdit((h as { active_from: string } | null)?.active_from || "");
+      const { data: h } = await supabase.from("pr_srp_lists").select("srp_no, created_at, active_from, vendor_id").eq("id", listId).single();
+      setHead(h as typeof head);
+      const vid = (h as { vendor_id: string | null } | null)?.vendor_id;
+      if (vid) { const { data: v } = await supabase.from("vendors").select("name").eq("id", vid).single(); setVendorName((v as { name: string } | null)?.name || ""); } else setVendorName(""); setActiveEdit((h as { active_from: string } | null)?.active_from || "");
       const { data } = await supabase.from("pr_srp_items").select("id, prod_id, product_name, harga_beli, harga_srp").eq("list_id", listId).order("product_name");
       setRows((data as SrpItem[]) || []);
     })();
@@ -199,6 +211,7 @@ function SrpListView({ supabase, isAdmin, listId, onBack, onChanged }: { supabas
       <div style={{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "center", marginBottom: 12 }}>
         <button className="btn-ghost" onClick={onBack}>← Catalog log</button>
         <div style={{ fontSize: 20, fontWeight: 800, color: "#fff", fontFamily: "monospace" }}>{head?.srp_no || "…"}</div>
+        <div style={{ fontSize: 13, color: "var(--muted)" }}>Vendor: <b style={{ color: "var(--gold)" }}>{vendorName || "Default (all stores)"}</b></div>
         <div style={{ fontSize: 12.5, color: "var(--muted)" }}>Created {dmy(head?.created_at)} · {rows?.length ?? 0} SKU</div>
         {isAdmin && head && (
           <div style={{ display: "flex", gap: 6, alignItems: "center", marginLeft: "auto" }}>

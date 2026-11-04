@@ -24,7 +24,7 @@ type CalcRow = {
   berat_kg: number; ukuran_cm3: number;
   gratis_ongkir_on: boolean; promo_xtra_on: boolean;
   paylater_3mo_on: boolean; paylater_6mo_on: boolean;
-  biaya_lain_rp: number;
+  biaya_lain_rp: number; store_name: string | null;
 };
 
 // the products of the Catalog in force (Price Research > Product Catalog): the one list of products, shared with Price Guard
@@ -147,24 +147,35 @@ export default function MassiveCalculatorPage() {
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(false);
   const [picking, setPicking] = useState(false);
-  const [catalog, setCatalog] = useState<CatalogItem[]>([]);
+  const [catalogs, setCatalogs] = useState<Record<string, CatalogItem[]>>({});          // "all" | "default" | <vendor id> -> the Catalog in force
+  const [storeList, setStoreList] = useState<{ store_name: string; vendor_id: string | null }[]>([]);
+  const [vendorNames, setVendorNames] = useState<Map<string, string>>(new Map());
   const [lowest, setLowest] = useState<Map<string, number>>(new Map());   // Prod ID -> the lowest competitor price (Price Guard)
 
   const feesById = useMemo(() => new Map(fees.map((f) => [f.id, f])), [fees]);
-  const catalogById = useMemo(() => new Map(catalog.map((c) => [c.prod_id, c])), [catalog]);
+  const vendorOfStore = useMemo(() => new Map(storeList.map((s) => [s.store_name, s.vendor_id])), [storeList]);
+  // the products and prices of a store: its vendor's Catalog in force, else the default Catalog, else all of them merged
+  const itemsFor = useCallback((store: string | null): CatalogItem[] => {
+    const vid = store ? vendorOfStore.get(store) ?? null : null;
+    return (vid && catalogs[vid]) || catalogs.default || catalogs.all || [];
+  }, [catalogs, vendorOfStore]);
 
   const reload = useCallback(async (cid: string) => {
     if (!cid) { setRows([]); setFees([]); setLoading(false); return; }
     setLoading(true);
-    const [f, r, cat, guard] = await Promise.all([
+    const [f, r, cat, guard, vs, vn] = await Promise.all([
       fetchAll<Fee>(supabase, "market_fees", cid, "category"),
       fetchAll<CalcRow>(supabase, "massive_calc_rows", cid, "created_at"),
-      supabase.rpc("pr_srp_catalog", { p_client_id: cid }),
+      supabase.rpc("pr_srp_catalog_vendors", { p_client_id: cid }),
       supabase.rpc("price_guard", { p_client_id: cid }),
+      supabase.from("vendor_stores").select("store_name, vendor_id").eq("client_id", cid).order("store_name"),
+      supabase.from("vendors").select("id, name").eq("client_id", cid),
     ]);
     setFees(f);
     setRows(r);
-    setCatalog((cat.data as CatalogItem[]) || []);
+    setCatalogs((cat.data as Record<string, CatalogItem[]>) || {});
+    setStoreList((vs.data as { store_name: string; vendor_id: string | null }[]) || []);
+    setVendorNames(new Map(((vn.data as { id: string; name: string }[]) || []).map((x) => [x.id, x.name])));
     const m = new Map<string, number>();
     for (const g of ((guard.data as { prod_id: string; stores: { ok: boolean | null; price_sell: number | null }[] }[]) || [])) {
       const prices = g.stores.filter((x) => x.ok && x.price_sell).map((x) => x.price_sell as number);
@@ -188,11 +199,11 @@ export default function MassiveCalculatorPage() {
   }, [supabase, reload]);
 
   // + Add Product: pick one or more products of the Product Catalog; each becomes a line with Modal Produk = its Harga Beli and Harga Jual = its Harga Jual
-  async function addProducts(items: CatalogItem[]) {
+  async function addProducts(items: CatalogItem[], store: string) {
     if (!clientId || !items.length) return;
     setAdding(true);
     const { error } = await supabase.from("massive_calc_rows").insert(items.map((c) => ({
-      client_id: clientId, created_by: myName, prod_id: c.prod_id, item_product: c.product_name, modal_produk_rp: c.harga_beli ?? 0, harga_jual_rp: c.harga_srp ?? 0,
+      client_id: clientId, created_by: myName, prod_id: c.prod_id, item_product: c.product_name, modal_produk_rp: c.harga_beli ?? 0, harga_jual_rp: c.harga_srp ?? 0, store_name: store || null,
     })));
     setAdding(false);
     if (error) { alert(error.message); return; }
@@ -246,6 +257,8 @@ export default function MassiveCalculatorPage() {
             <thead>
               <tr>
                 <th style={stickyTh}>No</th>
+                <th style={stickyTh}>Store</th>
+                <th style={stickyTh}>Vendor</th>
                 <th style={stickyTh}>Product ID</th>
                 <th style={stickyTh}>Product Name</th>
                 <th style={stickyTh}>Catalog ID</th>
@@ -289,26 +302,27 @@ export default function MassiveCalculatorPage() {
             <tbody>
               {rows.map((r, i) => (
                 <CalcRowLine key={r.id} no={i + 1} row={r} fee={r.fee_id ? feesById.get(r.fee_id) ?? null : null} fees={fees}
-                  catalog={catalog} catalogById={catalogById} lowest={lowest} onSave={saveRow} onDelete={deleteRow} />
+                  itemsFor={itemsFor} stores={storeList} vendorNames={vendorNames} vendorOfStore={vendorOfStore} lowest={lowest} onSave={saveRow} onDelete={deleteRow} />
               ))}
               {!loading && rows.length === 0 && (
-                <tr><td colSpan={38} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>No product rows yet — click “+ Add Product” and pick the products from the Product Catalog.</td></tr>
+                <tr><td colSpan={40} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>No product rows yet — click “+ Add Product” and pick the products from the Product Catalog.</td></tr>
               )}
               {loading && (
-                <tr><td colSpan={38} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>Loading…</td></tr>
+                <tr><td colSpan={40} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>Loading…</td></tr>
               )}
             </tbody>
           </table>
         </div>
       </div>
-      {picking && <ProductPicker catalog={catalog} busy={adding} onClose={() => setPicking(false)} onAdd={addProducts} />}
+      {picking && <ProductPicker itemsFor={itemsFor} stores={storeList} vendorNames={vendorNames} busy={adding} onClose={() => setPicking(false)} onAdd={addProducts} />}
     </>
   );
 }
 
-function CalcRowLine({ no, row, fee, fees, catalog, catalogById, lowest, onSave, onDelete }: {
+function CalcRowLine({ no, row, fee, fees, itemsFor, stores, vendorNames, vendorOfStore, lowest, onSave, onDelete }: {
   no: number; row: CalcRow; fee: Fee | null; fees: Fee[];
-  catalog: CatalogItem[]; catalogById: Map<string, CatalogItem>; lowest: Map<string, number>;
+  itemsFor: (store: string | null) => CatalogItem[]; stores: { store_name: string; vendor_id: string | null }[]; vendorNames: Map<string, string>;
+  vendorOfStore: Map<string, string | null>; lowest: Map<string, number>;
   onSave: (id: string, patch: Partial<CalcRow>) => void;
   onDelete: (id: string) => void;
 }) {
@@ -366,12 +380,22 @@ function CalcRowLine({ no, row, fee, fees, catalog, catalogById, lowest, onSave,
     biayaLain: parsed.biaya_lain_rp,
   }, fee);
 
+  const catalog = itemsFor(row.store_name);
+  const catalogById = new Map(catalog.map((c) => [c.prod_id, c]));
+  const vendorName = row.store_name ? vendorNames.get(vendorOfStore.get(row.store_name) || "") || "" : "";
   const cat = v.prod_id ? catalogById.get(v.prod_id) ?? null : null;
   const low = v.prod_id ? lowest.get(v.prod_id) ?? null : null;
   // picking a catalog product fills the name, the Prod ID, Modal Produk = its Harga Beli and (as the starting point) Harga Jual = its Harga Jual
   function pickProduct(prodId: string) {
     const c = prodId ? catalogById.get(prodId) : null;
     setV((st) => ({ ...st, prod_id: prodId, item_product: c ? c.product_name : st.item_product, modal_produk_rp: c && c.harga_beli != null ? formatRp(c.harga_beli) : st.modal_produk_rp, harga_jual_rp: c && c.harga_srp != null ? formatRp(c.harga_srp) : st.harga_jual_rp }));
+  }
+
+  // another store = maybe another vendor = another Harga Beli / Harga Jual: the line takes the prices of the new store's Catalog (press Save to keep them)
+  function changeStore(store: string) {
+    const c = v.prod_id ? itemsFor(store || null).find((x) => x.prod_id === v.prod_id) : null;
+    if (c) setV((st) => ({ ...st, modal_produk_rp: c.harga_beli != null ? formatRp(c.harga_beli) : st.modal_produk_rp, harga_jual_rp: c.harga_srp != null ? formatRp(c.harga_srp) : st.harga_jual_rp }));
+    onSave(row.id, { store_name: store || null });
   }
 
   function save() { onSave(row.id, parsed); }
@@ -429,6 +453,14 @@ function CalcRowLine({ no, row, fee, fees, catalog, catalogById, lowest, onSave,
   return (
     <tr style={dirty ? { background: "rgba(201,162,39,.06)" } : undefined}>
       <td>{no}</td>
+      <td>
+        <select className="calc-sel" value={row.store_name || ""} onChange={(e) => changeStore(e.target.value)} style={{ width: 170, maxWidth: 170 }} title="The store decides the vendor, and the vendor decides the Harga Beli">
+          <option value="">— no store —</option>
+          {row.store_name && !stores.some((s) => s.store_name === row.store_name) && <option value={row.store_name}>{row.store_name}</option>}
+          {stores.map((s) => <option key={s.store_name} value={s.store_name}>{s.store_name}</option>)}
+        </select>
+      </td>
+      <td className="calc-ro">{vendorName || "—"}</td>
       <td className="calc-ro" style={{ fontFamily: "monospace" }}>{cat?.prod_id || "—"}</td>
       <td>
         <select className="calc-sel" value={v.prod_id} onChange={(e) => pickProduct(e.target.value)} style={{ width: 230, maxWidth: 230 }} title="The product comes from the Product Catalog">
@@ -505,7 +537,13 @@ const saveBtnStyle: React.CSSProperties = { background: "linear-gradient(135deg,
 const delBtnStyle: React.CSSProperties = { background: "rgba(255,80,80,.12)", border: "1px solid rgba(255,90,90,.3)", color: "#ff9a9a", borderRadius: 7, padding: "4px 10px", cursor: "pointer", fontSize: 12 };
 
 // Modal of the Product Catalog in force: tick the products (search by name or Prod ID) and add them as calculator lines.
-function ProductPicker({ catalog, busy, onClose, onAdd }: { catalog: CatalogItem[]; busy: boolean; onClose: () => void; onAdd: (items: CatalogItem[]) => void }) {
+function ProductPicker({ itemsFor, stores, vendorNames, busy, onClose, onAdd }: {
+  itemsFor: (store: string | null) => CatalogItem[]; stores: { store_name: string; vendor_id: string | null }[]; vendorNames: Map<string, string>;
+  busy: boolean; onClose: () => void; onAdd: (items: CatalogItem[], store: string) => void;
+}) {
+  const [store, setStore] = useState("");
+  const catalog = itemsFor(store || null);
+  const vendor = vendorNames.get(stores.find((s) => s.store_name === store)?.vendor_id || "") || "";
   const [q, setQ] = useState("");
   const [chosen, setChosen] = useState<Set<string>>(new Set());
   const shown = catalog.filter((c) => !q.trim() || `${c.product_name} ${c.prod_id}`.toLowerCase().includes(q.trim().toLowerCase()));
@@ -513,7 +551,15 @@ function ProductPicker({ catalog, busy, onClose, onAdd }: { catalog: CatalogItem
   return (
     <Modal onClose={onClose} width={760}>
       <div style={{ fontSize: 18, fontWeight: 800, color: "#fff", marginBottom: 6 }}>Pick products from the Product Catalog</div>
-      <div style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 12 }}>Each product is added with its Harga Beli as Modal Produk and its Harga Jual of the Catalog in force.</div>
+      <div style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 12 }}>Pick the store first: its vendor decides the Harga Beli. Each product is added with that Harga Beli as Modal Produk and the Harga Jual of the Catalog in force.</div>
+      <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 10, flexWrap: "wrap" }}>
+        <div className="fld" style={{ minWidth: 240 }}><label>Store</label>
+          <select value={store} onChange={(e) => { setStore(e.target.value); setChosen(new Set()); }}>
+            <option value="">— no store (default Catalog) —</option>
+            {stores.map((s) => <option key={s.store_name} value={s.store_name}>{s.store_name}</option>)}
+          </select></div>
+        <div style={{ fontSize: 13, color: "var(--muted)" }}>{store ? (vendor ? <>Vendor: <b style={{ color: "var(--gold)" }}>{vendor}</b></> : "This store has no vendor yet (Core > Connector): the default Catalog is used.") : ""}</div>
+      </div>
       <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Product name or Prod ID" autoFocus
         style={{ width: "100%", marginBottom: 10, background: "rgba(10,22,40,.5)", border: "1px solid rgba(201,162,39,.25)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontSize: 14 }} />
       <div className="tbl-wrap" style={{ maxHeight: "50vh" }}>
@@ -538,7 +584,7 @@ function ProductPicker({ catalog, busy, onClose, onAdd }: { catalog: CatalogItem
       </div>
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 14 }}>
         <button className="btn-ghost" onClick={onClose}>Cancel</button>
-        <button className="btn-gold" disabled={!chosen.size || busy} onClick={() => onAdd(catalog.filter((c) => chosen.has(c.prod_id)))} style={{ padding: "10px 24px" }}>
+        <button className="btn-gold" disabled={!chosen.size || busy} onClick={() => onAdd(catalog.filter((c) => chosen.has(c.prod_id)), store)} style={{ padding: "10px 24px" }}>
           {busy ? "Adding…" : `Add ${chosen.size || ""} product${chosen.size === 1 ? "" : "s"}`}
         </button>
       </div>
