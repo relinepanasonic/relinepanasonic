@@ -141,9 +141,9 @@ export default function PriceResearchPage() {
         .mode-tab.on{background:linear-gradient(135deg,var(--gold),var(--gold-soft));color:var(--navy-deep);border-color:transparent}
       `}</style>
       <div style={{ display: "flex", gap: 8, marginBottom: 18, flexWrap: "wrap" }}>
-        <Link href="/calc" className="mode-tab">Massive Calculator</Link>
-        <Link href="/calc/marketplace-fee" className="mode-tab">Marketplace Fee</Link>
+        <Link href="/calc" className="mode-tab">Perhitungan Harga</Link>
         <span className="mode-tab on">Price Research</span>
+        <Link href="/calc/marketplace-fee" className="mode-tab">Marketplace Fee</Link>
       </div>
 
       <div className="panel">
@@ -465,7 +465,7 @@ function CatalogTab({ supabase, clientId, isAdmin, tick, onChanged }: { supabase
   return (
     <>
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center", marginBottom: 12 }}>
-        <div className="hint" style={{ flex: 1, margin: 0 }}>Every SRP is a saved version of the product list with its Harga Beli and Harga SRP. The SRP in force (latest Date Active up to today) feeds Price Guard, Product URL and the Massive Calculator. Open an SRP to see or change its products.</div>
+        <div className="hint" style={{ flex: 1, margin: 0 }}>Every SRP is a saved version of the product list with its Harga Beli and Harga SRP. The SRP in force (latest Date Active up to today) feeds Price Guard, Product URL and Perhitungan Harga. Open an SRP to see or change its products.</div>
         {isAdmin && <button className="btn-gold" onClick={() => setCreating(true)} style={{ padding: "10px 22px" }}>+ Create New SRP</button>}
       </div>
       {err && <div style={{ color: "#f87171", fontSize: 13, marginBottom: 10 }}>✗ {err}</div>}
@@ -574,7 +574,7 @@ function SrpListView({ supabase, isAdmin, listId, onBack, onChanged }: { supabas
       ["How to fill"], [""],
       ["Prod ID", "Required and unique inside the SRP: it is the key. A Prod ID that is already in this SRP is UPDATED, a new one is ADDED."],
       ["Product Name", "Required."],
-      ["Harga Beli", "Cost price in Rp. The Massive Calculator uses it as Modal Produk."],
+      ["Harga Beli", "Cost price in Rp. Perhitungan Harga uses it as Modal Produk."],
       ["Harga SRP", "Selling price guide in Rp. Price Guard compares the competitors with it."],
       ["SRP ID", "Not in the sheet: it is automatic, one per SRP."],
       ["No", "Only a counter, it is ignored."],

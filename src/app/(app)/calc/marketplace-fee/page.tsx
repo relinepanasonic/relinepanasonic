@@ -215,9 +215,9 @@ export default function MarketFeePage() {
 
       {/* ── Sub-page tabs ── */}
       <div style={{ display: "flex", gap: 8, marginBottom: 18 }}>
-        <Link href="/calc" className="mode-tab">Massive Calculator</Link>
-        <span className="mode-tab on">Marketplace Fee</span>
+        <Link href="/calc" className="mode-tab">Perhitungan Harga</Link>
         <Link href="/calc/price-research" className="mode-tab">Price Research</Link>
+        <span className="mode-tab on">Marketplace Fee</span>
       </div>
 
       <div className="panel">

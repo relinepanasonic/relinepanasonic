@@ -201,7 +201,7 @@ export default function MassiveCalculatorPage() {
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.aoa_to_sheet([[...CALC_HEADER], ...body]);
     ws["!cols"] = CALC_HEADER.map((h) => ({ wch: h === "Product Name" ? 38 : Math.max(12, h.length + 2) }));
-    XLSX.utils.book_append_sheet(wb, ws, "Massive Calculator");
+    XLSX.utils.book_append_sheet(wb, ws, "Perhitungan Harga");
     const feeSheet = XLSX.utils.aoa_to_sheet([["Platform", "Jenis Toko", "Category", "Sub Category", "Jenis Product"], ...fees.map((f) => [f.platform, f.jenis_toko || "", f.category, f.sub_category || "", f.jenis_product || ""])]);
     feeSheet["!cols"] = [18, 18, 28, 28, 28].map((wch) => ({ wch }));
     XLSX.utils.book_append_sheet(wb, feeSheet, "Fee options");
@@ -274,15 +274,15 @@ export default function MassiveCalculatorPage() {
       `}</style>
 
       <div style={{ display: "flex", gap: 8, marginBottom: 18 }}>
-        <span className="mode-tab on">Massive Calculator</span>
-        <Link href="/calc/marketplace-fee" className="mode-tab">Marketplace Fee</Link>
+        <span className="mode-tab on">Perhitungan Harga</span>
         <Link href="/calc/price-research" className="mode-tab">Price Research</Link>
+        <Link href="/calc/marketplace-fee" className="mode-tab">Marketplace Fee</Link>
       </div>
 
       <div className="panel">
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10, marginBottom: 4 }}>
           <div>
-            <h3 style={{ margin: 0 }}>Massive Calculator</h3>
+            <h3 style={{ margin: 0 }}>Perhitungan Harga</h3>
             <div className="hint">{rows.length.toLocaleString("id-ID")} product rows · pick Category/Sub Category/Jenis Product/Platform/Jenis Toko to link a fee row, fill in price and weight, Total Biaya / Profit update live.</div>
           </div>
           <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
