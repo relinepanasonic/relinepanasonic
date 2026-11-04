@@ -528,7 +528,6 @@ export default function MassiveCalculatorPage() {
               <button className="btn-gold" disabled={busy} onClick={saveAll} style={{ padding: "10px 26px" }}>{busy ? "Saving…" : "Save"}</button>
             </div>
           </div>
-          <div className="hint">Pick Category/Sub Category/Jenis Product/Platform/Jenis Toko to link a fee row, fill in price and weight, Total Biaya / Profit update live. Press Save when you are done: it keeps all the changes and goes back to the SRP table. Export XLS / Import XLS let you edit the lines in Excel.</div>
           {msg && <div style={{ color: msg.ok ? "var(--gold)" : "#f87171", fontSize: 13, marginTop: 8 }}>{msg.ok ? "✓" : "✗"} {msg.text}</div>}
 
           <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginTop: 12 }}>
@@ -565,6 +564,8 @@ export default function MassiveCalculatorPage() {
                     checked={visible.length > 0 && visible.every((r) => selected.has(r.id))}
                     onChange={(e) => setSelected((st) => { const n = new Set(st); visible.forEach((r) => (e.target.checked ? n.add(r.id) : n.delete(r.id))); return n; })} /></th>
                   <th style={stickyTh}>No</th>
+                  <th style={stickyTh}>Platform</th>
+                  <th style={stickyTh}>Jenis Toko</th>
                   <th style={stickyTh}>Product ID</th>
                   <th style={stickyTh}>Product Name</th>
                   <th style={stickyTh}>Catalog ID</th>
@@ -577,8 +578,6 @@ export default function MassiveCalculatorPage() {
                   <th className="num" style={stickyTh}>Harga Jual (%)</th>
                   <th className="num" style={stickyTh}>Total Biaya</th>
                   <th className="num" style={stickyTh}>Profit</th>
-                  <th style={stickyTh}>Platform</th>
-                  <th style={stickyTh}>Jenis Toko</th>
                   <th style={stickyTh}>Category (Fee)</th>
                   <th style={stickyTh}>Sub Category</th>
                   <th style={stickyTh}>Jenis Product</th>
@@ -762,6 +761,8 @@ function CalcRowLine({ no, row, fee, fees, catalog, lowest, selected, onToggle, 
     <tr style={dirty ? { background: "rgba(201,162,39,.06)" } : undefined}>
       <td><input type="checkbox" checked={selected} onChange={() => onToggle(row.id)} /></td>
       <td>{no}</td>
+      <td>{feeSelect("platform")}</td>
+      <td>{feeSelect("jenis_toko")}</td>
       <td className="calc-ro" style={{ fontFamily: "monospace" }}>{cat?.prod_id || "—"}</td>
       <td>
         <select className="calc-sel" value={v.prod_id} onChange={(e) => pickProduct(e.target.value)} style={{ width: 230, maxWidth: 230 }} title="The product comes from the Product Catalog">
@@ -788,8 +789,6 @@ function CalcRowLine({ no, row, fee, fees, catalog, lowest, selected, onToggle, 
       <td className="num" style={{ fontWeight: 700, color: calc.profit >= 0 ? "#4ade80" : "#ff9a9a" }}>
         Rp {formatRp(calc.profit)}<div style={{ fontSize: 11, fontWeight: 400 }}>{calc.marginPct === null ? "—" : `${calc.marginPct.toFixed(1)}%`}</div>
       </td>
-      <td>{feeSelect("platform")}</td>
-      <td>{feeSelect("jenis_toko")}</td>
       <td>{feeSelect("category")}</td>
       <td>{feeSelect("sub_category")}</td>
       <td>{feeSelect("jenis_product")}
