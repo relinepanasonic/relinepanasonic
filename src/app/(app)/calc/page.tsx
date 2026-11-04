@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Modal } from "@/components/ProductCatalog";
 
@@ -123,13 +123,14 @@ function computeCalc(input: {
     paylater3moRp, paylater6moRp, biayaAds, pctAds, totalBiaya, profit, hargaMarkupPct, marginPct };
 }
 
-async function fetchAll<T>(supabase: ReturnType<typeof createClient>, table: string, clientId: string, order: string): Promise<T[]> {
+async function fetchAll<T>(supabase: ReturnType<typeof createClient>, table: string, clientId: string, order: string, srpId?: string): Promise<T[]> {
   const PAGE = 1000;
   let from = 0;
   let all: T[] = [];
   for (;;) {
-    const { data, error } = await supabase.from(table).select("*").eq("client_id", clientId)
-      .order(order).range(from, from + PAGE - 1);
+    let q = supabase.from(table).select("*").eq("client_id", clientId);
+    if (srpId) q = q.eq("srp_id", srpId);
+    const { data, error } = await q.order(order).range(from, from + PAGE - 1);
     if (error || !data || !data.length) break;
     all = all.concat(data as T[]);
     if (data.length < PAGE) break;
@@ -138,42 +139,55 @@ async function fetchAll<T>(supabase: ReturnType<typeof createClient>, table: str
   return all;
 }
 
+type SrpLog = { id: string; srp_no: string; catalog_no: string | null; vendor_name: string | null; created_at: string; created_by: string | null; total_sku: number };
+type OpenSrp = { id: string; srp_no: string; list_id: string | null; catalog_no: string | null; vendor_name: string | null; created_at: string };
+const MON = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"];
+function dmy(v: string | null | undefined): string {
+  if (!v) return "—";
+  const d = new Date(v); if (Number.isNaN(d.getTime())) return "—";
+  const j = new Date(d.getTime() + 7 * 3600_000);
+  return `${String(j.getUTCDate()).padStart(2, "0")} ${MON[j.getUTCMonth()]} ${j.getUTCFullYear()}`;
+}
+
+// Perhitungan Harga: the table of SRP Price Calculations (SRP ID | Catalog ID | Date Create | Total SKU | Created by). + Create New SRP picks a Catalog and
+// opens the calculator with one line per product of it; Save keeps the changes and returns to the table.
 export default function MassiveCalculatorPage() {
   const [supabase] = useState(() => createClient());
   const [clientId, setClientId] = useState("");
-  const [myName, setMyName] = useState("");
   const [fees, setFees] = useState<Fee[]>([]);
   const [rows, setRows] = useState<CalcRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [adding, setAdding] = useState(false);
+  const [busy, setBusy] = useState(false);
   const [picking, setPicking] = useState(false);
-  const [catalogs, setCatalogs] = useState<Record<string, CatalogItem[]>>({});          // "all" | "default" | <vendor id> -> the Catalog in force
+  const [catalogAll, setCatalogAll] = useState<CatalogItem[]>([]);
   const [storeList, setStoreList] = useState<{ store_name: string; vendor_id: string | null }[]>([]);
   const [vendorNames, setVendorNames] = useState<Map<string, string>>(new Map());
   const [lowest, setLowest] = useState<Map<string, number>>(new Map());   // Prod ID -> the lowest competitor price (Price Guard)
+  const [log, setLog] = useState<SrpLog[] | null>(null);
+  const [srp, setSrp] = useState<OpenSrp | null>(null);
+  const [srpItems, setSrpItems] = useState<CatalogItem[]>([]);            // the products and prices of the Catalog the open SRP was made from
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [dirtyCount, setDirtyCount] = useState(0);
+  const pending = useRef(new Map<string, Partial<CalcRow>>());
 
   const feesById = useMemo(() => new Map(fees.map((f) => [f.id, f])), [fees]);
-  const vendorOfStore = useMemo(() => new Map(storeList.map((s) => [s.store_name, s.vendor_id])), [storeList]);
-  // the products and prices of a store: its vendor's Catalog in force, else the default Catalog, else all of them merged
-  const itemsFor = useCallback((store: string | null): CatalogItem[] => {
-    const vid = store ? vendorOfStore.get(store) ?? null : null;
-    return (vid && catalogs[vid]) || catalogs.default || catalogs.all || [];
-  }, [catalogs, vendorOfStore]);
+  const vendorOfStore = useMemo(() => new Map(storeList.map((x) => [x.store_name, x.vendor_id])), [storeList]);
 
-  const reload = useCallback(async (cid: string) => {
-    if (!cid) { setRows([]); setFees([]); setLoading(false); return; }
-    setLoading(true);
-    const [f, r, cat, guard, vs, vn] = await Promise.all([
+  const loadLog = useCallback(async (cid: string) => {
+    const { data } = await supabase.rpc("calc_srp_log", { p_client_id: cid });
+    setLog((data as SrpLog[]) || []);
+  }, [supabase]);
+
+  const loadBase = useCallback(async (cid: string) => {
+    const [f, cat, guard, vs, vn] = await Promise.all([
       fetchAll<Fee>(supabase, "market_fees", cid, "category"),
-      fetchAll<CalcRow>(supabase, "massive_calc_rows", cid, "created_at"),
-      supabase.rpc("pr_srp_catalog_vendors", { p_client_id: cid }),
+      supabase.rpc("pr_srp_catalog", { p_client_id: cid }),
       supabase.rpc("price_guard", { p_client_id: cid }),
       supabase.from("vendor_stores").select("store_name, vendor_id").eq("client_id", cid).order("store_name"),
       supabase.from("vendors").select("id, name").eq("client_id", cid),
     ]);
     setFees(f);
-    setRows(r);
-    setCatalogs((cat.data as Record<string, CatalogItem[]>) || {});
+    setCatalogAll((cat.data as CatalogItem[]) || []);
     setStoreList((vs.data as { store_name: string; vendor_id: string | null }[]) || []);
     setVendorNames(new Map(((vn.data as { id: string; name: string }[]) || []).map((x) => [x.id, x.name])));
     const m = new Map<string, number>();
@@ -182,7 +196,6 @@ export default function MassiveCalculatorPage() {
       if (prices.length) m.set(g.prod_id, Math.min(...prices));
     }
     setLowest(m);
-    setLoading(false);
   }, [supabase]);
 
   useEffect(() => {
@@ -190,45 +203,96 @@ export default function MassiveCalculatorPage() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
       const { data: profile } = await supabase.from("profiles").select("display_name, email, client_id").eq("id", user.id).single();
-      setMyName(profile?.display_name || profile?.email?.split("@")[0] || "User");
       const { data: cs } = await supabase.from("clients").select("id").order("created_at").limit(1);
       const cid = profile?.client_id || (cs as { id: string }[])?.[0]?.id || "";
       setClientId(cid);
-      reload(cid);
+      if (!cid) { setLog([]); setLoading(false); return; }
+      await Promise.all([loadLog(cid), loadBase(cid)]);
+      setLoading(false);
     })();
-  }, [supabase, reload]);
+  }, [supabase, loadLog, loadBase]);
 
-  // + Add Catalog: every product of one Catalog becomes a line (Modal Produk = its Harga Beli, Harga Jual = the Harga Jual saved in that Catalog).
-  // Products already on a line for the same store are skipped, so adding a Catalog twice does not duplicate lines.
-  async function addCatalog(listId: string, store: string): Promise<string> {
-    if (!clientId) return "";
-    setAdding(true);
-    const { data: items, error: e1 } = await supabase.from("pr_srp_items").select("prod_id, product_name, harga_beli, harga_srp").eq("list_id", listId).order("product_name");
-    if (e1) { setAdding(false); return e1.message; }
-    const have = new Set(rows.filter((r) => (r.store_name || "") === store).map((r) => r.prod_id));
-    const fresh = ((items as { prod_id: string; product_name: string; harga_beli: number | null; harga_srp: number | null }[]) || []).filter((c) => !have.has(c.prod_id));
-    if (fresh.length) {
-      const { error } = await supabase.from("massive_calc_rows").insert(fresh.map((c) => ({
-        client_id: clientId, created_by: myName, prod_id: c.prod_id, item_product: c.product_name, modal_produk_rp: c.harga_beli ?? 0, harga_jual_rp: c.harga_srp ?? 0, store_name: store || null,
-      })));
-      if (error) { setAdding(false); return error.message; }
+  const reloadRows = useCallback(async (srpId: string) => {
+    setRows(await fetchAll<CalcRow>(supabase, "massive_calc_rows", clientId, "created_at", srpId));
+  }, [supabase, clientId]);
+
+  async function openSrp(id: string) {
+    setLoading(true); setMsg(null); pending.current.clear(); setDirtyCount(0);
+    const { data: h } = await supabase.from("calc_srp").select("id, srp_no, list_id, created_at").eq("id", id).single();
+    const head = h as { id: string; srp_no: string; list_id: string | null; created_at: string } | null;
+    if (!head) { setLoading(false); return; }
+    const fromLog = log?.find((x) => x.id === id);
+    let items = catalogAll;
+    if (head.list_id) {
+      const { data: it } = await supabase.from("pr_srp_items").select("prod_id, product_name, harga_beli, harga_srp").eq("list_id", head.list_id).order("product_name");
+      items = ((it as Omit<CatalogItem, "srp_no">[]) || []).map((x) => ({ ...x, srp_no: fromLog?.catalog_no ?? null }));
     }
-    setAdding(false);
+    setSrpItems(items);
+    await reloadRows(id);
+    setSrp({ ...head, catalog_no: fromLog?.catalog_no ?? null, vendor_name: fromLog?.vendor_name ?? null });
+    setLoading(false);
+  }
+
+  // Create New SRP: the chosen Catalog becomes the lines of a new SRP (Modal Produk = Harga Beli, Harga Jual = the one saved in the Catalog)
+  async function createSrp(listId: string, store: string): Promise<string> {
+    if (!clientId) return "";
+    setBusy(true);
+    const { data, error } = await supabase.rpc("calc_srp_create", { p_client_id: clientId, p_list_id: listId, p_store: store || null });
+    setBusy(false);
+    if (error) return error.message.replace(/^[A-Z_]+:\s*/, "");
     setPicking(false);
-    reload(clientId);
+    await loadLog(clientId);
+    await openSrp(data as string);
     return "";
   }
+
+  const onPending = useCallback((id: string, patch: Partial<CalcRow> | null) => {
+    if (patch) pending.current.set(id, patch); else pending.current.delete(id);
+    setDirtyCount(pending.current.size);
+  }, []);
 
   async function saveRow(id: string, patch: Partial<CalcRow>) {
     const { error } = await supabase.from("massive_calc_rows").update(patch).eq("id", id);
     if (error) { alert(error.message); return; }
-    reload(clientId);
+    if (srp) reloadRows(srp.id);
   }
 
   async function deleteRow(id: string) {
     if (!confirm("Delete this row?")) return;
     await supabase.from("massive_calc_rows").delete().eq("id", id);
-    reload(clientId);
+    if (srp) reloadRows(srp.id);
+  }
+
+  // Save: keeps every changed line of this SRP, then back to the SRP table
+  async function saveAll() {
+    if (!srp) return;
+    setBusy(true);
+    const results = await Promise.all([...pending.current.entries()].map(([id, patch]) => supabase.from("massive_calc_rows").update(patch).eq("id", id)));
+    setBusy(false);
+    const bad = results.find((r) => r.error);
+    if (bad?.error) { alert(bad.error.message); return; }
+    const n = results.length, no = srp.srp_no;
+    pending.current.clear(); setDirtyCount(0);
+    setSrp(null); setRows([]);
+    await loadLog(clientId);
+    setMsg({ ok: true, text: `${no} saved${n ? ` (${n} line${n === 1 ? "" : "s"} changed)` : ""}.` });
+  }
+
+  async function backToTable() {
+    if (dirtyCount && !confirm(`${dirtyCount} line${dirtyCount === 1 ? " has" : "s have"} changes that are not saved. Go back without saving?`)) return;
+    pending.current.clear(); setDirtyCount(0);
+    setSrp(null); setRows([]);
+    loadLog(clientId);
+  }
+
+  async function deleteSrp() {
+    if (!srp || !confirm(`Delete ${srp.srp_no} with all its ${rows.length} lines?`)) return;
+    const { error } = await supabase.from("calc_srp").delete().eq("id", srp.id);
+    if (error) { alert(error.message); return; }
+    pending.current.clear(); setDirtyCount(0);
+    setSrp(null); setRows([]);
+    await loadLog(clientId);
+    setMsg({ ok: true, text: `${srp.srp_no} deleted.` });
   }
 
   return (
@@ -249,88 +313,126 @@ export default function MassiveCalculatorPage() {
         <Link href="/calc/marketplace-fee" className="mode-tab">Marketplace Fee</Link>
       </div>
 
-      <div className="panel">
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10, marginBottom: 4 }}>
-          <div>
-            <h3 style={{ margin: 0 }}>Perhitungan Harga</h3>
-            <div className="hint">{rows.length.toLocaleString("id-ID")} product rows · pick Category/Sub Category/Jenis Product/Platform/Jenis Toko to link a fee row, fill in price and weight, Total Biaya / Profit update live.</div>
+      {!srp ? (
+        <div className="panel">
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10, marginBottom: 12 }}>
+            <div>
+              <h3 style={{ margin: 0 }}>SRP Price Calculation</h3>
+              <div className="hint">Every SRP is a saved price calculation made from one Catalog. Press <b>Create New SRP</b>, pick the Catalog, do the calculation, then Save.</div>
+            </div>
+            <button className="btn-gold" disabled={!clientId} onClick={() => setPicking(true)}>+ Create New SRP</button>
           </div>
-          <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-            <button className="btn-gold" disabled={!clientId} onClick={() => setPicking(true)}>+ Add Catalog</button>
-          </div>
+          {msg && <div style={{ color: msg.ok ? "var(--gold)" : "#f87171", fontSize: 13, marginBottom: 10 }}>{msg.ok ? "✓" : "✗"} {msg.text}</div>}
+          {log === null ? <div style={{ color: "var(--muted)", padding: 20 }}>Loading…</div> : (
+            <div className="tbl-wrap" style={{ maxHeight: "66vh" }}>
+              <table className="tbl day-tbl">
+                <thead><tr><th>SRP ID</th><th>Catalog ID</th><th>Date Create</th><th className="num">Total SKU</th><th>Created by</th></tr></thead>
+                <tbody>
+                  {log.map((r) => (
+                    <tr key={r.id} onClick={() => openSrp(r.id)} style={{ cursor: "pointer" }}>
+                      <td style={{ fontFamily: "monospace", fontWeight: 700 }}>{r.srp_no}</td>
+                      <td><span style={{ fontFamily: "monospace" }}>{r.catalog_no || "—"}</span>{r.vendor_name && <span style={{ color: "var(--muted)", fontSize: 12 }}> · {r.vendor_name}</span>}</td>
+                      <td>{dmy(r.created_at)}</td>
+                      <td className="num" style={{ fontWeight: 700 }}>{r.total_sku}</td>
+                      <td>{r.created_by || "—"}</td>
+                    </tr>
+                  ))}
+                  {log.length === 0 && <tr><td colSpan={5} style={{ textAlign: "center", color: "var(--muted)", padding: 24 }}>No SRP yet — press + Create New SRP and pick a Catalog.</td></tr>}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
+      ) : (
+        <div className="panel">
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10, marginBottom: 4 }}>
+            <div style={{ display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap" }}>
+              <button className="btn-ghost" onClick={backToTable}>← SRP table</button>
+              <div style={{ fontSize: 20, fontWeight: 800, color: "#fff", fontFamily: "monospace" }}>{srp.srp_no}</div>
+              <div style={{ fontSize: 13, color: "var(--muted)" }}>Catalog <b style={{ color: "var(--gold)", fontFamily: "monospace" }}>{srp.catalog_no || "—"}</b>{srp.vendor_name ? ` · ${srp.vendor_name}` : ""} · Created {dmy(srp.created_at)} · {rows.length} SKU</div>
+            </div>
+            <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+              {dirtyCount > 0 && <span style={{ color: "var(--gold)", fontSize: 12.5 }}>{dirtyCount} line{dirtyCount === 1 ? "" : "s"} changed</span>}
+              <button className="btn-ghost" onClick={deleteSrp} style={{ color: "#f87171" }}>Delete SRP</button>
+              <button className="btn-gold" disabled={busy} onClick={saveAll} style={{ padding: "10px 26px" }}>{busy ? "Saving…" : "Save"}</button>
+            </div>
+          </div>
+          <div className="hint">Pick Category/Sub Category/Jenis Product/Platform/Jenis Toko to link a fee row, fill in price and weight, Total Biaya / Profit update live. Press Save when you are done: it keeps all the changes and goes back to the SRP table.</div>
 
-        <div className="tbl-wrap" style={{ marginTop: 14, height: "calc(100vh - 260px)", minHeight: 320, overflowX: "auto", overflowY: "auto" }}>
-          <table className="tbl calc-tbl" style={{ width: "max-content", minWidth: "100%" }}>
-            <thead>
-              <tr>
-                <th style={stickyTh}>No</th>
-                <th style={stickyTh}>Store</th>
-                <th style={stickyTh}>Vendor</th>
-                <th style={stickyTh}>Product ID</th>
-                <th style={stickyTh}>Product Name</th>
-                <th style={stickyTh}>Catalog ID</th>
-                <th className="num" style={stickyTh}>Harga Beli</th>
-                <th className="num" style={stickyTh}>Harga Jual (Catalog)</th>
-                <th className="num" style={stickyTh}>Lowest Competitor</th>
-                <th style={stickyTh}>Category</th>
-                <th className="num" style={stickyTh}>Modal Produk</th>
-                <th className="num" style={stickyTh}>Harga Jual (Rp)</th>
-                <th className="num" style={stickyTh}>Harga Jual (%)</th>
-                <th className="num" style={stickyTh}>Total Biaya</th>
-                <th className="num" style={stickyTh}>Profit</th>
-                <th style={stickyTh}>Platform</th>
-                <th style={stickyTh}>Jenis Toko</th>
-                <th style={stickyTh}>Category (Fee)</th>
-                <th style={stickyTh}>Sub Category</th>
-                <th style={stickyTh}>Jenis Product</th>
-                <th className="num" style={stickyTh}>Target ROAS</th>
-                <th className="num" style={stickyTh}>% Ads</th>
-                <th className="num" style={stickyTh}>Biaya Ads</th>
-                <th className="num" style={stickyTh}>Platform Fee %</th>
-                <th className="num" style={stickyTh}>Platform Fee Rp</th>
-                <th className="num" style={stickyTh}>Biaya Proses Pesanan</th>
-                <th className="num" style={stickyTh}>Biaya Layanan Mall %</th>
-                <th className="num" style={stickyTh}>Biaya Layanan Mall Rp</th>
-                <th style={stickyTh}>Gratis Ongkir</th>
-                <th className="num" style={stickyTh}>Berat (kg)</th>
-                <th className="num" style={stickyTh}>Uk PxLxT (cm³)</th>
-                <th className="num" style={stickyTh}>Biaya Ongkir</th>
-                <th style={stickyTh}>Promo Xtra</th>
-                <th className="num" style={stickyTh}>Promo Xtra Rp</th>
-                <th style={stickyTh}>Paylater 3 Bln</th>
-                <th className="num" style={stickyTh}>Paylater 3mo Rp</th>
-                <th style={stickyTh}>Paylater 6 Bln</th>
-                <th className="num" style={stickyTh}>Paylater 6mo Rp</th>
-                <th className="num" style={stickyTh}>Biaya Lain</th>
-                <th className="num" style={stickyTh}>Nett Profit</th>
-                <th style={stickyTh}></th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r, i) => (
-                <CalcRowLine key={r.id} no={i + 1} row={r} fee={r.fee_id ? feesById.get(r.fee_id) ?? null : null} fees={fees}
-                  itemsFor={itemsFor} stores={storeList} vendorNames={vendorNames} vendorOfStore={vendorOfStore} lowest={lowest} onSave={saveRow} onDelete={deleteRow} />
-              ))}
-              {!loading && rows.length === 0 && (
-                <tr><td colSpan={40} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>No product rows yet — click “+ Add Catalog” and pick a Catalog: all its products are added with the Harga Beli and Harga Jual saved in it.</td></tr>
-              )}
-              {loading && (
-                <tr><td colSpan={40} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>Loading…</td></tr>
-              )}
-            </tbody>
-          </table>
+          <div className="tbl-wrap" style={{ marginTop: 14, height: "calc(100vh - 300px)", minHeight: 320, overflowX: "auto", overflowY: "auto" }}>
+            <table className="tbl calc-tbl" style={{ width: "max-content", minWidth: "100%" }}>
+              <thead>
+                <tr>
+                  <th style={stickyTh}>No</th>
+                  <th style={stickyTh}>Store</th>
+                  <th style={stickyTh}>Vendor</th>
+                  <th style={stickyTh}>Product ID</th>
+                  <th style={stickyTh}>Product Name</th>
+                  <th style={stickyTh}>Catalog ID</th>
+                  <th className="num" style={stickyTh}>Harga Beli</th>
+                  <th className="num" style={stickyTh}>Harga Jual (Catalog)</th>
+                  <th className="num" style={stickyTh}>Lowest Competitor</th>
+                  <th style={stickyTh}>Category</th>
+                  <th className="num" style={stickyTh}>Modal Produk</th>
+                  <th className="num" style={stickyTh}>Harga Jual (Rp)</th>
+                  <th className="num" style={stickyTh}>Harga Jual (%)</th>
+                  <th className="num" style={stickyTh}>Total Biaya</th>
+                  <th className="num" style={stickyTh}>Profit</th>
+                  <th style={stickyTh}>Platform</th>
+                  <th style={stickyTh}>Jenis Toko</th>
+                  <th style={stickyTh}>Category (Fee)</th>
+                  <th style={stickyTh}>Sub Category</th>
+                  <th style={stickyTh}>Jenis Product</th>
+                  <th className="num" style={stickyTh}>Target ROAS</th>
+                  <th className="num" style={stickyTh}>% Ads</th>
+                  <th className="num" style={stickyTh}>Biaya Ads</th>
+                  <th className="num" style={stickyTh}>Platform Fee %</th>
+                  <th className="num" style={stickyTh}>Platform Fee Rp</th>
+                  <th className="num" style={stickyTh}>Biaya Proses Pesanan</th>
+                  <th className="num" style={stickyTh}>Biaya Layanan Mall %</th>
+                  <th className="num" style={stickyTh}>Biaya Layanan Mall Rp</th>
+                  <th style={stickyTh}>Gratis Ongkir</th>
+                  <th className="num" style={stickyTh}>Berat (kg)</th>
+                  <th className="num" style={stickyTh}>Uk PxLxT (cm³)</th>
+                  <th className="num" style={stickyTh}>Biaya Ongkir</th>
+                  <th style={stickyTh}>Promo Xtra</th>
+                  <th className="num" style={stickyTh}>Promo Xtra Rp</th>
+                  <th style={stickyTh}>Paylater 3 Bln</th>
+                  <th className="num" style={stickyTh}>Paylater 3mo Rp</th>
+                  <th style={stickyTh}>Paylater 6 Bln</th>
+                  <th className="num" style={stickyTh}>Paylater 6mo Rp</th>
+                  <th className="num" style={stickyTh}>Biaya Lain</th>
+                  <th className="num" style={stickyTh}>Nett Profit</th>
+                  <th style={stickyTh}></th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((r, i) => (
+                  <CalcRowLine key={r.id} no={i + 1} row={r} fee={r.fee_id ? feesById.get(r.fee_id) ?? null : null} fees={fees}
+                    catalog={srpItems} stores={storeList} vendorNames={vendorNames} vendorOfStore={vendorOfStore} lowest={lowest}
+                    onSave={saveRow} onDelete={deleteRow} onPending={onPending} />
+                ))}
+                {!loading && rows.length === 0 && (
+                  <tr><td colSpan={40} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>This SRP has no lines.</td></tr>
+                )}
+                {loading && (
+                  <tr><td colSpan={40} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>Loading…</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
-      </div>
-      {picking && <CatalogPicker supabase={supabase} clientId={clientId} stores={storeList} vendorNames={vendorNames} busy={adding} onClose={() => setPicking(false)} onAdd={addCatalog} />}
+      )}
+      {picking && <CatalogPicker supabase={supabase} clientId={clientId} stores={storeList} vendorNames={vendorNames} busy={busy} onClose={() => setPicking(false)} onAdd={createSrp} />}
     </>
   );
 }
 
-function CalcRowLine({ no, row, fee, fees, itemsFor, stores, vendorNames, vendorOfStore, lowest, onSave, onDelete }: {
+function CalcRowLine({ no, row, fee, fees, catalog, stores, vendorNames, vendorOfStore, lowest, onSave, onDelete, onPending }: {
   no: number; row: CalcRow; fee: Fee | null; fees: Fee[];
-  itemsFor: (store: string | null) => CatalogItem[]; stores: { store_name: string; vendor_id: string | null }[]; vendorNames: Map<string, string>;
+  catalog: CatalogItem[]; stores: { store_name: string; vendor_id: string | null }[]; vendorNames: Map<string, string>;
   vendorOfStore: Map<string, string | null>; lowest: Map<string, number>;
+  onPending: (id: string, patch: Partial<CalcRow> | null) => void;
   onSave: (id: string, patch: Partial<CalcRow>) => void;
   onDelete: (id: string) => void;
 }) {
@@ -380,6 +482,10 @@ function CalcRowLine({ no, row, fee, fees, itemsFor, stores, vendorNames, vendor
     || parsed.paylater_3mo_on !== row.paylater_3mo_on
     || parsed.paylater_6mo_on !== row.paylater_6mo_on;
 
+  // the page's Save keeps every changed line: each line reports its unsaved values (null when it has none)
+  const pkey = JSON.stringify(parsed);
+  useEffect(() => { onPending(row.id, dirty ? JSON.parse(pkey) : null); }, [dirty, pkey, row.id, onPending]);
+
   const calc = computeCalc({
     hargaJual: parsed.harga_jual_rp, modalProduk: parsed.modal_produk_rp, targetRoas: parsed.target_roas,
     beratKg: parsed.berat_kg, ukuranCm3: parsed.ukuran_cm3,
@@ -388,7 +494,6 @@ function CalcRowLine({ no, row, fee, fees, itemsFor, stores, vendorNames, vendor
     biayaLain: parsed.biaya_lain_rp,
   }, fee);
 
-  const catalog = itemsFor(row.store_name);
   const catalogById = new Map(catalog.map((c) => [c.prod_id, c]));
   const vendorName = row.store_name ? vendorNames.get(vendorOfStore.get(row.store_name) || "") || "" : "";
   const cat = v.prod_id ? catalogById.get(v.prod_id) ?? null : null;
@@ -399,12 +504,7 @@ function CalcRowLine({ no, row, fee, fees, itemsFor, stores, vendorNames, vendor
     setV((st) => ({ ...st, prod_id: prodId, item_product: c ? c.product_name : st.item_product, modal_produk_rp: c && c.harga_beli != null ? formatRp(c.harga_beli) : st.modal_produk_rp, harga_jual_rp: c && c.harga_srp != null ? formatRp(c.harga_srp) : st.harga_jual_rp }));
   }
 
-  // another store = maybe another vendor = another Harga Beli / Harga Jual: the line takes the prices of the new store's Catalog (press Save to keep them)
-  function changeStore(store: string) {
-    const c = v.prod_id ? itemsFor(store || null).find((x) => x.prod_id === v.prod_id) : null;
-    if (c) setV((st) => ({ ...st, modal_produk_rp: c.harga_beli != null ? formatRp(c.harga_beli) : st.modal_produk_rp, harga_jual_rp: c.harga_srp != null ? formatRp(c.harga_srp) : st.harga_jual_rp }));
-    onSave(row.id, { store_name: store || null });
-  }
+  function changeStore(store: string) { onSave(row.id, { store_name: store || null }); }
 
   function save() { onSave(row.id, parsed); }
   function reset() {
@@ -566,8 +666,8 @@ function CatalogPicker({ supabase, clientId, stores, vendorNames, busy, onClose,
   const dmy = (d: string) => new Date(d + "T00:00:00+07:00").toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
   return (
     <Modal onClose={onClose} width={760}>
-      <div style={{ fontSize: 18, fontWeight: 800, color: "#fff", marginBottom: 6 }}>Add a Catalog</div>
-      <div style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 12 }}>All the products of the Catalog become lines, each with the Harga Beli as Modal Produk and the Harga Jual saved in that Catalog. Products already on a line for the same store are skipped.</div>
+      <div style={{ fontSize: 18, fontWeight: 800, color: "#fff", marginBottom: 6 }}>Create New SRP</div>
+      <div style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 12 }}>Pick the Catalog this SRP is made from. All its products become lines, each with the Harga Beli as Modal Produk and the Harga Jual saved in that Catalog.</div>
       {logs === null ? <div style={{ color: "var(--muted)", padding: 20 }}>Loading…</div> : (
         <div className="tbl-wrap" style={{ maxHeight: "40vh" }}>
           <table className="tbl">
@@ -600,7 +700,7 @@ function CatalogPicker({ supabase, clientId, stores, vendorNames, busy, onClose,
         <button className="btn-ghost" onClick={onClose}>Cancel</button>
         <button className="btn-gold" disabled={!chosen || busy} style={{ padding: "10px 24px" }}
           onClick={async () => { setErr(""); const m = await onAdd(pick, store); if (m) setErr(m); }}>
-          {busy ? "Adding…" : chosen ? `Add ${chosen.srp_no} (${chosen.total_sku} products)` : "Add"}
+          {busy ? "Creating…" : chosen ? `Create SRP from ${chosen.srp_no} (${chosen.total_sku} products)` : "Create"}
         </button>
       </div>
     </Modal>
