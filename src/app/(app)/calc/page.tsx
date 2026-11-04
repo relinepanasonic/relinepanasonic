@@ -77,6 +77,16 @@ function resolveFee(sel: FeeSel, fees: Fee[]): Fee | null {
     && (f.jenis_toko ?? "") === sel.jenis_toko) ?? null;
 }
 
+// The fee row a line gets when only some of the five fee values are chosen: the chosen ones replace the line's own, the rest stay as they are.
+// null = no fee row matches that combination (the line keeps its fee row).
+function feeRowFor(line: CalcRow, fees: Fee[], choice: FeeSel | null): Fee | null | undefined {
+  if (!choice) return undefined;
+  const base = selFromFee(line.fee_id ? fees.find((f) => f.id === line.fee_id) ?? null : null);
+  const merged = { ...base };
+  for (const k of FEE_FIELDS) if (choice[k]) merged[k] = choice[k];
+  return resolveFee(merged, fees);
+}
+
 function formatRp(n: number): string { return Math.round(n || 0).toLocaleString("id-ID"); }
 function parseRp(s: string): number { return Number(s.replace(/[^\d-]/g, "")) || 0; }
 
@@ -403,42 +413,59 @@ export default function MassiveCalculatorPage() {
     } finally { setBusy(false); }
   }
 
-  // Edit selected: the same values on every ticked line (a field left on "keep" is not touched)
-  async function massEdit(patch: Partial<CalcRow>): Promise<string> {
+  // Edit selected: the same values on every ticked line. The fee values picked are changed on each line on its own (the line keeps the ones not picked).
+  async function massEdit(patch: Partial<CalcRow>, choice: FeeSel | null): Promise<string> {
     if (!srp || !selectedRows.length) return "";
     if (dirtyCount && !confirm(`${dirtyCount} line${dirtyCount === 1 ? " has" : "s have"} changes that are not saved. The mass edit replaces them. Continue?`)) return "cancel";
     setBusy(true);
     try {
-      const ids = selectedRows.map((r) => r.id);
-      for (let i = 0; i < ids.length; i += 100) {
-        const { error } = await supabase.from("massive_calc_rows").update(patch).in("id", ids.slice(i, i + 100));
-        if (error) return error.message;
+      const groups = new Map<string, string[]>();   // fee row id ("" = none) -> the lines that take it
+      let unlinked = 0;
+      for (const r of selectedRows) {
+        let feeId: string | null = r.fee_id;
+        const hit = feeRowFor(r, fees, choice);
+        if (hit !== undefined) { if (hit) feeId = hit.id; else unlinked++; }
+        const key = feeId ?? "";
+        groups.set(key, [...(groups.get(key) ?? []), r.id]);
+      }
+      for (const [key, ids] of groups) {
+        const p: Partial<CalcRow> = choice ? { ...patch, fee_id: key || null } : patch;
+        for (let i = 0; i < ids.length; i += 100) {
+          const { error } = await supabase.from("massive_calc_rows").update(p).in("id", ids.slice(i, i + 100));
+          if (error) return error.message;
+        }
       }
       pending.current.clear(); setDirtyCount(0);
       await reloadRows(srp.id); setRev((n) => n + 1);
       setMassOpen(null);
-      setMsg({ ok: true, text: `${ids.length} line${ids.length === 1 ? "" : "s"} edited. Press Save when you are done.` });
+      const n = selectedRows.length;
+      setMsg({ ok: true, text: `${n} line${n === 1 ? "" : "s"} edited.${unlinked ? ` ${unlinked} line${unlinked === 1 ? " has" : "s have"} no fee row for the new combination: their fee row is unchanged.` : ""} Press Save when you are done.` });
       return "";
     } finally { setBusy(false); }
   }
 
   // Duplicate selected: a copy of every ticked line in this SRP; the copies can take another fee row (for example the same product on another platform)
-  async function massDuplicate(feeId: string | null): Promise<string> {
+  async function massDuplicate(choice: FeeSel | null): Promise<string> {
     if (!srp || !selectedRows.length) return "";
     setBusy(true);
     try {
-      const copies = selectedRows.map((r) => ({
+      let unlinked = 0;
+      const copies = selectedRows.map((r) => {
+        const hit = feeRowFor(r, fees, choice);
+        if (hit === null) unlinked++;
+        return {
         client_id: clientId, srp_id: srp.id, prod_id: r.prod_id, item_product: r.item_product, product_line: r.product_line,
-        modal_produk_rp: r.modal_produk_rp, harga_jual_rp: r.harga_jual_rp, fee_id: feeId ?? r.fee_id, target_roas: r.target_roas, berat_kg: r.berat_kg, ukuran_cm3: r.ukuran_cm3,
+        modal_produk_rp: r.modal_produk_rp, harga_jual_rp: r.harga_jual_rp, fee_id: hit ? hit.id : r.fee_id, target_roas: r.target_roas, berat_kg: r.berat_kg, ukuran_cm3: r.ukuran_cm3,
         gratis_ongkir_on: r.gratis_ongkir_on, promo_xtra_on: r.promo_xtra_on, paylater_3mo_on: r.paylater_3mo_on, paylater_6mo_on: r.paylater_6mo_on, biaya_lain_rp: r.biaya_lain_rp,
-      }));
+        };
+      });
       for (let i = 0; i < copies.length; i += 100) {
         const { error } = await supabase.from("massive_calc_rows").insert(copies.slice(i, i + 100));
         if (error) return error.message;
       }
       await reloadRows(srp.id);
       setMassOpen(null); setSelected(new Set());
-      setMsg({ ok: true, text: `${copies.length} line${copies.length === 1 ? "" : "s"} duplicated.` });
+      setMsg({ ok: true, text: `${copies.length} line${copies.length === 1 ? "" : "s"} duplicated.${unlinked ? ` ${unlinked} cop${unlinked === 1 ? "y has" : "ies have"} no fee row for the new combination: they keep the fee row of the line.` : ""}` });
       return "";
     } finally { setBusy(false); }
   }
@@ -895,13 +922,13 @@ function CatalogPicker({ supabase, clientId, busy, onClose, onAdd }: {
 const FEE_LABEL: Record<keyof FeeSel, string> = { category: "Category", sub_category: "Sub Category", jenis_product: "Jenis Product", platform: "Platform", jenis_toko: "Jenis Toko" };
 
 // the five fee values, narrowing each other (like the dropdowns of a line); "blank" is what an untouched one reads
-function FeePicker({ fees, value, onChange, blank }: { fees: Fee[]; value: FeeSel; onChange: (v: FeeSel) => void; blank: string }) {
+function FeePicker({ fees, value, onChange, blank, free }: { fees: Fee[]; value: FeeSel; onChange: (v: FeeSel) => void; blank: string; free?: boolean }) {
   const order: (keyof FeeSel)[] = ["platform", "jenis_toko", "category", "sub_category", "jenis_product"];   // the marketplace first, then the product category
   return (
     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
       {order.map((field) => (
         <div className="fld" key={field} style={field === "jenis_product" ? { gridColumn: "1 / -1" } : undefined}><label>{FEE_LABEL[field]}</label>
-          <select value={value[field]} onChange={(e) => onChange(refineSel({ ...value, [field]: e.target.value }, fees))}>
+          <select value={value[field]} onChange={(e) => onChange(free ? { ...value, [field]: e.target.value } : refineSel({ ...value, [field]: e.target.value }, fees))}>
             <option value="">{blank}</option>
             {optionsFor(field, value, fees).map((o) => <option key={o} value={o}>{o}</option>)}
           </select></div>
@@ -916,19 +943,16 @@ const triSelect = (label: string, v: Tri, set: (x: Tri) => void) => (
     <select value={v} onChange={(e) => set(e.target.value as Tri)}><option value="">— keep —</option><option value="Yes">Yes</option><option value="No">No</option></select></div>
 );
 
-function MassEditModal({ fees, count, busy, onClose, onApply }: { fees: Fee[]; count: number; busy: boolean; onClose: () => void; onApply: (patch: Partial<CalcRow>) => Promise<string> }) {
+function MassEditModal({ fees, count, busy, onClose, onApply }: { fees: Fee[]; count: number; busy: boolean; onClose: () => void; onApply: (patch: Partial<CalcRow>, choice: FeeSel | null) => Promise<string> }) {
   const [sel, setSel] = useState<FeeSel>(emptySel);
   const [f, setF] = useState({ product_line: "", target_roas: "", berat_kg: "", ukuran_cm3: "", biaya_lain_rp: "", modal_produk_rp: "", harga_jual_rp: "" });
   const [t, setT] = useState<{ ongkir: Tri; promo: Tri; p3: Tri; p6: Tri }>({ ongkir: "", promo: "", p3: "", p6: "" });
   const [err, setErr] = useState("");
-  const anyFee = FEE_FIELDS.some((k) => sel[k]);
-  const feeRow = anyFee ? resolveFee(sel, fees) : null;
+  const choice = FEE_FIELDS.some((k) => sel[k]) ? sel : null;
   const num = (x: string) => (x.trim() === "" ? undefined : parseRp(x));
   async function apply() {
     setErr("");
-    if (anyFee && !feeRow) { setErr("Pick all five fee values (Category … Jenis Toko) to link the lines to a fee row, or clear them."); return; }
     const patch: Partial<CalcRow> = {};
-    if (feeRow) patch.fee_id = feeRow.id;
     if (f.product_line.trim()) patch.product_line = f.product_line.trim();
     const n = (k: "target_roas" | "berat_kg" | "ukuran_cm3") => { const v = f[k].trim() === "" ? undefined : Number(f[k].replace(",", ".")); if (v !== undefined && Number.isFinite(v)) patch[k] = v; };
     n("target_roas"); n("berat_kg"); n("ukuran_cm3");
@@ -938,8 +962,8 @@ function MassEditModal({ fees, count, busy, onClose, onApply }: { fees: Fee[]; c
     if (t.promo) patch.promo_xtra_on = t.promo === "Yes";
     if (t.p3) patch.paylater_3mo_on = t.p3 === "Yes";
     if (t.p6) patch.paylater_6mo_on = t.p6 === "Yes";
-    if (!Object.keys(patch).length) { setErr("Nothing to change: fill at least one field."); return; }
-    const m = await onApply(patch);
+    if (!Object.keys(patch).length && !choice) { setErr("Nothing to change: fill at least one field."); return; }
+    const m = await onApply(patch, choice);
     if (m && m !== "cancel") setErr(m);
   }
   const inp = (k: keyof typeof f, label: string, ph = "") => (
@@ -950,7 +974,8 @@ function MassEditModal({ fees, count, busy, onClose, onApply }: { fees: Fee[]; c
       <div style={{ fontSize: 18, fontWeight: 800, color: "#fff", marginBottom: 4 }}>Edit {count} selected line{count === 1 ? "" : "s"}</div>
       <div style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 12 }}>The same change on every ticked line. A field left on <b>keep</b> / empty is not touched.</div>
       <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 6 }}>Marketplace fee row</div>
-      <FeePicker fees={fees} value={sel} onChange={setSel} blank="— keep —" />
+      <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 8 }}>Pick only what changes (for example just the Platform). Each line keeps its other fee values, and gets the fee row that matches the result.</div>
+      <FeePicker fees={fees} value={sel} onChange={setSel} blank="— keep —" free />
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginTop: 14 }}>
         {inp("modal_produk_rp", "Modal Produk (Rp)")}{inp("harga_jual_rp", "Harga Jual (Rp)")}{inp("target_roas", "Target ROAS")}{inp("product_line", "Product Line")}
         {inp("berat_kg", "Berat (kg)")}{inp("ukuran_cm3", "Uk PxLxT (cm³)")}{inp("biaya_lain_rp", "Biaya Lain (Rp)")}<div />
@@ -966,22 +991,19 @@ function MassEditModal({ fees, count, busy, onClose, onApply }: { fees: Fee[]; c
   );
 }
 
-function MassDuplicateModal({ fees, count, busy, onClose, onApply }: { fees: Fee[]; count: number; busy: boolean; onClose: () => void; onApply: (feeId: string | null) => Promise<string> }) {
+function MassDuplicateModal({ fees, count, busy, onClose, onApply }: { fees: Fee[]; count: number; busy: boolean; onClose: () => void; onApply: (choice: FeeSel | null) => Promise<string> }) {
   const [sel, setSel] = useState<FeeSel>(emptySel);
   const [err, setErr] = useState("");
-  const anyFee = FEE_FIELDS.some((k) => sel[k]);
-  const feeRow = anyFee ? resolveFee(sel, fees) : null;
   async function apply() {
     setErr("");
-    if (anyFee && !feeRow) { setErr("Pick all five fee values to give the copies another fee row, or clear them to keep the fee row of each line."); return; }
-    const m = await onApply(feeRow?.id ?? null);
+    const m = await onApply(FEE_FIELDS.some((k) => sel[k]) ? sel : null);
     if (m) setErr(m);
   }
   return (
     <Modal onClose={onClose} width={680}>
       <div style={{ fontSize: 18, fontWeight: 800, color: "#fff", marginBottom: 4 }}>Duplicate {count} selected line{count === 1 ? "" : "s"}</div>
-      <div style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 12 }}>Each ticked line is copied with all its values. To make the copies for another marketplace, pick that fee row here (for example Tiktok Tokped / Tiktok Mall); leave it empty to keep the fee row of each line.</div>
-      <FeePicker fees={fees} value={sel} onChange={setSel} blank="— same as the line —" />
+      <div style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 12 }}>Each ticked line is copied with all its values. To make the copies for another marketplace, pick only what changes (for example the Platform and Jenis Toko of Tiktok); each copy keeps its other fee values and gets the matching fee row.</div>
+      <FeePicker fees={fees} value={sel} onChange={setSel} blank="— same as the line —" free />
       {err && <div style={{ color: "#f87171", fontSize: 13, marginTop: 10 }}>✗ {err}</div>}
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 16 }}>
         <button className="btn-ghost" onClick={onClose}>Cancel</button>
