@@ -217,6 +217,7 @@ export default function MarketFeePage() {
       <div style={{ display: "flex", gap: 8, marginBottom: 18 }}>
         <Link href="/calc" className="mode-tab">Perhitungan Harga</Link>
         <Link href="/calc/price-research" className="mode-tab">Price Research</Link>
+        <Link href="/calc/product-catalog" className="mode-tab">Product Catalog</Link>
         <span className="mode-tab on">Marketplace Fee</span>
       </div>
 
