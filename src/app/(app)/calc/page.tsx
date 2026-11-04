@@ -14,7 +14,7 @@ type Fee = {
   min_gratis_ongkir_biasa_pct: number; max_gratis_ongkir_biasa_rp: number;
   min_gratis_ongkir_khusus_pct: number; max_gratis_ongkir_khusus_rp: number;
   min_promo_xtra_pct: number; max_promo_xtra_rp: number;
-  spaylater_xtra_3mo_pct: number; spaylater_xtra_6mo_pct: number;
+  spaylater_xtra_3mo_pct: number; spaylater_xtra_6mo_pct: number; pajak_pct: number;
 };
 
 type CalcRow = {
@@ -110,17 +110,20 @@ function computeCalc(input: {
   const paylater3moRp = input.paylater3moOn ? ((fee?.spaylater_xtra_3mo_pct ?? 0) / 100) * hargaJual : 0;
   const paylater6moRp = input.paylater6moOn ? ((fee?.spaylater_xtra_6mo_pct ?? 0) / 100) * hargaJual : 0;
 
+  // Pajak: a percent of the selling price (0.50% on the marketplace fee sheet)
+  const pajakRp = ((fee?.pajak_pct ?? 0) / 100) * hargaJual;
+
   const biayaAds = input.targetRoas > 0 ? hargaJual / input.targetRoas : 0;
   const pctAds = hargaJual > 0 ? (biayaAds / hargaJual) * 100 : 0;
 
   const totalBiaya = platformFeeRp + biayaProsesRp + biayaLayananRp + biayaOngkir
-    + promoXtraRp + paylater3moRp + paylater6moRp + biayaAds + input.biayaLain;
+    + promoXtraRp + paylater3moRp + paylater6moRp + pajakRp + biayaAds + input.biayaLain;
   const profit = hargaJual - input.modalProduk - totalBiaya;
   const hargaMarkupPct = input.modalProduk > 0 ? (hargaJual / input.modalProduk - 1) * 100 : null;
   const marginPct = hargaJual > 0 ? (profit / hargaJual) * 100 : null;
 
   return { platformFeeRp, biayaProsesRp, biayaLayananRp, isKhusus, biayaOngkir, promoXtraRp,
-    paylater3moRp, paylater6moRp, biayaAds, pctAds, totalBiaya, profit, hargaMarkupPct, marginPct };
+    paylater3moRp, paylater6moRp, pajakRp, biayaAds, pctAds, totalBiaya, profit, hargaMarkupPct, marginPct };
 }
 
 async function fetchAll<T>(supabase: ReturnType<typeof createClient>, table: string, clientId: string, order: string, srpId?: string, listId?: string): Promise<T[]> {
@@ -405,6 +408,8 @@ export default function MassiveCalculatorPage() {
                   <th className="num" style={stickyTh}>Paylater 3mo Rp</th>
                   <th style={stickyTh}>Paylater 6 Bln</th>
                   <th className="num" style={stickyTh}>Paylater 6mo Rp</th>
+                  <th className="num" style={stickyTh}>Pajak %</th>
+                  <th className="num" style={stickyTh}>Pajak Rp</th>
                   <th className="num" style={stickyTh}>Biaya Lain</th>
                   <th className="num" style={stickyTh}>Nett Profit</th>
                   <th style={stickyTh}></th>
@@ -417,10 +422,10 @@ export default function MassiveCalculatorPage() {
                     onSave={saveRow} onDelete={deleteRow} onPending={onPending} />
                 ))}
                 {!loading && rows.length === 0 && (
-                  <tr><td colSpan={40} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>This SRP has no lines.</td></tr>
+                  <tr><td colSpan={42} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>This SRP has no lines.</td></tr>
                 )}
                 {loading && (
-                  <tr><td colSpan={40} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>Loading…</td></tr>
+                  <tr><td colSpan={42} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>Loading…</td></tr>
                 )}
               </tbody>
             </table>
@@ -615,6 +620,8 @@ function CalcRowLine({ no, row, fee, fees, catalog, lowest, onSave, onDelete, on
       <td className="num calc-ro">Rp {formatRp(calc.paylater3moRp)}</td>
       <td style={{ textAlign: "center" }}>{yesNo(v.paylater_6mo_on, (val) => setV((s) => ({ ...s, paylater_6mo_on: val })))}</td>
       <td className="num calc-ro">Rp {formatRp(calc.paylater6moRp)}</td>
+      <td className="num calc-ro">{fee ? `${fee.pajak_pct ?? 0}%` : "—"}</td>
+      <td className="num calc-ro">Rp {formatRp(calc.pajakRp)}</td>
       <td className="num">Rp {txt(v.biaya_lain_rp, (s) => setV((st) => ({ ...st, biaya_lain_rp: formatRp(parseRp(s)) })), 80)}</td>
       <td className="num" style={{ fontWeight: 700, color: calc.profit >= 0 ? "#4ade80" : "#ff9a9a" }}>
         Rp {formatRp(calc.profit)}<div style={{ fontSize: 11, fontWeight: 400 }}>{calc.marginPct === null ? "—" : `${calc.marginPct.toFixed(1)}%`}</div>

@@ -29,6 +29,7 @@ const HEADER_MAP: { header: string; field: string; kind: "text" | "pct" | "rp" }
   { header: "Max Promo Xtra", field: "max_promo_xtra_rp", kind: "rp" },   // Rp cap, not a percent
   { header: "Spay Later Xtra 3 mo", field: "spaylater_xtra_3mo_pct", kind: "pct" },
   { header: "Spay Later Xtra 6 mo", field: "spaylater_xtra_6mo_pct", kind: "pct" },
+  { header: "Pajak", field: "pajak_pct", kind: "pct" },
 ];
 
 // CSV cells that LOOK like a percent/currency get auto-parsed by SheetJS
