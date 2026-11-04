@@ -72,6 +72,7 @@ export async function POST(req: NextRequest) {
   const form = await req.formData();
   const file = form.get("file") as File | null;
   if (!file) return NextResponse.json({ error: "NO_FILE" }, { status: 400 });
+  const activeFrom = String(form.get("active_from") || "").trim() || null;
 
   const admin = createAdminClient(await currentSchema());
   const { data: cs } = await admin.from("clients").select("id").order("created_at").limit(1);
@@ -91,48 +92,39 @@ export async function POST(req: NextRequest) {
   const editedBy = profile.display_name || profile.email?.split("@")[0] || "Admin";
   const editedMonth = `${MONTH_LIST[new Date().getMonth()]} ${new Date().getFullYear()}`;
 
-  // Text fields normalize blank -> "" (not null). The upsert below matches
-  // existing rows via ON CONFLICT on (category, sub_category, jenis_product,
-  // platform, jenis_toko) -- Postgres treats every NULL as distinct from
-  // every other NULL, so a blank sub_category/jenis_product/jenis_toko would
-  // never match an existing blank row on conflict and would silently INSERT
-  // a duplicate instead of overwriting it. "" is a real, comparable value,
-  // so re-importing the same sheet always updates the same rows in place.
-  const mapped = matrix.slice(headerIdx + 1)
-    .filter((r) => String(r[colIdx("Category")] ?? "").trim())
-    .map((r) => {
-      const row: Record<string, unknown> = { client_id: clientId, updated_by: editedBy, updated_month: editedMonth };
-      for (const h of HEADER_MAP) {
-        const idx = colIdx(h.header);
-        const raw = idx === -1 ? "" : r[idx];
-        if (h.kind === "text") row[h.field] = String(raw ?? "").trim();
-        else if (h.kind === "pct") row[h.field] = parsePct(raw);
-        else row[h.field] = parseRp(raw);
-      }
-      if (!row.platform) row.platform = "Shopee";
-      return row;
-    });
-
+  // Text fields normalize blank -> "". A row with the same key twice in the file keeps the last one (the version allows one row per key).
+  const byKey = new Map<string, Record<string, unknown>>();
+  for (const r of matrix.slice(headerIdx + 1)) {
+    if (!String(r[colIdx("Category")] ?? "").trim()) continue;
+    const row: Record<string, unknown> = { client_id: clientId, updated_by: editedBy, updated_month: editedMonth };
+    for (const h of HEADER_MAP) {
+      const idx = colIdx(h.header);
+      const raw = idx === -1 ? "" : r[idx];
+      if (h.kind === "text") row[h.field] = String(raw ?? "").trim();
+      else if (h.kind === "pct") row[h.field] = Math.round(parsePct(raw) * 1e4) / 1e4;
+      else row[h.field] = parseRp(raw);
+    }
+    if (!row.platform) row.platform = "Shopee";
+    byKey.set(["category", "sub_category", "jenis_product", "platform", "jenis_toko"].map((k) => row[k]).join(""), row);
+  }
+  const mapped = [...byKey.values()];
   if (!mapped.length) return NextResponse.json({ error: "No data rows found under the header" }, { status: 400 });
 
-  const numericFields = HEADER_MAP.filter((h) => h.kind !== "text").map((h) => h.field);
+  // a new Marketplace Fee version (Fee ID automatic) holding exactly the rows of the file
+  const { data: listId, error: e0 } = await admin.rpc("market_fee_list_create", { p_client_id: clientId, p_active_from: activeFrom, p_copy: false });
+  if (e0 || !listId) return NextResponse.json({ error: e0?.message || "Could not create the version" }, { status: 500 });
   const CHUNK = 500;
   let imported = 0;
   for (let i = 0; i < mapped.length; i += CHUNK) {
-    const slice = mapped.slice(i, i + CHUNK);
-    const { data: upserted, error } = await admin.from("market_fees").upsert(slice, {
-      onConflict: "client_id,category,sub_category,jenis_product,platform,jenis_toko",
-    }).select("id, " + numericFields.join(", "));
-    if (error) return NextResponse.json({ error: error.message, imported }, { status: 500 });
+    const slice = mapped.slice(i, i + CHUNK).map((r) => ({ ...r, list_id: listId }));
+    const { error } = await admin.from("market_fees").insert(slice);
+    if (error) {
+      await admin.from("market_fee_lists").delete().eq("id", listId);   // nothing half-imported is left behind
+      return NextResponse.json({ error: error.message, imported: 0 }, { status: 500 });
+    }
     imported += slice.length;
-
-    const logs = ((upserted || []) as unknown as Record<string, unknown>[]).map((row) => {
-      const entry: Record<string, unknown> = { fee_id: row.id, edited_by: editedBy, edited_month: editedMonth };
-      for (const f of numericFields) entry[f] = row[f];
-      return entry;
-    });
-    if (logs.length) await admin.from("market_fee_edits").insert(logs);
   }
+  await admin.from("market_fee_lists").update({ created_by: editedBy }).eq("id", listId);
 
-  return NextResponse.json({ ok: true, imported });
+  return NextResponse.json({ ok: true, imported, list_id: listId });
 }

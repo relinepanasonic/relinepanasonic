@@ -51,12 +51,12 @@ function currentMonthLabel(): string {
   return `${MONTH_LIST[d.getMonth()]} ${d.getFullYear()}`;
 }
 
-async function fetchAllFees(supabase: ReturnType<typeof createClient>, clientId: string): Promise<Fee[]> {
+async function fetchAllFees(supabase: ReturnType<typeof createClient>, listId: string): Promise<Fee[]> {
   const PAGE = 1000;
   let from = 0;
   let all: Fee[] = [];
   for (;;) {
-    const { data, error } = await supabase.from("market_fees").select("*").eq("client_id", clientId)
+    const { data, error } = await supabase.from("market_fees").select("*").eq("list_id", listId)
       .order("category").order("sub_category").range(from, from + PAGE - 1);
     if (error || !data || !data.length) break;
     all = all.concat(data as Fee[]);
@@ -66,25 +66,33 @@ async function fetchAllFees(supabase: ReturnType<typeof createClient>, clientId:
   return all;
 }
 
+type Supabase = ReturnType<typeof createClient>;
+type FeeLog = { id: string; fee_no: string; created_at: string; active_from: string; created_by: string | null; total_rows: number; in_force: boolean };
+
+const MON = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"];
+function dmy(v: string | null | undefined): string {
+  if (!v) return "—";
+  const d = new Date(v); if (Number.isNaN(d.getTime())) return "—";
+  const j = new Date(d.getTime() + 7 * 3600_000);
+  return `${String(j.getUTCDate()).padStart(2, "0")} ${MON[j.getUTCMonth()]} ${j.getUTCFullYear()}`;
+}
+const todayStr = () => new Date().toISOString().slice(0, 10);
+
+// Marketplace Fee: the log of versions first (Fee ID | Date Create | Date Active | Total rows | Created by | In force), then the fees of one version.
 export default function MarketFeePage() {
   const [supabase] = useState(() => createClient());
   const [clientId, setClientId] = useState("");
   const [canEdit, setCanEdit] = useState(false);
   const [myName, setMyName] = useState("");
-  const [rows, setRows] = useState<Fee[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState("");
-  const [platformFilter, setPlatformFilter] = useState("");
-  const [historyFor, setHistoryFor] = useState<Fee | null>(null);
-  const [showAdd, setShowAdd] = useState(false);
-  const [uploading, setUploading] = useState(false);
-  const [uploadMsg, setUploadMsg] = useState("");
+  const [log, setLog] = useState<FeeLog[] | null>(null);
+  const [open, setOpen] = useState<FeeLog | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [nowMs] = useState(() => Date.now());
 
-  const reload = useCallback(async (cid: string) => {
-    if (!cid) { setRows([]); setLoading(false); return; }
-    setLoading(true);
-    setRows(await fetchAllFees(supabase, cid));
-    setLoading(false);
+  const loadLog = useCallback(async (cid: string) => {
+    const { data } = await supabase.rpc("market_fee_lists_log", { p_client_id: cid });
+    setLog((data as FeeLog[]) || []);
   }, [supabase]);
 
   useEffect(() => {
@@ -95,13 +103,146 @@ export default function MarketFeePage() {
       const role = profile?.role;
       setCanEdit(role === "superadmin" || role === "client_admin");
       setMyName(profile?.display_name || profile?.email?.split("@")[0] || "Admin");
-
       const { data: cs } = await supabase.from("clients").select("id").order("created_at").limit(1);
       const cid = profile?.client_id || (cs as { id: string }[])?.[0]?.id || "";
       setClientId(cid);
-      reload(cid);
+      if (cid) loadLog(cid); else setLog([]);
     })();
-  }, [supabase, reload]);
+  }, [supabase, loadLog]);
+
+  return (
+    <>
+      <style>{`
+        .mode-tab{padding:7px 16px;border-radius:9px;border:1px solid var(--card-border);background:var(--glass);
+          color:var(--text-2);font-weight:700;font-size:13px;cursor:pointer;text-decoration:none;display:inline-block}
+        .mode-tab.on{background:linear-gradient(135deg,var(--gold),var(--gold-soft));color:var(--navy-deep);border-color:transparent}
+      `}</style>
+      <div style={{ display: "flex", gap: 8, marginBottom: 18 }}>
+        <Link href="/calc" className="mode-tab">Perhitungan Harga</Link>
+        <Link href="/calc/price-research" className="mode-tab">Price Research</Link>
+        <Link href="/calc/product-catalog" className="mode-tab">Product Catalog</Link>
+        <span className="mode-tab on">Marketplace Fee</span>
+      </div>
+
+      {open ? (
+        <FeeListView supabase={supabase} clientId={clientId} canEdit={canEdit} myName={myName} head={open}
+          onBack={() => { setOpen(null); loadLog(clientId); }} onDeleted={(no) => { setOpen(null); setMsg({ ok: true, text: `${no} deleted.` }); loadLog(clientId); }} />
+      ) : (
+        <div className="panel">
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10, marginBottom: 12 }}>
+            <div>
+              <h3 style={{ margin: 0 }}>Market Place Fee</h3>
+              <div className="hint">Every row is a version of the marketplace fees. The version in force is the one with the latest Date Active up to today; the Perhitungan Harga page uses it. Press <b>New Marketplace Fee</b> when the marketplace changes its fees.</div>
+            </div>
+            {canEdit && <button className="btn-gold" disabled={!clientId} onClick={() => setCreating(true)}>+ New Marketplace Fee</button>}
+          </div>
+          {msg && <div style={{ color: msg.ok ? "var(--gold)" : "#f87171", fontSize: 13, marginBottom: 10 }}>{msg.ok ? "✓" : "✗"} {msg.text}</div>}
+          {log === null ? <div style={{ color: "var(--muted)", padding: 20 }}>Loading…</div> : (
+            <div className="tbl-wrap" style={{ maxHeight: "66vh" }}>
+              <table className="tbl day-tbl">
+                <thead><tr><th>Fee ID</th><th>Date Create</th><th>Date Active</th><th className="num">Total Rows</th><th>Created by</th><th></th></tr></thead>
+                <tbody>
+                  {log.map((r) => (
+                    <tr key={r.id} onClick={() => { setMsg(null); setOpen(r); }} style={{ cursor: "pointer" }}>
+                      <td style={{ fontFamily: "monospace", fontWeight: 700 }}>{r.fee_no}</td>
+                      <td>{dmy(r.created_at)}</td>
+                      <td>{dmy(r.active_from + "T00:00:00+07:00")}</td>
+                      <td className="num" style={{ fontWeight: 700 }}>{r.total_rows.toLocaleString("id-ID")}</td>
+                      <td>{r.created_by || "—"}</td>
+                      <td>{r.in_force ? <span style={{ padding: "2px 10px", borderRadius: 999, fontSize: 11.5, fontWeight: 800, border: "1px solid rgba(201,162,39,.5)", color: "var(--gold)" }}>In force</span>
+                        : new Date(r.active_from + "T00:00:00+07:00").getTime() > nowMs ? <span style={{ color: "var(--muted)", fontSize: 12 }}>Scheduled</span> : <span style={{ color: "var(--muted)", fontSize: 12 }}>Replaced</span>}</td>
+                    </tr>
+                  ))}
+                  {log.length === 0 && <tr><td colSpan={6} style={{ textAlign: "center", color: "var(--muted)", padding: 24 }}>No Marketplace Fee yet — press + New Marketplace Fee and upload the CSV.</td></tr>}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+      {creating && <NewFeeModal supabase={supabase} clientId={clientId} hasCurrent={!!log?.length} onClose={(r) => { setCreating(false); if (r) { setMsg({ ok: true, text: r }); loadLog(clientId); } }} />}
+    </>
+  );
+}
+
+// + New Marketplace Fee: a copy of the version in force, or the rows of an uploaded CSV
+function NewFeeModal({ supabase, clientId, hasCurrent, onClose }: { supabase: Supabase; clientId: string; hasCurrent: boolean; onClose: (done: string | null) => void }) {
+  const [active, setActive] = useState(todayStr());
+  const [how, setHow] = useState<"csv" | "copy">("csv");
+  const [file, setFile] = useState<File | null>(null);
+  const [err, setErr] = useState("");
+  const [saving, setSaving] = useState(false);
+  async function create() {
+    setErr(""); setSaving(true);
+    try {
+      if (how === "copy") {
+        const { error } = await supabase.rpc("market_fee_list_create", { p_client_id: clientId, p_active_from: active || null, p_copy: true });
+        if (error) { setErr(error.message.replace(/^[A-Z_]+:\s*/, "")); return; }
+        onClose("New Marketplace Fee created as a copy of the one in force.");
+      } else {
+        if (!file) { setErr("Choose the CSV file."); return; }
+        const { data: { session } } = await supabase.auth.getSession();
+        const fd = new FormData(); fd.append("file", file); fd.append("active_from", active);
+        const res = await fetch("/api/marketfee/import", { method: "POST", headers: { Authorization: `Bearer ${session?.access_token ?? ""}` }, body: fd });
+        const j = await res.json().catch(() => ({}));
+        if (!res.ok) { setErr(j.error || `Upload failed (${res.status})`); return; }
+        onClose(`New Marketplace Fee created: ${Number(j.imported).toLocaleString("id-ID")} rows from ${file.name}.`);
+      }
+    } finally { setSaving(false); }
+  }
+  return (
+    <div style={overlay} onClick={() => onClose(null)}>
+      <div style={{ ...dialog, width: "min(96vw,520px)" }} onClick={(e) => e.stopPropagation()}>
+        <h3 style={{ margin: "0 0 6px" }}>New Marketplace Fee</h3>
+        <div style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 14 }}>The Fee ID is given automatically (FEE-YYMM-NNN).</div>
+        <div className="fld" style={{ maxWidth: 220 }}><label>Date Active</label><input type="date" value={active} onChange={(e) => setActive(e.target.value)} style={{ colorScheme: "dark" }} /></div>
+        <div style={{ display: "grid", gap: 8, marginTop: 14, fontSize: 13.5 }}>
+          <label style={{ display: "flex", gap: 8, alignItems: "center", cursor: "pointer" }}><input type="radio" checked={how === "csv"} onChange={() => setHow("csv")} /> Upload the CSV of the marketplace</label>
+          {how === "csv" && <input type="file" accept=".csv,.xlsx,.xls" onChange={(e) => setFile(e.target.files?.[0] || null)} style={{ marginLeft: 24 }} />}
+          {hasCurrent && <label style={{ display: "flex", gap: 8, alignItems: "center", cursor: "pointer" }}><input type="radio" checked={how === "copy"} onChange={() => setHow("copy")} /> Start as a copy of the one in force (then edit the numbers)</label>}
+        </div>
+        {err && <div style={{ color: "#f87171", fontSize: 13, marginTop: 10 }}>✗ {err}</div>}
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 18 }}>
+          <button className="btn-ghost" onClick={() => onClose(null)}>Cancel</button>
+          <button className="btn-gold" disabled={saving} onClick={create} style={{ padding: "10px 24px" }}>{saving ? "Creating…" : "Create"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// The fees of ONE version
+function FeeListView({ supabase, clientId, canEdit, myName, head, onBack, onDeleted }: {
+  supabase: Supabase; clientId: string; canEdit: boolean; myName: string; head: FeeLog; onBack: () => void; onDeleted: (feeNo: string) => void;
+}) {
+  const listId = head.id;
+  const [rows, setRows] = useState<Fee[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+  const [platformFilter, setPlatformFilter] = useState("");
+  const [historyFor, setHistoryFor] = useState<Fee | null>(null);
+  const [showAdd, setShowAdd] = useState(false);
+  const [activeEdit, setActiveEdit] = useState(head.active_from);
+  const [note, setNote] = useState("");
+
+  const reload = useCallback(async () => {
+    setLoading(true);
+    setRows(await fetchAllFees(supabase, listId));
+    setLoading(false);
+  }, [supabase, listId]);
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => { reload(); }, [reload]);
+
+  async function saveActive() {
+    const { error } = await supabase.from("market_fee_lists").update({ active_from: activeEdit }).eq("id", listId);
+    setNote(error ? error.message : "Date Active saved.");
+  }
+  async function delVersion() {
+    if (!window.confirm(`Delete ${head.fee_no} with all its ${rows.length.toLocaleString("id-ID")} fees? The Perhitungan Harga page goes back to the version in force before it.`)) return;
+    const { error } = await supabase.from("market_fee_lists").delete().eq("id", listId);
+    if (error) { setNote(error.message); return; }
+    onDeleted(head.fee_no);
+  }
 
   async function saveFee(fee: Fee, patch: Record<NumericField, number>) {
     const month = currentMonthLabel();
@@ -113,12 +254,13 @@ export default function MarketFeePage() {
     const logEntry: Record<string, unknown> = { fee_id: fee.id, edited_by: myName, edited_month: month, ...patch };
     await supabase.from("market_fee_edits").insert(logEntry);
 
-    reload(clientId);
+    reload();
   }
 
   async function addFee(row: Omit<Fee, "id" | "updated_by" | "updated_month">) {
     const { error } = await supabase.from("market_fees").insert({
       client_id: clientId,
+      list_id: listId,
       ...row,
       sub_category: row.sub_category?.trim() || null,
       jenis_product: row.jenis_product?.trim() || null,
@@ -127,34 +269,13 @@ export default function MarketFeePage() {
     });
     if (error) { alert(error.message); return; }
     setShowAdd(false);
-    reload(clientId);
+    reload();
   }
 
   async function delFee(id: string) {
     if (!confirm("Delete this fee entry?")) return;
     await supabase.from("market_fees").delete().eq("id", id);
-    reload(clientId);
-  }
-
-  async function uploadCsv(file: File) {
-    setUploading(true);
-    setUploadMsg("");
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const fd = new FormData();
-      fd.append("file", file);
-      const res = await fetch("/api/marketfee/import", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${session?.access_token ?? ""}` },
-        body: fd,
-      });
-      const j = await res.json();
-      if (!res.ok) { setUploadMsg(`✗ ${j.error}`); return; }
-      setUploadMsg(`✓ Imported ${j.imported.toLocaleString("id-ID")} rows`);
-      reload(clientId);
-    } finally {
-      setUploading(false);
-    }
+    reload();
   }
 
   const platforms = useMemo(() => Array.from(new Set(rows.map((r) => r.platform).filter(Boolean))).sort(), [rows]);
@@ -206,47 +327,29 @@ export default function MarketFeePage() {
   }
 
   return (
-    <>
-      <style>{`
-        .mode-tab{padding:7px 16px;border-radius:9px;border:1px solid var(--card-border);background:var(--glass);
-          color:var(--text-2);font-weight:700;font-size:13px;cursor:pointer;text-decoration:none;display:inline-block}
-        .mode-tab.on{background:linear-gradient(135deg,var(--gold),var(--gold-soft));color:var(--navy-deep);border-color:transparent}
-      `}</style>
-
-      {/* ── Sub-page tabs ── */}
-      <div style={{ display: "flex", gap: 8, marginBottom: 18 }}>
-        <Link href="/calc" className="mode-tab">Perhitungan Harga</Link>
-        <Link href="/calc/price-research" className="mode-tab">Price Research</Link>
-        <Link href="/calc/product-catalog" className="mode-tab">Product Catalog</Link>
-        <span className="mode-tab on">Marketplace Fee</span>
-      </div>
-
-      <div className="panel">
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10, marginBottom: 4 }}>
-          <div>
-            <h3 style={{ margin: 0 }}>Market Place Fee</h3>
-            <div className="hint">
-              {rows.length.toLocaleString("id-ID")} entries · every fee number below is editable{canEdit ? "" : " (admin only)"}.
-            </div>
-          </div>
-          <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-            <button className="btn-ghost" onClick={exportCsv} disabled={!filtered.length}>Export CSV</button>
-            {canEdit && (
-              <>
-                <label className="btn-ghost" style={{ cursor: uploading ? "not-allowed" : "pointer", opacity: uploading ? .6 : 1 }}>
-                  {uploading ? "Importing…" : "Upload CSV"}
-                  <input type="file" accept=".csv,.xlsx,.xls" style={{ display: "none" }} disabled={uploading}
-                    onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadCsv(f); e.target.value = ""; }} />
-                </label>
-                <button className="btn-gold" onClick={() => setShowAdd(true)}>+ Add Fee</button>
-              </>
-            )}
-          </div>
+    <div className="panel">
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10, marginBottom: 4 }}>
+        <div style={{ display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap" }}>
+          <button className="btn-ghost" onClick={onBack}>← Fee log</button>
+          <div style={{ fontSize: 20, fontWeight: 800, color: "#fff", fontFamily: "monospace" }}>{head.fee_no}</div>
+          <div style={{ fontSize: 12.5, color: "var(--muted)" }}>Created {dmy(head.created_at)} · {rows.length.toLocaleString("id-ID")} fees · every fee number below is editable{canEdit ? "" : " (admin only)"}</div>
         </div>
-
-        {uploadMsg && (
-          <div style={{ marginTop: 10, fontSize: 13, color: uploadMsg.startsWith("✓") ? "var(--gold)" : "#f87171" }}>{uploadMsg}</div>
-        )}
+        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          {canEdit && (
+            <>
+              <div className="fld" style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                <label style={{ margin: 0 }}>Date Active</label>
+                <input type="date" value={activeEdit} onChange={(e) => setActiveEdit(e.target.value)} style={{ colorScheme: "dark" }} />
+                {activeEdit !== head.active_from && <button className="btn-gold" onClick={saveActive} style={{ padding: "6px 14px" }}>Save</button>}
+              </div>
+              <button className="btn-ghost" onClick={delVersion} style={{ color: "#f87171" }}>Delete Fee</button>
+            </>
+          )}
+          <button className="btn-ghost" onClick={exportCsv} disabled={!filtered.length}>Export CSV</button>
+          {canEdit && <button className="btn-gold" onClick={() => setShowAdd(true)}>+ Add Fee</button>}
+        </div>
+      </div>
+      {note && <div style={{ marginTop: 8, fontSize: 13, color: "var(--gold)" }}>{note}</div>}
 
         <div className="filterbar" style={{ marginTop: 14, marginBottom: 4 }}>
           <div className="fld" style={{ minWidth: 260 }}>
@@ -291,8 +394,7 @@ export default function MarketFeePage() {
 
         {showAdd && <AddFeeModal onAdd={addFee} onClose={() => setShowAdd(false)} />}
         {historyFor && <HistoryModal fee={historyFor} supabase={supabase} onClose={() => setHistoryFor(null)} />}
-      </div>
-    </>
+    </div>
   );
 }
 

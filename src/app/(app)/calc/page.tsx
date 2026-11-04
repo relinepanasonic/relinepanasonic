@@ -123,13 +123,14 @@ function computeCalc(input: {
     paylater3moRp, paylater6moRp, biayaAds, pctAds, totalBiaya, profit, hargaMarkupPct, marginPct };
 }
 
-async function fetchAll<T>(supabase: ReturnType<typeof createClient>, table: string, clientId: string, order: string, srpId?: string): Promise<T[]> {
+async function fetchAll<T>(supabase: ReturnType<typeof createClient>, table: string, clientId: string, order: string, srpId?: string, listId?: string): Promise<T[]> {
   const PAGE = 1000;
   let from = 0;
   let all: T[] = [];
   for (;;) {
     let q = supabase.from(table).select("*").eq("client_id", clientId);
     if (srpId) q = q.eq("srp_id", srpId);
+    if (listId) q = q.eq("list_id", listId);
     const { data, error } = await q.order(order).range(from, from + PAGE - 1);
     if (error || !data || !data.length) break;
     all = all.concat(data as T[]);
@@ -160,8 +161,6 @@ export default function MassiveCalculatorPage() {
   const [busy, setBusy] = useState(false);
   const [picking, setPicking] = useState(false);
   const [catalogAll, setCatalogAll] = useState<CatalogItem[]>([]);
-  const [storeList, setStoreList] = useState<{ store_name: string; vendor_id: string | null }[]>([]);
-  const [vendorNames, setVendorNames] = useState<Map<string, string>>(new Map());
   const [lowest, setLowest] = useState<Map<string, number>>(new Map());   // Prod ID -> the lowest competitor price (Price Guard)
   const [log, setLog] = useState<SrpLog[] | null>(null);
   const [srp, setSrp] = useState<OpenSrp | null>(null);
@@ -169,9 +168,10 @@ export default function MassiveCalculatorPage() {
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [dirtyCount, setDirtyCount] = useState(0);
   const pending = useRef(new Map<string, Partial<CalcRow>>());
+  const feesRef = useRef<Fee[]>([]);
+  useEffect(() => { feesRef.current = fees; }, [fees]);
 
   const feesById = useMemo(() => new Map(fees.map((f) => [f.id, f])), [fees]);
-  const vendorOfStore = useMemo(() => new Map(storeList.map((x) => [x.store_name, x.vendor_id])), [storeList]);
 
   const loadLog = useCallback(async (cid: string) => {
     const { data } = await supabase.rpc("calc_srp_log", { p_client_id: cid });
@@ -179,17 +179,15 @@ export default function MassiveCalculatorPage() {
   }, [supabase]);
 
   const loadBase = useCallback(async (cid: string) => {
-    const [f, cat, guard, vs, vn] = await Promise.all([
-      fetchAll<Fee>(supabase, "market_fees", cid, "category"),
+    // the fees of the Marketplace Fee version in force (lines made with an older version keep their own fee rows: see ensureFees)
+    const { data: feeList } = await supabase.rpc("market_fee_active", { p_client_id: cid });
+    const [f, cat, guard] = await Promise.all([
+      feeList ? fetchAll<Fee>(supabase, "market_fees", cid, "category", undefined, feeList as string) : Promise.resolve([] as Fee[]),
       supabase.rpc("pr_srp_catalog", { p_client_id: cid }),
       supabase.rpc("price_guard", { p_client_id: cid }),
-      supabase.from("vendor_stores").select("store_name, vendor_id").eq("client_id", cid).order("store_name"),
-      supabase.from("vendors").select("id, name").eq("client_id", cid),
     ]);
     setFees(f);
     setCatalogAll((cat.data as CatalogItem[]) || []);
-    setStoreList((vs.data as { store_name: string; vendor_id: string | null }[]) || []);
-    setVendorNames(new Map(((vn.data as { id: string; name: string }[]) || []).map((x) => [x.id, x.name])));
     const m = new Map<string, number>();
     for (const g of ((guard.data as { prod_id: string; stores: { ok: boolean | null; price_sell: number | null }[] }[]) || [])) {
       const prices = g.stores.filter((x) => x.ok && x.price_sell).map((x) => x.price_sell as number);
@@ -213,7 +211,15 @@ export default function MassiveCalculatorPage() {
   }, [supabase, loadLog, loadBase]);
 
   const reloadRows = useCallback(async (srpId: string) => {
-    setRows(await fetchAll<CalcRow>(supabase, "massive_calc_rows", clientId, "created_at", srpId));
+    const r = await fetchAll<CalcRow>(supabase, "massive_calc_rows", clientId, "created_at", srpId);
+    setRows(r);
+    // a line keeps the fee row it was calculated with, even when that row belongs to an older Marketplace Fee version
+    const have = new Set(feesRef.current.map((f) => f.id));
+    const missing = [...new Set(r.map((x) => x.fee_id).filter((id): id is string => !!id && !have.has(id)))];
+    for (let i = 0; i < missing.length; i += 100) {
+      const { data } = await supabase.from("market_fees").select("*").in("id", missing.slice(i, i + 100));
+      if (data?.length) setFees((cur) => [...cur, ...(data as Fee[]).filter((d) => !cur.some((c) => c.id === d.id))]);
+    }
   }, [supabase, clientId]);
 
   async function openSrp(id: string) {
@@ -234,10 +240,10 @@ export default function MassiveCalculatorPage() {
   }
 
   // Create New SRP: the chosen Catalog becomes the lines of a new SRP (Modal Produk = Harga Beli, Harga Jual = the one saved in the Catalog)
-  async function createSrp(listId: string, store: string): Promise<string> {
+  async function createSrp(listId: string): Promise<string> {
     if (!clientId) return "";
     setBusy(true);
-    const { data, error } = await supabase.rpc("calc_srp_create", { p_client_id: clientId, p_list_id: listId, p_store: store || null });
+    const { data, error } = await supabase.rpc("calc_srp_create", { p_client_id: clientId, p_list_id: listId });
     setBusy(false);
     if (error) return error.message.replace(/^[A-Z_]+:\s*/, "");
     setPicking(false);
@@ -364,8 +370,6 @@ export default function MassiveCalculatorPage() {
               <thead>
                 <tr>
                   <th style={stickyTh}>No</th>
-                  <th style={stickyTh}>Store</th>
-                  <th style={stickyTh}>Vendor</th>
                   <th style={stickyTh}>Product ID</th>
                   <th style={stickyTh}>Product Name</th>
                   <th style={stickyTh}>Catalog ID</th>
@@ -409,7 +413,7 @@ export default function MassiveCalculatorPage() {
               <tbody>
                 {rows.map((r, i) => (
                   <CalcRowLine key={r.id} no={i + 1} row={r} fee={r.fee_id ? feesById.get(r.fee_id) ?? null : null} fees={fees}
-                    catalog={srpItems} stores={storeList} vendorNames={vendorNames} vendorOfStore={vendorOfStore} lowest={lowest}
+                    catalog={srpItems} lowest={lowest}
                     onSave={saveRow} onDelete={deleteRow} onPending={onPending} />
                 ))}
                 {!loading && rows.length === 0 && (
@@ -423,15 +427,14 @@ export default function MassiveCalculatorPage() {
           </div>
         </div>
       )}
-      {picking && <CatalogPicker supabase={supabase} clientId={clientId} stores={storeList} vendorNames={vendorNames} busy={busy} onClose={() => setPicking(false)} onAdd={createSrp} />}
+      {picking && <CatalogPicker supabase={supabase} clientId={clientId} busy={busy} onClose={() => setPicking(false)} onAdd={createSrp} />}
     </>
   );
 }
 
-function CalcRowLine({ no, row, fee, fees, catalog, stores, vendorNames, vendorOfStore, lowest, onSave, onDelete, onPending }: {
+function CalcRowLine({ no, row, fee, fees, catalog, lowest, onSave, onDelete, onPending }: {
   no: number; row: CalcRow; fee: Fee | null; fees: Fee[];
-  catalog: CatalogItem[]; stores: { store_name: string; vendor_id: string | null }[]; vendorNames: Map<string, string>;
-  vendorOfStore: Map<string, string | null>; lowest: Map<string, number>;
+  catalog: CatalogItem[]; lowest: Map<string, number>;
   onPending: (id: string, patch: Partial<CalcRow> | null) => void;
   onSave: (id: string, patch: Partial<CalcRow>) => void;
   onDelete: (id: string) => void;
@@ -495,7 +498,6 @@ function CalcRowLine({ no, row, fee, fees, catalog, stores, vendorNames, vendorO
   }, fee);
 
   const catalogById = new Map(catalog.map((c) => [c.prod_id, c]));
-  const vendorName = row.store_name ? vendorNames.get(vendorOfStore.get(row.store_name) || "") || "" : "";
   const cat = v.prod_id ? catalogById.get(v.prod_id) ?? null : null;
   const low = v.prod_id ? lowest.get(v.prod_id) ?? null : null;
   // picking a catalog product fills the name, the Prod ID, Modal Produk = its Harga Beli and (as the starting point) Harga Jual = its Harga Jual
@@ -503,8 +505,6 @@ function CalcRowLine({ no, row, fee, fees, catalog, stores, vendorNames, vendorO
     const c = prodId ? catalogById.get(prodId) : null;
     setV((st) => ({ ...st, prod_id: prodId, item_product: c ? c.product_name : st.item_product, modal_produk_rp: c && c.harga_beli != null ? formatRp(c.harga_beli) : st.modal_produk_rp, harga_jual_rp: c && c.harga_srp != null ? formatRp(c.harga_srp) : st.harga_jual_rp }));
   }
-
-  function changeStore(store: string) { onSave(row.id, { store_name: store || null }); }
 
   function save() { onSave(row.id, parsed); }
   function reset() {
@@ -561,14 +561,6 @@ function CalcRowLine({ no, row, fee, fees, catalog, stores, vendorNames, vendorO
   return (
     <tr style={dirty ? { background: "rgba(201,162,39,.06)" } : undefined}>
       <td>{no}</td>
-      <td>
-        <select className="calc-sel" value={row.store_name || ""} onChange={(e) => changeStore(e.target.value)} style={{ width: 170, maxWidth: 170 }} title="The store decides the vendor, and the vendor decides the Harga Beli">
-          <option value="">— no store —</option>
-          {row.store_name && !stores.some((s) => s.store_name === row.store_name) && <option value={row.store_name}>{row.store_name}</option>}
-          {stores.map((s) => <option key={s.store_name} value={s.store_name}>{s.store_name}</option>)}
-        </select>
-      </td>
-      <td className="calc-ro">{vendorName || "—"}</td>
       <td className="calc-ro" style={{ fontFamily: "monospace" }}>{cat?.prod_id || "—"}</td>
       <td>
         <select className="calc-sel" value={v.prod_id} onChange={(e) => pickProduct(e.target.value)} style={{ width: 230, maxWidth: 230 }} title="The product comes from the Product Catalog">
@@ -646,13 +638,12 @@ const delBtnStyle: React.CSSProperties = { background: "rgba(255,80,80,.12)", bo
 
 // Modal listing the Catalogs (Product Catalog log): pick one, optionally the store the lines are for, and all its products are added.
 type CatalogLog = { id: string; srp_no: string; active_from: string; total_sku: number; in_force: boolean; vendor_id: string | null; vendor_name: string | null };
-function CatalogPicker({ supabase, clientId, stores, vendorNames, busy, onClose, onAdd }: {
-  supabase: ReturnType<typeof createClient>; clientId: string; stores: { store_name: string; vendor_id: string | null }[]; vendorNames: Map<string, string>;
-  busy: boolean; onClose: () => void; onAdd: (listId: string, store: string) => Promise<string>;
+function CatalogPicker({ supabase, clientId, busy, onClose, onAdd }: {
+  supabase: ReturnType<typeof createClient>; clientId: string;
+  busy: boolean; onClose: () => void; onAdd: (listId: string) => Promise<string>;
 }) {
   const [logs, setLogs] = useState<CatalogLog[] | null>(null);
   const [pick, setPick] = useState("");
-  const [store, setStore] = useState("");
   const [err, setErr] = useState("");
   useEffect(() => {
     (async () => {
@@ -662,7 +653,6 @@ function CatalogPicker({ supabase, clientId, stores, vendorNames, busy, onClose,
     })();
   }, [supabase, clientId]);
   const chosen = logs?.find((x) => x.id === pick) ?? null;
-  const myStores = stores.filter((s) => !chosen?.vendor_id || s.vendor_id === chosen.vendor_id);
   const dmy = (d: string) => new Date(d + "T00:00:00+07:00").toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
   return (
     <Modal onClose={onClose} width={760}>
@@ -674,10 +664,10 @@ function CatalogPicker({ supabase, clientId, stores, vendorNames, busy, onClose,
             <thead><tr><th style={{ width: 34 }}></th><th>Catalog ID</th><th>Vendor</th><th>Date Active</th><th className="num">Total SKU</th><th></th></tr></thead>
             <tbody>
               {logs.map((l) => (
-                <tr key={l.id} onClick={() => { setPick(l.id); setStore(""); }} style={{ cursor: "pointer" }}>
-                  <td><input type="radio" checked={pick === l.id} onChange={() => { setPick(l.id); setStore(""); }} /></td>
+                <tr key={l.id} onClick={() => setPick(l.id)} style={{ cursor: "pointer" }}>
+                  <td><input type="radio" checked={pick === l.id} onChange={() => setPick(l.id)} /></td>
                   <td style={{ fontFamily: "monospace", fontWeight: 700 }}>{l.srp_no}</td>
-                  <td>{l.vendor_name || <span style={{ color: "var(--muted)" }}>Default (all stores)</span>}</td>
+                  <td>{l.vendor_name || <span style={{ color: "var(--muted)" }}>Default</span>}</td>
                   <td>{dmy(l.active_from)}</td>
                   <td className="num">{l.total_sku}</td>
                   <td>{l.in_force && <span style={{ padding: "2px 10px", borderRadius: 999, fontSize: 11.5, fontWeight: 800, border: "1px solid rgba(201,162,39,.5)", color: "var(--gold)" }}>In force</span>}</td>
@@ -688,18 +678,11 @@ function CatalogPicker({ supabase, clientId, stores, vendorNames, busy, onClose,
           </table>
         </div>
       )}
-      <div style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 12, flexWrap: "wrap" }}>
-        <div className="fld" style={{ minWidth: 260 }}><label>Store (optional)</label>
-          <select value={store} onChange={(e) => setStore(e.target.value)}>
-            <option value="">— no store —</option>
-            {myStores.map((s) => <option key={s.store_name} value={s.store_name}>{s.store_name}{s.vendor_id && vendorNames.get(s.vendor_id) ? ` · ${vendorNames.get(s.vendor_id)}` : ""}</option>)}
-          </select></div>
-      </div>
       {err && <div style={{ color: "#f87171", fontSize: 13, marginTop: 10 }}>✗ {err}</div>}
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 16 }}>
         <button className="btn-ghost" onClick={onClose}>Cancel</button>
         <button className="btn-gold" disabled={!chosen || busy} style={{ padding: "10px 24px" }}
-          onClick={async () => { setErr(""); const m = await onAdd(pick, store); if (m) setErr(m); }}>
+          onClick={async () => { setErr(""); const m = await onAdd(pick); if (m) setErr(m); }}>
           {busy ? "Creating…" : chosen ? `Create SRP from ${chosen.srp_no} (${chosen.total_sku} products)` : "Create"}
         </button>
       </div>
