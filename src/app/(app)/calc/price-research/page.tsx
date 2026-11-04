@@ -41,7 +41,7 @@ function dmy(v: string | null | undefined): string {
 
 // Status against the SRP: the price a buyer pays (Price Discount, or Price Input when there is no discount)
 function status(sell: number | null, srp: number | null): { text: string; color: string } {
-  if (sell == null || !srp) return { text: srp ? "—" : "no SRP", color: "var(--muted)" };
+  if (sell == null || !srp) return { text: srp ? "—" : "no Harga Jual", color: "var(--muted)" };
   const d = (sell / srp - 1) * 100;
   if (Math.abs(d) < 0.5) return { text: "Same", color: "var(--gold)" };
   return d < 0 ? { text: `Under ${d.toFixed(1)}%`, color: "#f87171" } : { text: `Higher +${d.toFixed(1)}%`, color: "#86efac" };
@@ -209,7 +209,7 @@ function GuardTab({ supabase, clientId, tick }: { supabase: Supabase; clientId: 
                       {p.product_name}
                       <div style={{ fontSize: 11, fontWeight: 400, color: "var(--muted)", fontFamily: "monospace" }}>{p.prod_id}{p.srp_id ? ` · ${p.srp_id}` : ""}</div>
                     </td>
-                    <td style={{ fontWeight: 800, color: "var(--gold)" }}>SRP</td>
+                    <td style={{ fontWeight: 800, color: "var(--gold)" }}>Catalog</td>
                     <td className="num" style={{ fontWeight: 800 }}>{rp(p.srp)}</td>
                     <td className="num" style={{ color: "var(--muted)" }}>-</td>
                     <td style={{ color: "var(--muted)" }}>-</td>
@@ -242,7 +242,7 @@ function GuardTab({ supabase, clientId, tick }: { supabase: Supabase; clientId: 
         </div>
       )}
       <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 8 }}>
-        Price Input = the store&apos;s price before its discount. Price Discount = what a buyer pays after the discount (&quot;-&quot; when there is none). Status compares that price with the SRP valid on the date. Personal vouchers (for example a VIP voucher) and checkout costs differ per buyer and are not public, so they are not included.
+        Price Input = the store&apos;s price before its discount. Price Discount = what a buyer pays after the discount (&quot;-&quot; when there is none). Status compares that price with the Harga Jual of the Catalog valid on the date. Personal vouchers (for example a VIP voucher) and checkout costs differ per buyer and are not public, so they are not included.
       </div>
     </>
   );

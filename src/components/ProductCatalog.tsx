@@ -6,9 +6,9 @@ import { createClient } from "@/lib/supabase/client";
 import Loader from "@/components/Loader";
 import { CATALOG_EXAMPLE, CATALOG_HEADER, parseCatalogMatrix } from "@/lib/catalogXls";
 
-// Price Calculator > Product Catalog: the SRP log (SRP ID automatic | Date Create | Date Active | Total SKU) and, per SRP, its products with
-// Harga Beli (what we pay the dealer, the calculator's Modal Produk) and Harga SRP. "New Harga Beli" starts a new SRP when we buy from the dealer.
-// The SRP in force feeds Price Guard, Product URL and Perhitungan Harga.
+// Price Calculator > Product Catalog: the Catalog log (Catalog ID automatic | Date Create | Date Active | Total SKU) and, per Catalog, its products with
+// Harga Beli (what we pay the dealer, the calculator's Modal Produk) and Harga Jual. "New Harga Beli" starts a new Catalog when we buy from the dealer.
+// The Catalog in force feeds Price Guard, Product URL and Perhitungan Harga.
 type Supabase = ReturnType<typeof createClient>;
 type SrpLogRow = { id: string; srp_no: string; created_at: string; active_from: string; created_by: string | null; total_sku: number; in_force: boolean };
 type SrpItem = { id: string; prod_id: string; product_name: string; harga_beli: number | null; harga_srp: number | null };
@@ -32,7 +32,7 @@ export function Modal({ children, onClose, width = 640 }: { children: React.Reac
   );
 }
 
-/* ── Product Catalog: the SRP log first (SRP ID | Date Create | Date Active | Total SKU), then the products of one SRP ── */
+/* ── Product Catalog: the Catalog log first (Catalog ID | Date Create | Date Active | Total SKU), then the products of one Catalog ── */
 export function CatalogTab({ supabase, clientId, isAdmin, tick, onChanged }: { supabase: Supabase; clientId: string; isAdmin: boolean; tick: number; onChanged: () => void }) {
   const [listId, setListId] = useState<string | null>(null);
   const [rows, setRows] = useState<SrpLogRow[] | null>(null);
@@ -53,14 +53,14 @@ export function CatalogTab({ supabase, clientId, isAdmin, tick, onChanged }: { s
   return (
     <>
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center", marginBottom: 12 }}>
-        <div className="hint" style={{ flex: 1, margin: 0 }}>Every row is a Harga Beli: a saved version of the product list with its Harga Beli (what we pay the dealer) and Harga SRP, made each time we buy from the dealer. The SRP in force (latest Date Active up to today) feeds Price Guard, Product URL and Perhitungan Harga. Open an SRP to see or change its products.</div>
+        <div className="hint" style={{ flex: 1, margin: 0 }}>Every row is a Harga Beli: a saved version of the product list with its Harga Beli (what we pay the dealer) and Harga Jual, made each time we buy from the dealer. The SRP in force (latest Date Active up to today) feeds Price Guard, Product URL and Perhitungan Harga. Open an SRP to see or change its products.</div>
         {isAdmin && <button className="btn-gold" onClick={() => setCreating(true)} style={{ padding: "10px 22px" }}>+ New Harga Beli</button>}
       </div>
       {err && <div style={{ color: "#f87171", fontSize: 13, marginBottom: 10 }}>✗ {err}</div>}
       {rows === null ? <Loader center /> : (
         <div className="tbl-wrap" style={{ maxHeight: "66vh" }}>
           <table className="tbl day-tbl">
-            <thead><tr><th>SRP ID</th><th>Date Create</th><th>Date Active</th><th className="num">Total SKU</th><th>Created by</th><th></th></tr></thead>
+            <thead><tr><th>Catalog ID</th><th>Date Create</th><th>Date Active</th><th className="num">Total SKU</th><th>Created by</th><th></th></tr></thead>
             <tbody>
               {rows.map((r) => (
                 <tr key={r.id} onClick={() => setListId(r.id)} style={{ cursor: "pointer" }}>
@@ -97,11 +97,11 @@ function CreateSrpModal({ supabase, clientId, hasCurrent, onClose }: { supabase:
   return (
     <Modal onClose={() => onClose(null)} width={520}>
       <div style={{ fontSize: 18, fontWeight: 800, color: "#fff", marginBottom: 6 }}>New Harga Beli</div>
-      <div style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 14 }}>Use this when we buy from the dealer at a new price. The SRP ID is given automatically (SRP-YYMM-NNN).</div>
+      <div style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 14 }}>Use this when we buy from the dealer at a new price. The Catalog ID is given automatically (CAT-YYMM-NNN).</div>
       <div className="fld" style={{ maxWidth: 220 }}><label>Date Active</label><input type="date" value={active} onChange={(e) => setActive(e.target.value)} style={{ colorScheme: "dark" }} /></div>
       {hasCurrent && (
         <label style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 14, fontSize: 13.5, cursor: "pointer" }}>
-          <input type="checkbox" checked={copy} onChange={(e) => setCopy(e.target.checked)} /> Start as a copy of the SRP in force now (then change the prices that changed)
+          <input type="checkbox" checked={copy} onChange={(e) => setCopy(e.target.checked)} /> Start as a copy of the Catalog in force now (then change the prices that changed)
         </label>
       )}
       {err && <div style={{ color: "#f87171", fontSize: 13, marginTop: 10 }}>✗ {err}</div>}
@@ -140,7 +140,7 @@ function SrpListView({ supabase, isAdmin, listId, onBack, onChanged }: { supabas
     setMsg(error ? { ok: false, text: error.message } : { ok: true, text: "Date Active saved." }); refresh();
   }
   async function delList() {
-    if (!window.confirm(`Delete ${head?.srp_no} with all its ${rows?.length ?? 0} products? Price Guard and the calculator go back to the SRP in force before it.`)) return;
+    if (!window.confirm(`Delete ${head?.srp_no} with all its ${rows?.length ?? 0} products? Price Guard and the calculator go back to the Catalog in force before it.`)) return;
     const { error } = await supabase.from("pr_srp_lists").delete().eq("id", listId);
     if (error) { setMsg({ ok: false, text: error.message }); return; }
     onBack();
@@ -150,7 +150,7 @@ function SrpListView({ supabase, isAdmin, listId, onBack, onChanged }: { supabas
     await supabase.from("pr_srp_items").delete().eq("id", r.id); refresh();
   }
 
-  // the XLS template is the empty sheet (one example row); the export is this SRP as it is now, so it can be edited and imported back
+  // the XLS template is the empty sheet (one example row); the export is this Catalog as it is now, so it can be edited and imported back
   async function downloadXls(withRows: boolean) {
     const XLSX = await import("xlsx");
     const body: (string | number)[][] = withRows ? (rows || []).map((r, i) => [i + 1, r.product_name, r.prod_id, r.harga_beli ?? "", r.harga_srp ?? ""]) : [CATALOG_EXAMPLE as (string | number)[]];
@@ -160,11 +160,11 @@ function SrpListView({ supabase, isAdmin, listId, onBack, onChanged }: { supabas
     XLSX.utils.book_append_sheet(wb, ws, "Product Catalog");
     const guide = XLSX.utils.aoa_to_sheet([
       ["How to fill"], [""],
-      ["Prod ID", "Required and unique inside the SRP: it is the key. A Prod ID that is already in this SRP is UPDATED, a new one is ADDED."],
+      ["Prod ID", "Required and unique inside the Catalog: it is the key. A Prod ID that is already in this Catalog is UPDATED, a new one is ADDED."],
       ["Product Name", "Required."],
       ["Harga Beli", "Cost price in Rp. Perhitungan Harga uses it as Modal Produk."],
-      ["Harga SRP", "Selling price guide in Rp. Price Guard compares the competitors with it."],
-      ["SRP ID", "Not in the sheet: it is automatic, one per SRP."],
+      ["Harga Jual", "Selling price guide in Rp. Price Guard compares the competitors with it."],
+      ["Catalog ID", "Not in the sheet: it is automatic, one per Catalog."],
       ["No", "Only a counter, it is ignored."],
     ]);
     guide["!cols"] = [{ wch: 18 }, { wch: 110 }];
@@ -197,7 +197,7 @@ function SrpListView({ supabase, isAdmin, listId, onBack, onChanged }: { supabas
   return (
     <>
       <div style={{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "center", marginBottom: 12 }}>
-        <button className="btn-ghost" onClick={onBack}>← SRP log</button>
+        <button className="btn-ghost" onClick={onBack}>← Catalog log</button>
         <div style={{ fontSize: 20, fontWeight: 800, color: "#fff", fontFamily: "monospace" }}>{head?.srp_no || "…"}</div>
         <div style={{ fontSize: 12.5, color: "var(--muted)" }}>Created {dmy(head?.created_at)} · {rows?.length ?? 0} SKU</div>
         {isAdmin && head && (
@@ -205,7 +205,7 @@ function SrpListView({ supabase, isAdmin, listId, onBack, onChanged }: { supabas
             <span style={{ fontSize: 12.5, color: "var(--muted)" }}>Date Active</span>
             <input type="date" value={activeEdit} onChange={(e) => setActiveEdit(e.target.value)} style={{ colorScheme: "dark" }} />
             {activeEdit !== head.active_from && <button className="btn-gold" onClick={saveActive} style={{ padding: "7px 14px" }}>Save date</button>}
-            <button className="btn-ghost" onClick={delList} style={{ color: "#f87171" }}>Delete SRP</button>
+            <button className="btn-ghost" onClick={delList} style={{ color: "#f87171" }}>Delete Catalog</button>
           </div>
         )}
         {!isAdmin && head && <div style={{ marginLeft: "auto", fontSize: 12.5, color: "var(--muted)" }}>Date Active {dmy(head.active_from + "T00:00:00+07:00")}</div>}
@@ -229,7 +229,7 @@ function SrpListView({ supabase, isAdmin, listId, onBack, onChanged }: { supabas
       {rows === null ? <Loader center /> : (
         <div className="tbl-wrap" style={{ maxHeight: "62vh" }}>
           <table className="tbl day-tbl">
-            <thead><tr><th className="num">No</th><th>Product Name</th><th>Prod ID</th><th className="num">Harga Beli</th><th className="num">Harga SRP</th><th></th></tr></thead>
+            <thead><tr><th className="num">No</th><th>Product Name</th><th>Prod ID</th><th className="num">Harga Beli</th><th className="num">Harga Jual</th><th></th></tr></thead>
             <tbody>
               {shown.map((r, i) => (
                 <tr key={r.id}>
@@ -244,7 +244,7 @@ function SrpListView({ supabase, isAdmin, listId, onBack, onChanged }: { supabas
                   </td>
                 </tr>
               ))}
-              {shown.length === 0 && <tr><td colSpan={6} style={{ textAlign: "center", color: "var(--muted)", padding: 24 }}>{rows.length ? "No product matches." : "No product in this SRP yet — press + Add product, or fill the XLS template and Import it."}</td></tr>}
+              {shown.length === 0 && <tr><td colSpan={6} style={{ textAlign: "center", color: "var(--muted)", padding: 24 }}>{rows.length ? "No product matches." : "No product in this Catalog yet — press + Add product, or fill the XLS template and Import it."}</td></tr>}
             </tbody>
           </table>
         </div>
@@ -267,7 +267,7 @@ function ItemModal({ supabase, listId, srpNo, item, onClose }: { supabase: Supab
     setSaving(true);
     const { error } = await supabase.rpc("pr_srp_item_save", { p_list: listId, p_item: item.id || null, p_prod_id: f.prod_id, p_product_name: f.product_name, p_harga_beli: num(f.harga_beli), p_harga_srp: num(f.harga_srp) });
     setSaving(false);
-    if (error) { setErr(/duplicate|unique/i.test(error.message) ? "This Prod ID is already in this SRP." : error.message.replace(/^[A-Z_]+:\s*/, "")); return; }
+    if (error) { setErr(/duplicate|unique/i.test(error.message) ? "This Prod ID is already in this Catalog." : error.message.replace(/^[A-Z_]+:\s*/, "")); return; }
     onClose(true);
   }
 
@@ -279,7 +279,7 @@ function ItemModal({ supabase, listId, srpNo, item, onClose }: { supabase: Supab
         <div className="fld" style={{ gridColumn: "1 / -1" }}><label>Product Name</label><input value={f.product_name} onChange={(e) => setF({ ...f, product_name: e.target.value })} placeholder="AC Panasonic 2 PK CS-YN18AKJ" /></div>
         <div className="fld" style={{ gridColumn: "1 / -1" }}><label>Prod ID</label><input value={f.prod_id} onChange={(e) => setF({ ...f, prod_id: e.target.value })} placeholder="e.g. 9078737678 or CS/CU-YN18AKJ" /></div>
         <div className="fld"><label>Harga Beli (Rp)</label><input inputMode="numeric" value={f.harga_beli} onChange={(e) => setF({ ...f, harga_beli: e.target.value.replace(/[^\d]/g, "") })} placeholder="5800000" /></div>
-        <div className="fld"><label>Harga SRP (Rp)</label><input inputMode="numeric" value={f.harga_srp} onChange={(e) => setF({ ...f, harga_srp: e.target.value.replace(/[^\d]/g, "") })} placeholder="7500000" /></div>
+        <div className="fld"><label>Harga Jual (Rp)</label><input inputMode="numeric" value={f.harga_srp} onChange={(e) => setF({ ...f, harga_srp: e.target.value.replace(/[^\d]/g, "") })} placeholder="7500000" /></div>
       </div>
       {err && <div style={{ color: "#f87171", fontSize: 13, marginTop: 10 }}>✗ {err}</div>}
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 16 }}>

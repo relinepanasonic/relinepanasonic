@@ -1,8 +1,8 @@
-// XLS template / import of one SRP list (Price Calculator > Price Research > Product Catalog > an SRP).
-// One flat sheet, one row per product: No | Product Name | Prod ID | Harga Beli | Harga SRP. Prod ID is the key inside the SRP: a known Prod ID
-// is updated, a new one is added. The SRP ID is automatic and is not in the sheet.
+// XLS template / import of one Catalog (Price Calculator > Price Research > Product Catalog > an SRP).
+// One flat sheet, one row per product: No | Product Name | Prod ID | Harga Beli | Harga Jual. Prod ID is the key inside the Catalog: a known Prod ID
+// is updated, a new one is added. The Catalog ID is automatic and is not in the sheet.
 
-export const CATALOG_HEADER = ["No", "Product Name", "Prod ID", "Harga Beli", "Harga SRP"] as const;
+export const CATALOG_HEADER = ["No", "Product Name", "Prod ID", "Harga Beli", "Harga Jual"] as const;
 export const CATALOG_EXAMPLE = [1, "AC Panasonic 2 PK CS-YN18AKJ", "9078737678", 5800000, 7500000];
 
 export type CatalogRow = { prod_id: string; product_name: string; harga_beli: number | null; harga_srp: number | null };
@@ -27,7 +27,7 @@ export function parseCatalogMatrix(matrix: unknown[][]): { rows: CatalogRow[]; s
     const cells = (matrix[i] || []).map(norm);
     const idx = (names: string[]) => cells.findIndex((c) => names.includes(c));
     const prod = idx(["prodid", "productid", "idproduk", "kodeproduk"]), name = idx(["productname", "namaproduk", "produk", "product", "itemproduct"]);
-    if (prod >= 0 && name >= 0) { h = i; col = { prod, name, beli: idx(["hargabeli", "modalproduk", "hargamodal", "beli", "costprice"]), srp: idx(["hargasrp", "pricesrp", "srp"]) }; break; }
+    if (prod >= 0 && name >= 0) { h = i; col = { prod, name, beli: idx(["hargabeli", "modalproduk", "hargamodal", "beli", "costprice"]), srp: idx(["hargajual", "hargasrp", "pricesrp", "srp"]) }; break; }
   }
   if (h < 0) return { rows: [], skipped: [], error: "Header row not found. The sheet needs the columns Product Name and Prod ID (use the template)." };
   const rows: CatalogRow[] = []; const skipped: { row: number; reason: string }[] = []; const seen = new Set<string>();
