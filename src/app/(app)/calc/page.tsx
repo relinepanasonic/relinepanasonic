@@ -173,6 +173,8 @@ export default function MassiveCalculatorPage() {
   const [dirtyCount, setDirtyCount] = useState(0);
   const [selected, setSelected] = useState<Set<string>>(new Set());   // ticked lines (mass edit / mass duplicate)
   const [platformFilter, setPlatformFilter] = useState("");
+  const [tokoFilter, setTokoFilter] = useState("");
+  const [typeQuery, setTypeQuery] = useState("");              // product type typed by the user: AC, TV, Mesin Cuci …
   const [massOpen, setMassOpen] = useState<"edit" | "dup" | null>(null);
   const [rev, setRev] = useState(0);                                     // bumped after an import so every line shows the imported values
   const pending = useRef(new Map<string, Partial<CalcRow>>());
@@ -181,8 +183,20 @@ export default function MassiveCalculatorPage() {
 
   const feesById = useMemo(() => new Map(fees.map((f) => [f.id, f])), [fees]);
   const platformOf = useCallback((r: CalcRow) => (r.fee_id ? feesById.get(r.fee_id)?.platform : "") || "", [feesById]);
+  const tokoOf = useCallback((r: CalcRow) => (r.fee_id ? feesById.get(r.fee_id)?.jenis_toko : "") || "", [feesById]);
   const platformOptions = useMemo(() => Array.from(new Set(rows.map(platformOf).filter(Boolean))).sort(), [rows, platformOf]);
-  const visible = useMemo(() => rows.filter((r) => !platformFilter || (platformFilter === "__none" ? !platformOf(r) : platformOf(r) === platformFilter)), [rows, platformFilter, platformOf]);
+  const tokoOptions = useMemo(() => Array.from(new Set(rows.filter((r) => !platformFilter || platformFilter === "__none" || platformOf(r) === platformFilter).map(tokoOf).filter(Boolean))).sort(), [rows, platformFilter, platformOf, tokoOf]);
+  const visible = useMemo(() => {
+    const words = typeQuery.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+    return rows.filter((r) => {
+      if (platformFilter && (platformFilter === "__none" ? !!platformOf(r) : platformOf(r) !== platformFilter)) return false;
+      if (tokoFilter && tokoOf(r) !== tokoFilter) return false;
+      if (!words.length) return true;
+      // the type is typed as a word (AC, TV, Mesin Cuci): a short word must be a whole word of the product ("AC" is not "Black"), a longer one may start a word
+      const text = `${r.item_product || ""} ${r.prod_id || ""} ${r.product_line || ""}`.toLowerCase();
+      return words.every((w) => new RegExp(`(^|[^a-z0-9])${w}${w.length <= 3 ? "([^a-z0-9]|$)" : ""}`).test(text));
+    });
+  }, [rows, platformFilter, tokoFilter, typeQuery, platformOf, tokoOf]);
   const toggleOne = useCallback((id: string) => setSelected((st) => { const n = new Set(st); if (n.has(id)) n.delete(id); else n.add(id); return n; }), []);
   const selectedRows = rows.filter((r) => selected.has(r.id));
 
@@ -236,7 +250,7 @@ export default function MassiveCalculatorPage() {
   }, [supabase, clientId]);
 
   async function openSrp(id: string) {
-    setLoading(true); setMsg(null); pending.current.clear(); setDirtyCount(0); setSelected(new Set()); setPlatformFilter("");
+    setLoading(true); setMsg(null); pending.current.clear(); setDirtyCount(0); setSelected(new Set()); setPlatformFilter(""); setTokoFilter(""); setTypeQuery("");
     const { data: h } = await supabase.from("calc_srp").select("id, srp_no, list_id, created_at").eq("id", id).single();
     const head = h as { id: string; srp_no: string; list_id: string | null; created_at: string } | null;
     if (!head) { setLoading(false); return; }
@@ -520,11 +534,23 @@ export default function MassiveCalculatorPage() {
           <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginTop: 12 }}>
             <div className="fld" style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
               <label style={{ margin: 0 }}>Platform</label>
-              <select value={platformFilter} onChange={(e) => setPlatformFilter(e.target.value)}>
+              <select value={platformFilter} onChange={(e) => { setPlatformFilter(e.target.value); setTokoFilter(""); }}>
                 <option value="">All Platforms</option>
                 {platformOptions.map((x) => <option key={x} value={x}>{x}</option>)}
                 <option value="__none">No platform yet</option>
               </select>
+            </div>
+            <div className="fld" style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+              <label style={{ margin: 0 }}>Jenis Toko</label>
+              <select value={tokoFilter} onChange={(e) => setTokoFilter(e.target.value)}>
+                <option value="">All</option>
+                {tokoOptions.map((x) => <option key={x} value={x}>{x}</option>)}
+              </select>
+            </div>
+            <div className="fld" style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+              <label style={{ margin: 0 }}>Product</label>
+              <input value={typeQuery} onChange={(e) => setTypeQuery(e.target.value)} placeholder="type AC, TV, Mesin Cuci…" style={{ minWidth: 220 }} />
+              {typeQuery && <button className="btn-ghost" onClick={() => setTypeQuery("")} style={{ padding: "4px 10px" }}>✕</button>}
             </div>
             <span style={{ color: "var(--muted)", fontSize: 12.5 }}>{visible.length} of {rows.length} lines · {selectedRows.length} ticked</span>
             <button className="btn-ghost" disabled={!selectedRows.length || busy} onClick={() => setMassOpen("edit")}>✎ Edit selected</button>
@@ -871,10 +897,11 @@ const FEE_LABEL: Record<keyof FeeSel, string> = { category: "Category", sub_cate
 
 // the five fee values, narrowing each other (like the dropdowns of a line); "blank" is what an untouched one reads
 function FeePicker({ fees, value, onChange, blank }: { fees: Fee[]; value: FeeSel; onChange: (v: FeeSel) => void; blank: string }) {
+  const order: (keyof FeeSel)[] = ["platform", "jenis_toko", "category", "sub_category", "jenis_product"];   // the marketplace first, then the product category
   return (
     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-      {FEE_FIELDS.map((field) => (
-        <div className="fld" key={field}><label>{FEE_LABEL[field]}</label>
+      {order.map((field) => (
+        <div className="fld" key={field} style={field === "jenis_product" ? { gridColumn: "1 / -1" } : undefined}><label>{FEE_LABEL[field]}</label>
           <select value={value[field]} onChange={(e) => onChange(refineSel({ ...value, [field]: e.target.value }, fees))}>
             <option value="">{blank}</option>
             {optionsFor(field, value, fees).map((o) => <option key={o} value={o}>{o}</option>)}
