@@ -46,10 +46,11 @@ describe("POST /api/price-research/scrape (starts the Apify runs and returns at 
     ];
   });
 
-  it("is for Super Admin / Admin only and needs the token", async () => {
+  it("is for the Super Admin only and needs the token", async () => {
     const { POST } = await import("./route");
     role = null; expect((await POST(post({ link_ids: ["L1"] }))).status).toBe(401);
     role = "sales"; expect((await POST(post({ link_ids: ["L1"] }))).status).toBe(403);
+    role = "client_admin"; expect((await POST(post({ link_ids: ["L1"] }))).status).toBe(403);
     role = "superadmin"; delete process.env.APIFY_TOKEN;
     const r = await POST(post({ link_ids: ["L1"] })); expect(r.status).toBe(400); expect((await r.json()).error).toMatch(/APIFY_TOKEN/);
     process.env.APIFY_TOKEN = "t"; expect((await POST(post({ link_ids: [] }))).status).toBe(400);

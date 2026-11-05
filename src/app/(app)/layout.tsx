@@ -16,7 +16,7 @@ const NAV: { href: string; icon: string; label: string; short?: string; roles?: 
   { href: "/operational", icon: "🏬", label: "Demographic", short: "Demographic", roles: ["superadmin", "client_admin", "branch_manager", "pic_panasonic", "sales"] },
   { href: "/finance",   icon: "💹", label: "Earning", short: "Earning",         roles: ["superadmin", "client_admin", "branch_manager", "pic_panasonic", "sales"] },
   { href: "/payout",    icon: "💸", label: "Payout", short: "Payout", roles: ["superadmin", "client_admin"] },
-  { href: "/calc",      icon: "🧮", label: "Price Calculator", short: "Calc",    roles: ["superadmin", "branch_manager", "pic_panasonic", "sales"] },
+  { href: "/calc",      icon: "🧮", label: "Price Calculator", short: "Calc",    roles: ["superadmin", "client_admin", "branch_manager", "pic_panasonic", "sales"] },
   { href: "/upload",    icon: "⬆️", label: "Upload Data", short: "Upload",         roles: ["superadmin", "client_admin"] },
   { href: "/core",      icon: "🗂️", label: "Connector", short: "Connector",          roles: ["superadmin", "client_admin", "advertiser"] },
   { href: "/users",     icon: "👥", label: "Users",               roles: ["superadmin", "client_admin"] },

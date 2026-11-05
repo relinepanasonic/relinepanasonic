@@ -49,6 +49,7 @@ export default function PriceResearchPage() {
   const [supabase] = useState(() => createClient());
   const [clientId, setClientId] = useState("");
   const [isAdmin, setIsAdmin] = useState(false);
+  const [isSuper, setIsSuper] = useState(false);        // only the Super Admin can scrape (it costs Apify credit)
   const [tab, setTab] = useState<TabKey>("guard");
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [starting, setStarting] = useState(false);
@@ -65,7 +66,9 @@ export default function PriceResearchPage() {
         supabase.from("profiles").select("role").eq("id", user.id).single(),
       ]);
       setClientId((cs as { id: string }[])?.[0]?.id || "");
-      setIsAdmin(["superadmin", "client_admin"].includes((p as { role?: string } | null)?.role || ""));
+      const role = (p as { role?: string } | null)?.role || "";
+      setIsAdmin(["superadmin", "client_admin"].includes(role));
+      setIsSuper(role === "superadmin");
     })();
   }, [supabase]);
 
@@ -145,7 +148,7 @@ export default function PriceResearchPage() {
         )}
         {msg && <div style={{ color: msg.ok ? "var(--gold)" : "#f87171", fontSize: 13, marginBottom: 10 }}>{msg.ok ? "✓" : "✗"} {msg.text}</div>}
 
-        {clientId && tab === "guard" && <ScrapePanel supabase={supabase} clientId={clientId} isAdmin={isAdmin} tick={tick} busy={busy} onExecute={runScrape} detail={<GuardTab supabase={supabase} clientId={clientId} tick={tick} />} />}
+        {clientId && tab === "guard" && <ScrapePanel supabase={supabase} clientId={clientId} canScrape={isSuper} tick={tick} busy={busy} onExecute={runScrape} detail={<GuardTab supabase={supabase} clientId={clientId} tick={tick} />} />}
         {clientId && tab === "urls" && <StoreConnections supabase={supabase} clientId={clientId} isAdmin={isAdmin} tick={tick} onChanged={() => setTick((t) => t + 1)} />}
       </div>
     </>

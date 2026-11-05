@@ -32,8 +32,8 @@ function when(v: string): string {
 }
 const colName = (c: ScrapeConn) => `${c.store_name || "—"}${c.platform ? ` · ${c.platform}` : ""}`;
 
-export default function ScrapePanel({ supabase, clientId, isAdmin, tick, busy, onExecute, detail }: {
-  supabase: Supabase; clientId: string; isAdmin: boolean; tick: number; busy: boolean;
+export default function ScrapePanel({ supabase, clientId, canScrape, tick, busy, onExecute, detail }: {
+  supabase: Supabase; clientId: string; canScrape: boolean; tick: number; busy: boolean;
   onExecute: (connectionIds: string[]) => Promise<boolean>; detail: ReactNode;
 }) {
   const [scrapes, setScrapes] = useState<ScrapeRow[] | null>(null);
@@ -69,12 +69,12 @@ export default function ScrapePanel({ supabase, clientId, isAdmin, tick, busy, o
   return (
     <>
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center", marginBottom: 12 }}>
-        <div className="hint" style={{ flex: 1, margin: 0 }}>Press <b>Scrape</b>, pick the store connections and run it. Every run is in the log; open a row to see its prices against ours.</div>
+        <div className="hint" style={{ flex: 1, margin: 0 }}>Every scrape is in the log; open a row to see its prices against ours.{canScrape ? " Press Scrape, pick the store connections and run it." : ""}</div>
         <div style={{ display: "flex", gap: 6 }}>
           <button className="btn-ghost" onClick={() => setView("result")} style={view === "result" ? { borderColor: "var(--gold)", color: "var(--gold)" } : undefined}>Result</button>
           <button className="btn-ghost" onClick={() => setView("detail")} style={view === "detail" ? { borderColor: "var(--gold)", color: "var(--gold)" } : undefined}>Detail per product</button>
         </div>
-        {isAdmin && <button className="btn-gold" disabled={busy} onClick={() => setModal(true)} style={{ padding: "10px 24px" }}>{busy ? "Scraping on Apify…" : "Scrape"}</button>}
+        {canScrape && <button className="btn-gold" disabled={busy} onClick={() => setModal(true)} style={{ padding: "10px 24px" }}>{busy ? "Scraping on Apify…" : "Scrape"}</button>}
       </div>
 
       {view === "detail" ? detail : (

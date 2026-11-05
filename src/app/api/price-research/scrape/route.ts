@@ -12,13 +12,13 @@ const MAX_LINKS = 600;
 
 // POST { connection_ids: string[] } (or { link_ids }) -> STARTS the scrape of those competitor links on Apify and returns at once (one Apify run per marketplace).
 // The page then polls GET /api/price-research/runs, which saves the prices as snapshots when Apify has finished; a scrape can take minutes,
-// far more than a request may wait. Super Admin and Admin only. Needs APIFY_TOKEN (Vercel env). None of the actors needs a marketplace login.
+// far more than a request may wait. Super Admin only (it costs Apify credit). Needs APIFY_TOKEN (Vercel env). None of the actors needs a marketplace login.
 export async function POST(req: NextRequest) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "AUTH_REQUIRED" }, { status: 401 });
   const { data: profile } = await supabase.from("profiles").select("role, display_name").eq("id", user.id).single();
-  if (!profile || !["superadmin", "client_admin"].includes(profile.role)) return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
+  if (!profile || profile.role !== "superadmin") return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
 
   const token = process.env.APIFY_TOKEN;
   if (!token) return NextResponse.json({ error: "APIFY_TOKEN is not set. Add it in the Vercel environment variables (see .env.example) and redeploy." }, { status: 400 });
