@@ -92,6 +92,9 @@ function mergeFee(line: CalcRow, choice: FeeSel): FeeSel {
   return m;
 }
 
+// Category, Sub Category and Jenis Product are only offered once a platform is known
+const PLATFORM_FIELDS: (keyof FeeSel)[] = ["category", "sub_category", "jenis_product"];
+
 // a choice with the scope filled in where it is empty: the lists then show only the categories of that platform / jenis toko
 function withScope(v: FeeSel, scope?: Scope): FeeSel {
   return { ...v, platform: v.platform || scope?.platform || "", jenis_toko: v.jenis_toko || scope?.jenis_toko || "" };
@@ -633,6 +636,11 @@ export default function MassiveCalculatorPage() {
         .fc-btn{display:inline-flex;align-items:center;justify-content:space-between;gap:6px;min-height:30px;padding:4px 8px;border:1px solid rgba(201,162,39,.25);border-radius:6px;background:rgba(10,22,40,.5);color:var(--text);font:inherit;font-size:12px;text-align:left;cursor:pointer;box-sizing:border-box;max-width:100%}
         .fc-btn:hover{border-color:rgba(201,162,39,.5)}
         .fc-btn:focus-visible{outline:2px solid var(--gold);outline-offset:1px}
+        .fc-wrap{display:flex;align-items:stretch;gap:4px;max-width:100%}
+        .fc-wrap > .fc-btn{flex:1;min-width:0}
+        .fc-btn:disabled{opacity:.4;cursor:not-allowed;border-style:dashed}
+        .fc-x{display:grid;place-items:center;flex:none;width:22px;border:0;border-radius:6px;background:rgba(255,255,255,.06);color:var(--text-2);cursor:pointer}
+        .fc-x:hover{background:rgba(255,255,255,.16);color:var(--text)}
         .fc-val{flex:1;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden;white-space:normal;overflow-wrap:anywhere;line-height:1.3}
         .fc-val.empty{color:var(--muted)}
         .fc-pop{position:fixed;z-index:10050;display:flex;flex-direction:column;border:1px solid rgba(201,162,39,.4);border-radius:12px;background:var(--navy-deep);box-shadow:0 18px 50px rgba(0,0,0,.6);overflow:hidden}
@@ -911,9 +919,12 @@ function CalcRowLine({ no, row, fee, fees, catalog, selected, onToggle, scope, o
     const match = resolveFee(next, fees);
     onSave(row.id, { ...keysPatch(next), fee_id: match?.id ?? null });
   }
-  function clearFee() {
-    setSel(emptySel);
-    onSave(row.id, { ...keysPatch(emptySel), fee_id: null });
+  // the X of one dropdown: empties just that value
+  function clearOne(field: keyof FeeSel) {
+    const next = { ...sel, [field]: "" };
+    setSel(next);
+    const match = resolveFee(next, fees);
+    onSave(row.id, { ...keysPatch(next), fee_id: match?.id ?? null });
   }
 
   const feeWidth: Record<keyof FeeSel, number> = { platform: 120, jenis_toko: 150, category: 150, sub_category: 210, jenis_product: 240 };
@@ -921,7 +932,8 @@ function CalcRowLine({ no, row, fee, fees, catalog, selected, onToggle, scope, o
     const opts = optionsFor(field, withScope(sel, scope), fees);
     const value = sel[field];
     const list = value && !opts.includes(value) ? [value, ...opts] : opts;
-    return <FeeCombo width={feeWidth[field]} value={value} options={list} onChange={(v) => pick(field, v)} />;
+    const locked = PLATFORM_FIELDS.includes(field) && !withScope(sel, scope).platform;
+    return <FeeCombo width={feeWidth[field]} value={value} options={list} locked={locked} onChange={(v) => pick(field, v)} onClear={value ? () => clearOne(field) : undefined} />;
   };
 
   const txt = (val: string, onChange: (s: string) => void, width: number) => (
@@ -974,7 +986,6 @@ function CalcRowLine({ no, row, fee, fees, catalog, selected, onToggle, scope, o
       <td>{feeSelect("category")}</td>
       <td>{feeSelect("sub_category")}</td>
       <td>{feeSelect("jenis_product")}
-        {FEE_FIELDS.some((k) => sel[k]) && <button onClick={clearFee} className="btn-ghost" style={{ padding: "1px 6px", fontSize: 10, marginLeft: 4 }}>✕</button>}
       </td>
       <td className="num">{txt(v.target_roas, (s) => setV((st) => ({ ...st, target_roas: s.replace(/[^\d.]/g, "") })), 60)}</td>
       <td className="num calc-ro">{calc.pctAds.toFixed(1)}%</td>
@@ -1084,6 +1095,8 @@ function FeePicker({ fees, value, onChange, blank, free, only, scope }: { fees: 
       {order.map((field) => (
         <div className="fld" key={field} style={field === "jenis_product" ? { gridColumn: "1 / -1" } : undefined}><label>{FEE_LABEL[field]}</label>
           <FeeCombo width="100%" value={value[field]} placeholder={blank} clearLabel={blank} options={optionsFor(field, withScope(value, scope), fees)}
+            locked={PLATFORM_FIELDS.includes(field) && !withScope(value, scope).platform}
+            onClear={value[field] ? () => onChange({ ...value, [field]: "" }) : undefined}
             onChange={(v) => onChange(free ? { ...value, [field]: v } : refineSel({ ...value, [field]: v }, fees))} /></div>
       ))}
     </div>
@@ -1186,8 +1199,9 @@ function SortTh({ label, k, sort, onSort, className, style }: {
 
 // A dropdown whose text can be read in full: the closed cell wraps to a few rows and the list opens as a searchable panel with wrapped options
 // (a native <select> cuts a long text on both sides). clearLabel adds a first row that empties the value.
-function FeeCombo({ value, options, onChange, placeholder = "— pick —", clearLabel, width = 160 }: {
+function FeeCombo({ value, options, onChange, placeholder = "— pick —", clearLabel, width = 160, locked = false, lockedHint = "Pick the Platform first", onClear }: {
   value: string; options: string[]; onChange: (v: string) => void; placeholder?: string; clearLabel?: string; width?: number | string;
+  locked?: boolean; lockedHint?: string; onClear?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
@@ -1196,6 +1210,7 @@ function FeeCombo({ value, options, onChange, placeholder = "— pick —", clea
   const pop = useRef<HTMLDivElement>(null);
 
   function toggle() {
+    if (locked) return;
     if (open) { setOpen(false); return; }
     const r = btn.current!.getBoundingClientRect();
     const w = Math.min(Math.max(r.width, 400), window.innerWidth - 24);
@@ -1219,10 +1234,13 @@ function FeeCombo({ value, options, onChange, placeholder = "— pick —", clea
   const choose = (v: string) => { setOpen(false); if (v !== value) onChange(v); };
   return (
     <>
-      <button ref={btn} type="button" className="fc-btn" style={{ width }} title={value || undefined} aria-haspopup="listbox" aria-expanded={open} onClick={toggle}>
-        <span className={`fc-val${value ? "" : " empty"}`}>{value || placeholder}</span>
-        <ChevronDown size={14} style={{ flexShrink: 0, opacity: .7 }} />
-      </button>
+      <span className="fc-wrap" style={{ width }}>
+        <button ref={btn} type="button" className="fc-btn" disabled={locked} title={locked ? lockedHint : value || undefined} aria-haspopup="listbox" aria-expanded={open} onClick={toggle}>
+          <span className={`fc-val${value ? "" : " empty"}`}>{value || (locked ? lockedHint : placeholder)}</span>
+          <ChevronDown size={14} style={{ flexShrink: 0, opacity: .7 }} />
+        </button>
+        {onClear && value && <button type="button" className="fc-x" aria-label={`Clear ${value}`} title="Clear" onClick={onClear}><X size={12} /></button>}
+      </span>
       {open && pos && createPortal(
         <div ref={pop} className="fc-pop" style={{ left: pos.left, width: pos.width, top: pos.top, bottom: pos.bottom, maxHeight: pos.maxH }}>
           <input className="fc-search" autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Type to search" />
