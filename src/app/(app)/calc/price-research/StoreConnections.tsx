@@ -262,7 +262,7 @@ function ConnectionEditor({ supabase, clientId, isAdmin, conn, onBack, onDone }:
         inserts.push({ client_id: clientId, connection_id: conn.id, kode_produk: p.prod_id, product_name: p.product_name, platform, store_id: conn.store_id, store_name: conn.store_name, product_url: url });
       }
       if (bad.length) { setErr(`${bad.length} URL${bad.length === 1 ? " is" : "s are"} not ${allowed ? `a ${conn.platform} product link` : "a Shopee, Tokopedia or TikTok Shop product link"}: ${bad.slice(0, 3).join("; ")}${bad.length > 3 ? "…" : ""}`); return; }
-      const dup = () => "A Product URL is already connected to this product in another connection.";
+      const dup = () => "This product has two Product URLs in this connection: keep one.";
       if (removals.length) {
         for (let i = 0; i < removals.length; i += 100) {
           const { error } = await supabase.from("price_research_links").delete().in("id", removals.slice(i, i + 100));
@@ -274,8 +274,31 @@ function ConnectionEditor({ supabase, clientId, isAdmin, conn, onBack, onDone }:
         const e = res.find((r) => r.error)?.error;
         if (e) { setErr(e.code === "23505" ? dup() : e.message); return; }
       }
-      for (let i = 0; i < inserts.length; i += 100) {
-        const { error } = await supabase.from("price_research_links").insert(inserts.slice(i, i + 100));
+      // the same URL may already be in the older links (no SRP): that link moves into this connection, with its price history, instead of a second copy
+      let toInsert = inserts;
+      if (inserts.length) {
+        const { data: legacy } = await supabase.from("pr_connections").select("id").eq("client_id", clientId).is("srp_id", null);
+        const legacyIds = ((legacy as { id: string }[]) || []).map((x) => x.id);
+        if (legacyIds.length) {
+          const { data: old } = await supabase.from("price_research_links").select("id, kode_produk, product_url").in("connection_id", legacyIds);
+          const byKey = new Map(((old as { id: string; kode_produk: string; product_url: string }[]) || []).map((o) => [`${o.kode_produk}|${o.product_url}`, o.id]));
+          const moves: [string, Record<string, unknown>][] = [];
+          toInsert = inserts.filter((row) => {
+            const id = byKey.get(`${row.kode_produk}|${row.product_url}`);
+            if (!id) return true;
+            moves.push([id, row]); byKey.delete(`${row.kode_produk}|${row.product_url}`);
+            return false;
+          });
+          for (let i = 0; i < moves.length; i += 20) {
+            const res = await Promise.all(moves.slice(i, i + 20).map(([id, row]) => supabase.from("price_research_links").update({
+              connection_id: row.connection_id, store_id: row.store_id, store_name: row.store_name, platform: row.platform, product_name: row.product_name }).eq("id", id)));
+            const e = res.find((r) => r.error)?.error;
+            if (e) { setErr(e.message); return; }
+          }
+        }
+      }
+      for (let i = 0; i < toInsert.length; i += 100) {
+        const { error } = await supabase.from("price_research_links").insert(toInsert.slice(i, i + 100));
         if (error) { setErr(error.code === "23505" ? dup() : error.message); return; }
       }
       onDone(`${conn.srp_no || "Older links"} · ${conn.store_name}: saved. ${connectedNow} of ${products.length} products connected${removals.length ? `, ${removals.length} removed` : ""}.`);

@@ -62,7 +62,7 @@ export async function POST(req: NextRequest) {
     if (!todo.length) { started.push({ platform, links: 0 }); continue; }
     try {
       const res = await fetch(`https://api.apify.com/v2/acts/${actorFor(platform)}/runs?token=${encodeURIComponent(token)}`, {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(buildInput(platform, todo.map((l) => cleanUrl(l.product_url)))),
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(buildInput(platform, Array.from(new Set(todo.map((l) => cleanUrl(l.product_url)))))),
       });
       if (!res.ok) { const msg = `Apify ${res.status}: ${(await res.text()).slice(0, 200)}`; todo.forEach((l) => failLink(l, msg)); continue; }
       const run = (await res.json()).data as { id: string; defaultDatasetId?: string };
