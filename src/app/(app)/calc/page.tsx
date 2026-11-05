@@ -33,6 +33,8 @@ type CalcRow = {
 
 // the products of the Catalog in force (Price Research > Product Catalog): the one list of products, shared with Price Guard
 type CatalogItem = { prod_id: string; product_name: string; srp_no: string | null; harga_beli: number | null; harga_srp: number | null };
+// the Platform / Jenis Toko the lists of Category, Sub Category and Jenis Product are narrowed to (the table filter, or the lines' own)
+type Scope = { platform: string; jenis_toko: string };
 type FeeSel = { category: string; sub_category: string; jenis_product: string; platform: string; jenis_toko: string };
 const FEE_FIELDS: (keyof FeeSel)[] = ["category", "sub_category", "jenis_product", "platform", "jenis_toko"];
 const emptySel: FeeSel = { category: "", sub_category: "", jenis_product: "", platform: "", jenis_toko: "" };
@@ -90,6 +92,10 @@ function mergeFee(line: CalcRow, choice: FeeSel): FeeSel {
   return m;
 }
 
+// a choice with the scope filled in where it is empty: the lists then show only the categories of that platform / jenis toko
+function withScope(v: FeeSel, scope?: Scope): FeeSel {
+  return { ...v, platform: v.platform || scope?.platform || "", jenis_toko: v.jenis_toko || scope?.jenis_toko || "" };
+}
 function formatRp(n: number): string { return Math.round(n || 0).toLocaleString("id-ID"); }
 function parseRp(s: string): number { return Number(s.replace(/[^\d-]/g, "")) || 0; }
 
@@ -216,6 +222,13 @@ export default function MassiveCalculatorPage() {
   }, [rows, platformFilter, tokoFilter, typeQuery, platformOf, tokoOf]);
   const toggleOne = useCallback((id: string) => setSelected((st) => { const n = new Set(st); if (n.has(id)) n.delete(id); else n.add(id); return n; }), []);
   const selectedRows = rows.filter((r) => selected.has(r.id));
+  // the lists follow the Platform / Jenis Toko filter above the table; the mass forms follow the ticked lines when they all share one
+  const listScope: Scope = { platform: platformFilter && platformFilter !== "__none" ? platformFilter : "", jenis_toko: tokoFilter };
+  const massScope: Scope = (() => {
+    const plats = [...new Set(selectedRows.map((r) => r.fee_platform || ""))];
+    const tokos = [...new Set(selectedRows.map((r) => r.fee_jenis_toko || ""))];
+    return { platform: plats.length === 1 && plats[0] ? plats[0] : listScope.platform, jenis_toko: tokos.length === 1 && tokos[0] ? tokos[0] : listScope.jenis_toko };
+  })();
   const [sort, setSort] = useState<{ k: string; dir: "asc" | "desc" } | null>(null);
   const catByProd = useMemo(() => new Map(srpItems.map((c) => [c.prod_id, c])), [srpItems]);
   // the value a column sorts by, for one line (the calculated ones are worked out the same way as on the line)
@@ -778,7 +791,7 @@ export default function MassiveCalculatorPage() {
                 {shown.map((r, i) => (
                   <CalcRowLine key={`${r.id}-${rev}`} no={i + 1} selected={selected.has(r.id)} onToggle={toggleOne} row={r} fee={r.fee_id ? feesById.get(r.fee_id) ?? null : null} fees={fees}
                     catalog={srpItems}
-                    onSave={saveRow} onDelete={deleteRow} onPending={onPending} />
+                    scope={listScope} onSave={saveRow} onDelete={deleteRow} onPending={onPending} />
                 ))}
                 {!loading && rows.length === 0 && (
                   <tr><td colSpan={39} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>This SRP has no lines.</td></tr>
@@ -791,20 +804,20 @@ export default function MassiveCalculatorPage() {
           </div>
         </div>
       )}
-      {massOpen === "edit" && <MassEditModal fees={fees} count={selectedRows.length} busy={busy} onClose={() => setMassOpen(null)} onApply={massEdit} />}
-      {massOpen === "dup" && <MassDuplicateModal fees={fees} count={selectedRows.length} busy={busy} onClose={() => setMassOpen(null)} onApply={massDuplicate} />}
+      {massOpen === "edit" && <MassEditModal fees={fees} scope={massScope} count={selectedRows.length} busy={busy} onClose={() => setMassOpen(null)} onApply={massEdit} />}
+      {massOpen === "dup" && <MassDuplicateModal fees={fees} scope={massScope} count={selectedRows.length} busy={busy} onClose={() => setMassOpen(null)} onApply={massDuplicate} />}
       {picking && <CatalogPicker supabase={supabase} clientId={clientId} busy={busy} onClose={() => setPicking(false)} onAdd={createSrp} />}
     </>
   );
 }
 
-function CalcRowLine({ no, row, fee, fees, catalog, selected, onToggle, onSave, onDelete, onPending }: {
+function CalcRowLine({ no, row, fee, fees, catalog, selected, onToggle, scope, onSave, onDelete, onPending }: {
   no: number; row: CalcRow; fee: Fee | null; fees: Fee[];
   catalog: CatalogItem[];
   onPending: (id: string, patch: Partial<CalcRow> | null) => void;
   onSave: (id: string, patch: Partial<CalcRow>) => void;
   onDelete: (id: string) => void;
-  selected: boolean; onToggle: (id: string) => void;
+  selected: boolean; onToggle: (id: string) => void; scope: Scope;
 }) {
   const [v, setV] = useState(() => ({
     item_product: row.item_product || "",
@@ -905,7 +918,7 @@ function CalcRowLine({ no, row, fee, fees, catalog, selected, onToggle, onSave, 
 
   const feeWidth: Record<keyof FeeSel, number> = { platform: 120, jenis_toko: 150, category: 150, sub_category: 210, jenis_product: 240 };
   const feeSelect = (field: keyof FeeSel) => {
-    const opts = optionsFor(field, sel, fees);
+    const opts = optionsFor(field, withScope(sel, scope), fees);
     const value = sel[field];
     const list = value && !opts.includes(value) ? [value, ...opts] : opts;
     return <FeeCombo width={feeWidth[field]} value={value} options={list} onChange={(v) => pick(field, v)} />;
@@ -1064,13 +1077,13 @@ function CatalogPicker({ supabase, clientId, busy, onClose, onAdd }: {
 const FEE_LABEL: Record<keyof FeeSel, string> = { category: "Category", sub_category: "Sub Category", jenis_product: "Jenis Product", platform: "Platform", jenis_toko: "Jenis Toko" };
 
 // the five fee values, narrowing each other (like the dropdowns of a line); "blank" is what an untouched one reads
-function FeePicker({ fees, value, onChange, blank, free, only }: { fees: Fee[]; value: FeeSel; onChange: (v: FeeSel) => void; blank: string; free?: boolean; only?: (keyof FeeSel)[] }) {
+function FeePicker({ fees, value, onChange, blank, free, only, scope }: { fees: Fee[]; value: FeeSel; onChange: (v: FeeSel) => void; blank: string; free?: boolean; only?: (keyof FeeSel)[]; scope?: Scope }) {
   const order: (keyof FeeSel)[] = only ?? ["platform", "jenis_toko", "category", "sub_category", "jenis_product"];   // the marketplace first, then the product category
   return (
     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
       {order.map((field) => (
         <div className="fld" key={field} style={field === "jenis_product" ? { gridColumn: "1 / -1" } : undefined}><label>{FEE_LABEL[field]}</label>
-          <FeeCombo width="100%" value={value[field]} placeholder={blank} clearLabel={blank} options={optionsFor(field, value, fees)}
+          <FeeCombo width="100%" value={value[field]} placeholder={blank} clearLabel={blank} options={optionsFor(field, withScope(value, scope), fees)}
             onChange={(v) => onChange(free ? { ...value, [field]: v } : refineSel({ ...value, [field]: v }, fees))} /></div>
       ))}
     </div>
@@ -1083,7 +1096,7 @@ const triSelect = (label: string, v: Tri, set: (x: Tri) => void) => (
     <select value={v} onChange={(e) => set(e.target.value as Tri)}><option value="">— keep —</option><option value="Yes">Yes</option><option value="No">No</option></select></div>
 );
 
-function MassEditModal({ fees, count, busy, onClose, onApply }: { fees: Fee[]; count: number; busy: boolean; onClose: () => void; onApply: (patch: Partial<CalcRow>, choice: FeeSel | null, markupPct: number | null) => Promise<string> }) {
+function MassEditModal({ fees, scope, count, busy, onClose, onApply }: { fees: Fee[]; scope: Scope; count: number; busy: boolean; onClose: () => void; onApply: (patch: Partial<CalcRow>, choice: FeeSel | null, markupPct: number | null) => Promise<string> }) {
   const [sel, setSel] = useState<FeeSel>(emptySel);
   const [f, setF] = useState({ markup_pct: "", target_roas: "", berat_kg: "", ukuran_cm3: "", biaya_lain_rp: "", modal_produk_rp: "", harga_jual_rp: "" });
   const [t, setT] = useState<{ ongkir: Tri; promo: Tri; p3: Tri; p6: Tri }>({ ongkir: "", promo: "", p3: "", p6: "" });
@@ -1117,7 +1130,7 @@ function MassEditModal({ fees, count, busy, onClose, onApply }: { fees: Fee[]; c
       <div style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 12 }}>The same change on every ticked line. A field left on <b>keep</b> / empty is not touched.</div>
       <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 6 }}>Marketplace fee row</div>
       <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 8 }}>Pick only what changes (for example just the Platform). Each line keeps its other fee values, and gets the fee row that matches the result.</div>
-      <FeePicker fees={fees} value={sel} onChange={setSel} blank="— keep —" free />
+      <FeePicker fees={fees} scope={scope} value={sel} onChange={setSel} blank="— keep —" free />
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginTop: 14 }}>
         {inp("modal_produk_rp", "Modal Produk (Rp)")}{inp("harga_jual_rp", "Harga Jual (Rp)")}{inp("markup_pct", "Harga Jual (% over Modal)")}{inp("target_roas", "Target ROAS")}
         {inp("berat_kg", "Berat (kg)")}{inp("ukuran_cm3", "Uk PxLxT (cm³)")}{inp("biaya_lain_rp", "Biaya Lain (Rp)")}<div />
@@ -1133,7 +1146,7 @@ function MassEditModal({ fees, count, busy, onClose, onApply }: { fees: Fee[]; c
   );
 }
 
-function MassDuplicateModal({ fees, count, busy, onClose, onApply }: { fees: Fee[]; count: number; busy: boolean; onClose: () => void; onApply: (choice: FeeSel | null) => Promise<string> }) {
+function MassDuplicateModal({ fees, scope, count, busy, onClose, onApply }: { fees: Fee[]; scope: Scope; count: number; busy: boolean; onClose: () => void; onApply: (choice: FeeSel | null) => Promise<string> }) {
   const [sel, setSel] = useState<FeeSel>(emptySel);
   const [err, setErr] = useState("");
   async function apply() {
@@ -1144,7 +1157,7 @@ function MassDuplicateModal({ fees, count, busy, onClose, onApply }: { fees: Fee
   return (
     <Modal onClose={onClose} width={680}>
       <div style={{ fontSize: 18, fontWeight: 800, color: "#fff", marginBottom: 14 }}>Duplicate {count} selected line{count === 1 ? "" : "s"}</div>
-      <FeePicker fees={fees} value={sel} onChange={setSel} blank="— same as the line —" free only={["platform", "jenis_toko"]} />
+      <FeePicker fees={fees} scope={scope} value={sel} onChange={setSel} blank="— same as the line —" free only={["platform", "jenis_toko"]} />
       {err && <div style={{ color: "#f87171", fontSize: 13, marginTop: 10 }}>✗ {err}</div>}
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 16 }}>
         <button className="btn-ghost" onClick={onClose}>Cancel</button>
