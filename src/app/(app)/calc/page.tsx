@@ -518,10 +518,11 @@ export default function MassiveCalculatorPage() {
       let incomplete = 0;
       const copies = selectedRows.map((r) => {
         const m = choice ? mergeFee(r, choice) : keysOf(r);
-        // another platform sorts the products in its own categories: the copy starts without Jenis Toko / Category / Sub Category / Jenis Product, unless they are picked in the form
-        if (choice?.platform && choice.platform !== (r.fee_platform ?? "")) {
-          for (const k of ["jenis_toko", "category", "sub_category", "jenis_product"] as const) if (!choice[k]) m[k] = "";
-        }
+        // a copy for another platform / jenis toko starts without Category, Sub Category and Jenis Product (each marketplace sorts the products in its own categories)
+        const platformChanged = !!choice?.platform && choice.platform !== (r.fee_platform ?? "");
+        const tokoChanged = !!choice?.jenis_toko && choice.jenis_toko !== (r.fee_jenis_toko ?? "");
+        if (platformChanged || tokoChanged) { m.category = ""; m.sub_category = ""; m.jenis_product = ""; }
+        if (platformChanged && !choice?.jenis_toko) m.jenis_toko = "";
         const hit = resolveFee(m, fees);
         if (!hit && FEE_FIELDS.some((k) => m[k])) incomplete++;
         return {
@@ -537,7 +538,7 @@ export default function MassiveCalculatorPage() {
       }
       await reloadRows(srp.id);
       setMassOpen(null); setSelected(new Set());
-      setMsg({ ok: true, text: `${copies.length} line${copies.length === 1 ? "" : "s"} duplicated.${incomplete ? ` ${incomplete} cop${incomplete === 1 ? "y has" : "ies have"} no fee row yet: pick Jenis Toko, Category, Sub Category and Jenis Product of the new platform.` : ""}` });
+      setMsg({ ok: true, text: `${copies.length} line${copies.length === 1 ? "" : "s"} duplicated.${incomplete ? ` ${incomplete} cop${incomplete === 1 ? "y has" : "ies have"} no fee row yet: pick Category, Sub Category and Jenis Product of the new platform.` : ""}` });
       return "";
     } finally { setBusy(false); }
   }
@@ -1062,8 +1063,8 @@ function CatalogPicker({ supabase, clientId, busy, onClose, onAdd }: {
 const FEE_LABEL: Record<keyof FeeSel, string> = { category: "Category", sub_category: "Sub Category", jenis_product: "Jenis Product", platform: "Platform", jenis_toko: "Jenis Toko" };
 
 // the five fee values, narrowing each other (like the dropdowns of a line); "blank" is what an untouched one reads
-function FeePicker({ fees, value, onChange, blank, free }: { fees: Fee[]; value: FeeSel; onChange: (v: FeeSel) => void; blank: string; free?: boolean }) {
-  const order: (keyof FeeSel)[] = ["platform", "jenis_toko", "category", "sub_category", "jenis_product"];   // the marketplace first, then the product category
+function FeePicker({ fees, value, onChange, blank, free, only }: { fees: Fee[]; value: FeeSel; onChange: (v: FeeSel) => void; blank: string; free?: boolean; only?: (keyof FeeSel)[] }) {
+  const order: (keyof FeeSel)[] = only ?? ["platform", "jenis_toko", "category", "sub_category", "jenis_product"];   // the marketplace first, then the product category
   return (
     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
       {order.map((field) => (
@@ -1141,9 +1142,8 @@ function MassDuplicateModal({ fees, count, busy, onClose, onApply }: { fees: Fee
   }
   return (
     <Modal onClose={onClose} width={680}>
-      <div style={{ fontSize: 18, fontWeight: 800, color: "#fff", marginBottom: 4 }}>Duplicate {count} selected line{count === 1 ? "" : "s"}</div>
-      <div style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 12 }}>Each ticked line is copied with all its values. To make the copies for another marketplace, pick the new Platform (for example Tiktok Tokped): the copies then start with Jenis Toko, Category, Sub Category and Jenis Product empty, because each marketplace sorts the products in its own categories. Pick any of them here to fill them in. If the Platform stays the same, each copy keeps the values of its line.</div>
-      <FeePicker fees={fees} value={sel} onChange={setSel} blank="— same as the line —" free />
+      <div style={{ fontSize: 18, fontWeight: 800, color: "#fff", marginBottom: 14 }}>Duplicate {count} selected line{count === 1 ? "" : "s"}</div>
+      <FeePicker fees={fees} value={sel} onChange={setSel} blank="— same as the line —" free only={["platform", "jenis_toko"]} />
       {err && <div style={{ color: "#f87171", fontSize: 13, marginTop: 10 }}>✗ {err}</div>}
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 16 }}>
         <button className="btn-ghost" onClick={onClose}>Cancel</button>
