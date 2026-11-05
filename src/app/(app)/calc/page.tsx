@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { createPortal } from "react-dom";
-import { ArrowDown, ArrowUp, ArrowUpDown, ChevronDown, Copy, Pencil, Search, X } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, ChevronDown, Copy, Pencil, Search, Trash2, X } from "lucide-react";
 import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Modal } from "@/components/ProductCatalog";
@@ -542,6 +542,25 @@ export default function MassiveCalculatorPage() {
     } finally { setBusy(false); }
   }
 
+  // Delete the ticked lines of this SRP
+  async function massDelete() {
+    if (!srp || !selectedRows.length) return;
+    const n = selectedRows.length;
+    if (!confirm(`Delete ${n} line${n === 1 ? "" : "s"} from ${srp.srp_no}? This cannot be undone.`)) return;
+    setBusy(true);
+    try {
+      const ids = selectedRows.map((r) => r.id);
+      for (let i = 0; i < ids.length; i += 100) {
+        const { error } = await supabase.from("massive_calc_rows").delete().in("id", ids.slice(i, i + 100));
+        if (error) { setMsg({ ok: false, text: error.message }); return; }
+      }
+      ids.forEach((id) => pending.current.delete(id)); setDirtyCount(pending.current.size);
+      await reloadRows(srp.id);
+      setSelected(new Set());
+      setMsg({ ok: true, text: `${n} line${n === 1 ? "" : "s"} deleted.` });
+    } finally { setBusy(false); }
+  }
+
   async function backToTable() {
     if (dirtyCount && !confirm(`${dirtyCount} line${dirtyCount === 1 ? " has" : "s have"} changes that are not saved. Go back without saving?`)) return;
     pending.current.clear(); setDirtyCount(0);
@@ -594,6 +613,8 @@ export default function MassiveCalculatorPage() {
         .srp-act{display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 12px;border:1px solid rgba(255,255,255,.12);border-radius:9px;background:rgba(10,22,40,.6);color:var(--text);font-size:13px;font-weight:600;cursor:pointer;transition:border-color .15s,background .15s}
         .srp-act:hover:not(:disabled){border-color:var(--gold);background:rgba(201,162,39,.12)}
         .srp-act:disabled{opacity:.4;cursor:not-allowed}
+        .srp-del{color:#ff9a9a}
+        .srp-del:hover:not(:disabled){border-color:rgba(255,90,90,.6);background:rgba(255,80,80,.14)}
         /* the fee dropdowns: the whole text is readable (a few rows), in the cell and in the list */
         .fc-btn{display:inline-flex;align-items:center;justify-content:space-between;gap:6px;min-height:30px;padding:4px 8px;border:1px solid rgba(201,162,39,.25);border-radius:6px;background:rgba(10,22,40,.5);color:var(--text);font:inherit;font-size:12px;text-align:left;cursor:pointer;box-sizing:border-box;max-width:100%}
         .fc-btn:hover{border-color:rgba(201,162,39,.5)}
@@ -699,8 +720,9 @@ export default function MassiveCalculatorPage() {
             </div>
             <div className={`srp-select${selectedRows.length ? " on" : ""}`}>
               {selectedRows.length > 0 && <span className="srp-count">{selectedRows.length} selected</span>}
-              <button type="button" className="srp-act" disabled={!selectedRows.length || busy} onClick={() => setMassOpen("edit")}><Pencil size={14} /> Edit selected</button>
-              <button type="button" className="srp-act" disabled={!selectedRows.length || busy} onClick={() => setMassOpen("dup")}><Copy size={14} /> Duplicate selected</button>
+              <button type="button" className="srp-act" disabled={!selectedRows.length || busy} onClick={() => setMassOpen("edit")}><Pencil size={14} /> Edit</button>
+              <button type="button" className="srp-act" disabled={!selectedRows.length || busy} onClick={() => setMassOpen("dup")}><Copy size={14} /> Duplicate</button>
+              <button type="button" className="srp-act srp-del" disabled={!selectedRows.length || busy} onClick={massDelete}><Trash2 size={14} /> Delete</button>
               {selectedRows.length > 0 && <button type="button" className="srp-reset" onClick={() => setSelected(new Set())}>Clear</button>}
             </div>
           </div>
