@@ -562,15 +562,20 @@ export default function MassiveCalculatorPage() {
         .calc-tbl td, .calc-tbl th{white-space:nowrap}
         .calc-ro{color:var(--muted);font-size:12px}
         /* the bar above the lines: filters on the left, what you can do with the ticked lines on the right */
-        .srp-bar{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px 18px;margin-top:14px;padding:10px 12px;border:1px solid var(--card-border);border-radius:14px;background:var(--glass)}
-        .srp-filters,.srp-select{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+        .srp-bar{display:flex;flex-wrap:nowrap;align-items:center;justify-content:space-between;gap:10px 18px;margin-top:14px;padding:10px 12px;border:1px solid var(--card-border);border-radius:14px;background:var(--glass)}
+        .srp-filters,.srp-select{display:flex;flex-wrap:nowrap;align-items:center;gap:8px}
+        .srp-filters{flex:1 1 auto;min-width:0}
+        .srp-select{flex:none}
+        @media (max-width:1100px){.srp-bar,.srp-filters,.srp-select{flex-wrap:wrap}}
         .srp-pill{display:inline-flex;align-items:center;gap:8px;height:38px;padding:0 8px 0 12px;border:1px solid rgba(255,255,255,.1);border-radius:10px;background:rgba(10,22,40,.6);color:var(--muted);font-size:12.5px;cursor:pointer;transition:border-color .15s,box-shadow .15s}
         .srp-pill:hover{border-color:rgba(201,162,39,.35)}
         .srp-pill:focus-within{border-color:var(--gold);box-shadow:0 0 0 3px rgba(201,162,39,.15)}
         .srp-pill select,.srp-pill input{height:100%;border:0;outline:0;background:transparent;color:var(--text);font:inherit;font-size:13.5px;font-weight:600;min-width:0;color-scheme:dark}
-        .srp-pill select{max-width:190px;cursor:pointer}
+        .srp-pill select{max-width:170px;cursor:pointer}
+        .srp-pill{flex:none}
+        .srp-pill.srp-search{flex:1 1 200px}
         .srp-pill select option{background:var(--navy-deep);color:var(--text)}
-        .srp-search{flex:1 1 260px;max-width:380px;cursor:text}
+        .srp-search{flex:1 1 200px;min-width:150px;max-width:380px;cursor:text}
         .srp-search input{flex:1;font-weight:500}
         .srp-search input::placeholder{color:var(--muted);font-weight:400}
         .srp-x{display:grid;place-items:center;width:24px;height:24px;border:0;border-radius:6px;background:rgba(255,255,255,.06);color:var(--text-2);cursor:pointer}
@@ -673,7 +678,7 @@ export default function MassiveCalculatorPage() {
               <span className="srp-count">{visible.length} of {rows.length} lines</span>
             </div>
             <div className={`srp-select${selectedRows.length ? " on" : ""}`}>
-              <span className="srp-count">{selectedRows.length ? `${selectedRows.length} selected` : "Tick lines to edit them together"}</span>
+              {selectedRows.length > 0 && <span className="srp-count">{selectedRows.length} selected</span>}
               <button type="button" className="srp-act" disabled={!selectedRows.length || busy} onClick={() => setMassOpen("edit")}><Pencil size={14} /> Edit selected</button>
               <button type="button" className="srp-act" disabled={!selectedRows.length || busy} onClick={() => setMassOpen("dup")}><Copy size={14} /> Duplicate selected</button>
               {selectedRows.length > 0 && <button type="button" className="srp-reset" onClick={() => setSelected(new Set())}>Clear</button>}
