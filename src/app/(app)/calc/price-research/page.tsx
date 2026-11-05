@@ -66,7 +66,7 @@ export default function PriceResearchPage() {
       if (!list.some((r) => r.status === "running")) {
         const done = list.filter((r) => r.status === "done"), bad = list.filter((r) => r.status === "failed");
         const saved = done.reduce((x, r) => x + r.scraped, 0), failed = done.reduce((x, r) => x + r.failed, 0) + bad.reduce((x, r) => x + r.failed, 0);
-        setMsg({ ok: failed === 0, text: `Scrape finished: ${saved} price${saved === 1 ? "" : "s"} saved${failed ? ` · ${failed} failed: ${[...done, ...bad].map((r) => r.error).find(Boolean) || "see the Price Guard rows"}` : ""}` });
+        setMsg({ ok: failed === 0, text: `Price check finished: ${saved} price${saved === 1 ? "" : "s"} saved${failed ? ` · ${failed} failed: ${[...done, ...bad].map((r) => r.error).find(Boolean) || "see the Price Guard rows"}` : ""}` });
         setTick((t) => t + 1);
       }
     }, 4000);
@@ -80,7 +80,7 @@ export default function PriceResearchPage() {
     setStarting(true); setMsg(null);
     const res = await fetch("/api/price-research/scrape", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ connection_ids: connectionIds }) });
     const j = await res.json().catch(() => ({}));
-    if (!res.ok) { setStarting(false); setMsg({ ok: false, text: j.error || `Scrape failed (${res.status})` }); return false; }
+    if (!res.ok) { setStarting(false); setMsg({ ok: false, text: j.error || `Price check failed (${res.status})` }); return false; }
     await pollRuns();
     setStarting(false);
     if (j.failed) setMsg({ ok: false, text: `${j.failed} link${j.failed === 1 ? "" : "s"} could not start: ${(j.errors || []).join(" | ")}` });
@@ -110,13 +110,13 @@ export default function PriceResearchPage() {
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 10, marginBottom: 12 }}>
           <div>
             <h3 style={{ margin: 0 }}>Price Research</h3>
-            <div className="hint">Add your products and their prices in the <b>Product Catalog</b> page, connect them to the stores&apos; pages in <b>Prod Connect</b>, then scrape and read the result in <b>Price Guard</b>.</div>
+            <div className="hint">Add your products and their prices in the <b>Product Catalog</b> page, connect them to the stores&apos; pages in <b>Prod Connect</b>, then check the prices and read the result in <b>Price Guard</b>.</div>
           </div>
         </div>
         <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>{subTab("guard", "Price Guard")}{subTab("urls", "Prod Connect")}</div>
         {running.length > 0 && (
           <div style={{ color: "var(--gold)", fontSize: 13, marginBottom: 10 }}>
-            ⏳ Scraping on Apify: {running.map((r) => `${PLATFORM_LABEL[r.platform]} · ${r.links} link${r.links === 1 ? "" : "s"} · ${Math.max(0, Math.round((now - new Date(r.started_at).getTime()) / 1000))}s`).join("   |   ")} — the prices appear when it finishes.
+            ⏳ Checking prices: {running.map((r) => `${PLATFORM_LABEL[r.platform]} · ${r.links} link${r.links === 1 ? "" : "s"} · ${Math.max(0, Math.round((now - new Date(r.started_at).getTime()) / 1000))}s`).join("   |   ")} — the prices appear when it finishes.
           </div>
         )}
         {msg && <div style={{ color: msg.ok ? "var(--gold)" : "#f87171", fontSize: 13, marginBottom: 10 }}>{msg.ok ? "✓" : "✗"} {msg.text}</div>}

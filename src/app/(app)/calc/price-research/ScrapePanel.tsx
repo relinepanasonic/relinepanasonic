@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import Loader from "@/components/Loader";
 import { Modal } from "@/components/ProductCatalog";
 import { PLATFORMS, estimateCost, type Platform } from "@/lib/priceResearch";
-import { colLabel, colTitle, diffPct, downloadScrapePdf, downloadScrapeXls, oursOf, verdict, type Cell, type ResultData, type ScrapeConn } from "@/lib/scrapeResult";
+import { colLabels, colTitle, diffPct, downloadScrapePdf, downloadScrapeXls, oursOf, verdict, type Cell, type ResultData, type ScrapeConn } from "@/lib/scrapeResult";
 
 // Price Research > Price Guard
 //   First page: the scrape log only (one row per Execute) and the Scrape button.
@@ -31,7 +31,7 @@ function when(v: string): string {
   return `${p(j.getUTCDate())} ${MON[j.getUTCMonth()]} ${j.getUTCFullYear()} ${p(j.getUTCHours())}:${p(j.getUTCMinutes())}`;
 }
 function stamp(v: string): string {
-  const j = jkt(v); if (!j) return "scrape";
+  const j = jkt(v); if (!j) return "check";
   const p = (n: number) => String(n).padStart(2, "0");
   return `${j.getUTCFullYear()}-${p(j.getUTCMonth() + 1)}-${p(j.getUTCDate())}-${p(j.getUTCHours())}${p(j.getUTCMinutes())}`;
 }
@@ -64,13 +64,13 @@ export default function ScrapePanel({ supabase, clientId, canScrape, tick, busy,
   return (
     <>
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center", marginBottom: 12 }}>
-        <div className="hint" style={{ flex: 1, margin: 0 }}>Every scrape is in this log. Click a row to see its result against our prices.{canScrape ? " Press Scrape to start a new one." : ""}</div>
-        {canScrape && <button className="btn-gold" disabled={busy} onClick={() => setModal(true)} style={{ padding: "10px 24px" }}>{busy ? "Scraping on Apify…" : "Scrape"}</button>}
+        <div className="hint" style={{ flex: 1, margin: 0 }}>Every price check is in this log. Click a row to see its result against our prices.{canScrape ? " Press Check prices to start a new one." : ""}</div>
+        {canScrape && <button className="btn-gold" disabled={busy} onClick={() => setModal(true)} style={{ padding: "10px 24px" }}>{busy ? "Checking prices…" : "Check prices"}</button>}
       </div>
       {scrapes === null ? <Loader center /> : (
         <div className="tbl-wrap" style={{ maxHeight: "68vh" }}>
           <table className="tbl day-tbl">
-            <thead><tr><th>Date</th><th>Connections</th><th className="num">Links</th><th className="num">Saved</th><th className="num">Failed</th><th>Status</th><th>Scraped by</th></tr></thead>
+            <thead><tr><th>Date</th><th>Connections</th><th className="num">Links</th><th className="num">Saved</th><th className="num">Failed</th><th>Status</th><th>Checked by</th></tr></thead>
             <tbody>
               {scrapes.map((s) => (
                 <tr key={s.id} onClick={() => setOpen(s.id)} style={{ cursor: "pointer" }}>
@@ -92,7 +92,7 @@ export default function ScrapePanel({ supabase, clientId, canScrape, tick, busy,
                   <td>{s.created_by || "—"}</td>
                 </tr>
               ))}
-              {scrapes.length === 0 && <tr><td colSpan={7} style={{ textAlign: "center", color: "var(--muted)", padding: 24 }}>No scrape yet{canScrape ? " — press Scrape and pick the store connections." : "."}</td></tr>}
+              {scrapes.length === 0 && <tr><td colSpan={7} style={{ textAlign: "center", color: "var(--muted)", padding: 24 }}>No price check yet{canScrape ? " — press Check prices and pick the store connections." : "."}</td></tr>}
             </tbody>
           </table>
         </div>
@@ -124,7 +124,7 @@ function ResultPage({ supabase, scrape, tick, onBack }: { supabase: Supabase; sc
 
   const t = q.trim().toLowerCase();
   const rows = (data?.rows || []).filter((r) => !t || r.product_name.toLowerCase().includes(t) || r.prod_id.toLowerCase().includes(t));
-  const meta = { title: `Scrape of ${when(scrape.created_at)}`, by: scrape.created_by, status: scrape.status };
+  const meta = { title: `Price check of ${when(scrape.created_at)}`, by: scrape.created_by, status: scrape.status };
   async function download(kind: "xls" | "pdf") {
     if (!data) return;
     setSaving(kind);
@@ -137,10 +137,10 @@ function ResultPage({ supabase, scrape, tick, onBack }: { supabase: Supabase; sc
   return (
     <>
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center", marginBottom: 10 }}>
-        <button className="btn-ghost" onClick={onBack}>← Scrape log</button>
+        <button className="btn-ghost" onClick={onBack}>← Price check log</button>
         <div style={{ fontSize: 18, fontWeight: 800, color: "#fff" }}>Result of {when(scrape.created_at)}</div>
         <div style={{ fontSize: 12.5, color: "var(--muted)" }}>
-          {scrape.created_by ? `scraped by ${scrape.created_by} · ` : ""}{scrape.saved} saved{scrape.failed ? `, ${scrape.failed} failed` : ""} · {running ? <span style={{ color: "var(--gold)" }}>⏳ running, the prices appear as they arrive</span> : scrape.status === "done" ? "done" : <span style={{ color: RED }}>failed</span>}
+          {scrape.created_by ? `checked by ${scrape.created_by} · ` : ""}{scrape.saved} saved{scrape.failed ? `, ${scrape.failed} failed` : ""} · {running ? <span style={{ color: "var(--gold)" }}>⏳ running, the prices appear as they arrive</span> : scrape.status === "done" ? "done" : <span style={{ color: RED }}>failed</span>}
         </div>
         <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
           <button className="btn-ghost" disabled={!data || !!saving} onClick={() => download("xls")}>{saving === "xls" ? "Preparing…" : "⬇ XLS"}</button>
@@ -162,6 +162,7 @@ function ResultPage({ supabase, scrape, tick, onBack }: { supabase: Supabase; sc
 /* ── Prod ID | Product Name | Our Price | one column per store ── */
 function ResultTable({ data, rows }: { data: ResultData; rows: ResultData["rows"] }) {
   const cols = data.columns;
+  const labels = colLabels(cols);
   return (
     <div className="tbl-wrap" style={{ maxHeight: "66vh" }}>
       <table className="tbl day-tbl">
@@ -169,10 +170,7 @@ function ResultTable({ data, rows }: { data: ResultData; rows: ResultData["rows"
           <tr>
             <th>Prod ID</th><th>Product Name</th><th className="num">Our Price</th>
             {cols.map((c) => (
-              <th key={c.id} className="num" style={{ whiteSpace: "nowrap" }}>
-                {colLabel(c)}
-                <div style={{ fontSize: 10.5, fontWeight: 400, opacity: .75 }}>{[c.name ? c.store_name : null, c.platform, c.srp_no].filter(Boolean).join(" · ")}</div>
-              </th>
+              <th key={c.id} className="num" style={{ whiteSpace: "nowrap" }}>{labels.get(c.id)}</th>
             ))}
           </tr>
         </thead>
@@ -200,7 +198,7 @@ function ResultTable({ data, rows }: { data: ResultData; rows: ResultData["rows"
 function PriceCell({ cell }: { cell?: Cell }) {
   const v = verdict(cell);
   if (v === "none") return <td className="num" style={{ color: "var(--muted)" }} title="This store does not sell it (no Product URL)">—</td>;
-  if (v === "failed") return <td className="num" style={{ color: RED, fontSize: 12 }} title={cell!.error || "Scrape failed"}>failed</td>;
+  if (v === "failed") return <td className="num" style={{ color: RED, fontSize: 12 }} title={cell!.error || "Price check failed"}>failed</td>;
   if (v === "pending") return <td className="num" style={{ color: "var(--muted)" }} title="No price saved yet">…</td>;
   const c = cell!;
   const d = diffPct(c.price!, c.ours);
@@ -215,7 +213,7 @@ function PriceCell({ cell }: { cell?: Cell }) {
   );
 }
 
-/* ── Scrape: pick the connections, see the links, Execute / Cancel ── */
+/* ── Check prices: pick the connections, see the links, Execute / Cancel ── */
 function ScrapeModal({ supabase, clientId, busy, onClose, onExecute }: {
   supabase: Supabase; clientId: string; busy: boolean; onClose: () => void; onExecute: (ids: string[]) => Promise<boolean>;
 }) {
@@ -248,12 +246,12 @@ function ScrapeModal({ supabase, clientId, busy, onClose, onExecute }: {
     setErr(""); setRunning(true);
     const ok = await onExecute([...sel]);
     setRunning(false);
-    if (!ok) setErr("The scrape could not start: see the message above the table.");
+    if (!ok) setErr("The price check could not start: see the message above the table.");
   }
   return (
     <Modal onClose={onClose} width={820}>
-      <div style={{ fontSize: 18, fontWeight: 800, color: "#fff", marginBottom: 6 }}>Scrape</div>
-      <div style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 12 }}>Pick the store connections to scrape. Every Product URL of a picked connection is scraped, nothing starts before you press Execute.</div>
+      <div style={{ fontSize: 18, fontWeight: 800, color: "#fff", marginBottom: 6 }}>Check prices</div>
+      <div style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 12 }}>Pick the store connections to check. Every Product URL of a picked connection is checked; nothing starts before you press Execute.</div>
       {conns === null ? <Loader center /> : (
         <div className="tbl-wrap" style={{ maxHeight: "40vh" }}>
           <table className="tbl">
@@ -282,7 +280,7 @@ function ScrapeModal({ supabase, clientId, busy, onClose, onExecute }: {
         </div>
       )}
       <div style={{ marginTop: 14, padding: "10px 14px", borderRadius: 12, border: "1px solid rgba(201,162,39,.35)", background: "rgba(201,162,39,.08)", display: "flex", gap: 18, flexWrap: "wrap", alignItems: "baseline" }}>
-        <span><b style={{ fontSize: 20, color: "var(--gold-soft)" }}>{chosen.length}</b> link{chosen.length === 1 ? "" : "s"} will be scraped</span>
+        <span><b style={{ fontSize: 20, color: "var(--gold-soft)" }}>{chosen.length}</b> link{chosen.length === 1 ? "" : "s"} will be checked</span>
         <span style={{ color: "var(--muted)", fontSize: 12.5 }}>{sel.size} connection{sel.size === 1 ? "" : "s"}{chosen.length ? ` · estimated Apify cost about US$ ${cost.toFixed(3)}` : ""}</span>
         {chosen.length > MAX_LINKS && <span style={{ color: RED, fontSize: 12.5 }}>Too many links: pick fewer connections (max {MAX_LINKS} at a time).</span>}
         {PLATFORMS.filter((p) => byPlatform[p.v]).length > 0 && <span style={{ color: "var(--muted)", fontSize: 12.5 }}>{PLATFORMS.filter((p) => byPlatform[p.v]).map((p) => `${p.label} ${byPlatform[p.v]}`).join(" · ")}</span>}

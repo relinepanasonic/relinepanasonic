@@ -8,7 +8,7 @@ import { PLATFORMS, cleanUrl, detectPlatform, type Platform } from "@/lib/priceR
 
 // Price Research > Product URL: the log of store connections first (SRP ID | Catalog ID | Store | products with a URL), then one connection:
 // every product of the SRP in one table, with our Harga Jual and the Product URL of that store. A store may not sell every product: a product
-// without URL is simply not connected. Save puts the URLs in the log; then another store can be connected to the same SRP. Scraping is in Price Guard.
+// without URL is simply not connected. Save puts the URLs in the log; then another store can be connected to the same SRP. Checking the prices is in Price Guard.
 type Supabase = ReturnType<typeof createClient>;
 type Store = { id: string; name: string };
 type ConnLog = {

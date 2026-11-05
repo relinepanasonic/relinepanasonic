@@ -1,4 +1,4 @@
-// The result of ONE scrape (Price Guard): one row per product, one column per scraped store connection, each cell with the competitor's price
+// The result of ONE price check (Price Guard): one row per product, one column per checked store connection, each cell with the competitor's price
 // next to our price. Shared by the screen, the XLS and the PDF so all three say the same thing.
 export type ScrapeConn = { id: string; name?: string | null; store_name: string | null; platform: string | null; srp_no: string | null };
 export type Cell = {
@@ -25,6 +25,12 @@ export function verdict(cell?: Cell): Verdict {
 }
 // a connection is shown by its name, or by its store when it has none
 export const colLabel = (c: ScrapeConn) => c.name || c.store_name || "—";
+// the header of a column: just the connection name; the platform is added only when two columns would otherwise read the same
+export function colLabels(columns: ScrapeConn[]): Map<string, string> {
+  const base = columns.map(colLabel);
+  const dup = new Set(base.filter((x, i) => base.indexOf(x) !== i));
+  return new Map(columns.map((c, i) => [c.id, dup.has(base[i]) && c.platform ? `${base[i]} · ${c.platform}` : base[i]]));
+}
 export const colTitle = (c: ScrapeConn) => `${colLabel(c)}${c.platform ? ` · ${c.platform}` : ""}`;
 
 // our price of a product: one value, or one per platform when the scraped connections are for different platforms and our prices differ
@@ -56,7 +62,8 @@ export const FLAT_HEAD = ["Prod ID", "Product Name", "SRP ID", "Connection", "St
 export async function downloadScrapeXls(data: ResultData, meta: ResultMeta, fileStamp: string) {
   const XLSX = await import("xlsx");
   const head: string[] = ["Prod ID", "Product Name", "Our Price"];
-  for (const c of data.columns) head.push(colTitle(c), `${colLabel(c)} vs our price %`);
+  const labels = colLabels(data.columns);
+  for (const c of data.columns) head.push(labels.get(c.id)!, `${labels.get(c.id)} vs our price %`);
   const body = data.rows.map((r) => {
     const ours = oursOf(r, data.columns);
     const line: (string | number)[] = [r.prod_id, r.product_name, ours.length === 1 ? ours[0].v : ours.map((x) => `${x.platform || ""} ${rp(x.v)}`.trim()).join(" / ")];
@@ -77,7 +84,7 @@ export async function downloadScrapeXls(data: ResultData, meta: ResultMeta, file
   const flat = XLSX.utils.aoa_to_sheet([FLAT_HEAD, ...flatRows(data)]);
   flat["!cols"] = FLAT_HEAD.map((h, i) => ({ wch: i === 1 ? 46 : Math.max(12, h.length + 2) }));
   XLSX.utils.book_append_sheet(wb, flat, "Detail");
-  const info = XLSX.utils.aoa_to_sheet([["Price Guard"], [meta.title], ["Scraped by", meta.by || ""], ["Status", meta.status], [""],
+  const info = XLSX.utils.aoa_to_sheet([["Price Guard"], [meta.title], ["Checked by", meta.by || ""], ["Status", meta.status], [""],
     ["How to read", "A price below our price means the competitor is cheaper than us; above it, more expensive. The % is the difference with our price."]]);
   info["!cols"] = [{ wch: 18 }, { wch: 90 }];
   XLSX.utils.book_append_sheet(wb, info, "Info");
@@ -91,7 +98,7 @@ export async function downloadScrapePdf(data: ResultData, meta: ResultMeta, file
   doc.setFont("helvetica", "bold"); doc.setFontSize(15); doc.setTextColor(11, 26, 51);
   doc.text("Price Guard", 32, 34);
   doc.setFont("helvetica", "normal"); doc.setFontSize(8.5); doc.setTextColor(85, 98, 122);
-  doc.text(`${meta.title}${meta.by ? ` · scraped by ${meta.by}` : ""}`, 32, 48);
+  doc.text(`${meta.title}${meta.by ? ` · checked by ${meta.by}` : ""}`, 32, 48);
   doc.text("Red: the competitor is cheaper than our price · Green: more expensive than our price", 32, 60);
 
   const verdicts: Verdict[][] = [];
@@ -116,7 +123,7 @@ export async function downloadScrapePdf(data: ResultData, meta: ResultMeta, file
     startY: 70, margin: { left: 32, right: 32 }, theme: "grid",
     styles: { fontSize: n > 5 ? 6.5 : 7.5, cellPadding: 3, textColor: [11, 26, 51], lineColor: [213, 219, 230], lineWidth: 0.3, valign: "middle" },
     headStyles: { fillColor: [232, 237, 246], textColor: [11, 26, 51], fontStyle: "bold" },
-    head: [["Prod ID", "Product Name", "Our Price", ...data.columns.map((c) => `${colLabel(c)}\n${[c.name ? c.store_name : null, c.platform, c.srp_no].filter(Boolean).join(" · ")}`)]],
+    head: [["Prod ID", "Product Name", "Our Price", ...data.columns.map((c) => colLabels(data.columns).get(c.id)!)]],
     body,
     columnStyles: { 0: { cellWidth: 60 }, 1: { cellWidth: 170 }, 2: { halign: "right", cellWidth: 62 }, ...Object.fromEntries(data.columns.map((_, i) => [3 + i, { halign: "right", cellWidth: storeW }])) },
     didParseCell: (h) => {
