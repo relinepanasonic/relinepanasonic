@@ -1,6 +1,6 @@
 // The result of ONE scrape (Price Guard): one row per product, one column per scraped store connection, each cell with the competitor's price
 // next to our price. Shared by the screen, the XLS and the PDF so all three say the same thing.
-export type ScrapeConn = { id: string; store_name: string | null; platform: string | null; srp_no: string | null };
+export type ScrapeConn = { id: string; name?: string | null; store_name: string | null; platform: string | null; srp_no: string | null };
 export type Cell = {
   ours: number | null; has_link: boolean; link_id: string | null; ok: boolean | null; error: string | null; price: number | null;
   original: number | null; discount_pct: number | null; labels: string[] | null; scraped_at: string | null;
@@ -23,7 +23,9 @@ export function verdict(cell?: Cell): Verdict {
   if (d == null || Math.abs(d) < 0.05) return "same";
   return d < 0 ? "cheaper" : "pricier";
 }
-export const colTitle = (c: ScrapeConn) => `${c.store_name || "—"}${c.platform ? ` · ${c.platform}` : ""}`;
+// a connection is shown by its name, or by its store when it has none
+export const colLabel = (c: ScrapeConn) => c.name || c.store_name || "—";
+export const colTitle = (c: ScrapeConn) => `${colLabel(c)}${c.platform ? ` · ${c.platform}` : ""}`;
 
 // our price of a product: one value, or one per platform when the scraped connections are for different platforms and our prices differ
 export function oursOf(row: ResultRow, columns: ScrapeConn[]): { platform: string | null; v: number }[] {
@@ -43,18 +45,18 @@ export function flatRows(data: ResultData) {
       if (!cell?.has_link) continue;
       const v = verdict(cell);
       const d = cell.price != null ? diffPct(cell.price, cell.ours) : null;
-      out.push([r.prod_id, r.product_name, c.srp_no || "", c.store_name || "", c.platform || "", cell.ours ?? "", cell.price ?? "", cell.original ?? "",
+      out.push([r.prod_id, r.product_name, c.srp_no || "", c.name || "", c.store_name || "", c.platform || "", cell.ours ?? "", cell.price ?? "", cell.original ?? "",
         cell.discount_pct ?? "", d == null ? "" : Math.round(d * 10) / 10, VERDICT_TEXT[v], (cell.labels || []).join(", "), cell.error || ""]);
     }
   }
   return out;
 }
-export const FLAT_HEAD = ["Prod ID", "Product Name", "SRP ID", "Store", "Platform", "Our Price", "Competitor Price", "Before discount", "Discount %", "vs our price %", "Result", "Promo labels", "Error"];
+export const FLAT_HEAD = ["Prod ID", "Product Name", "SRP ID", "Connection", "Store", "Platform", "Our Price", "Competitor Price", "Before discount", "Discount %", "vs our price %", "Result", "Promo labels", "Error"];
 
 export async function downloadScrapeXls(data: ResultData, meta: ResultMeta, fileStamp: string) {
   const XLSX = await import("xlsx");
   const head: string[] = ["Prod ID", "Product Name", "Our Price"];
-  for (const c of data.columns) head.push(colTitle(c), `${c.store_name || "—"} vs our price %`);
+  for (const c of data.columns) head.push(colTitle(c), `${colLabel(c)} vs our price %`);
   const body = data.rows.map((r) => {
     const ours = oursOf(r, data.columns);
     const line: (string | number)[] = [r.prod_id, r.product_name, ours.length === 1 ? ours[0].v : ours.map((x) => `${x.platform || ""} ${rp(x.v)}`.trim()).join(" / ")];
@@ -114,7 +116,7 @@ export async function downloadScrapePdf(data: ResultData, meta: ResultMeta, file
     startY: 70, margin: { left: 32, right: 32 }, theme: "grid",
     styles: { fontSize: n > 5 ? 6.5 : 7.5, cellPadding: 3, textColor: [11, 26, 51], lineColor: [213, 219, 230], lineWidth: 0.3, valign: "middle" },
     headStyles: { fillColor: [232, 237, 246], textColor: [11, 26, 51], fontStyle: "bold" },
-    head: [["Prod ID", "Product Name", "Our Price", ...data.columns.map((c) => `${c.store_name || "-"}\n${[c.platform, c.srp_no].filter(Boolean).join(" · ")}`)]],
+    head: [["Prod ID", "Product Name", "Our Price", ...data.columns.map((c) => `${colLabel(c)}\n${[c.name ? c.store_name : null, c.platform, c.srp_no].filter(Boolean).join(" · ")}`)]],
     body,
     columnStyles: { 0: { cellWidth: 60 }, 1: { cellWidth: 170 }, 2: { halign: "right", cellWidth: 62 }, ...Object.fromEntries(data.columns.map((_, i) => [3 + i, { halign: "right", cellWidth: storeW }])) },
     didParseCell: (h) => {

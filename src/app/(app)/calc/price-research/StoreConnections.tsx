@@ -12,7 +12,7 @@ import { PLATFORMS, cleanUrl, detectPlatform, type Platform } from "@/lib/priceR
 type Supabase = ReturnType<typeof createClient>;
 type Store = { id: string; name: string };
 type ConnLog = {
-  id: string; srp_id: string | null; srp_no: string | null; catalog_no: string | null; vendor_name: string | null; store_id: string | null; store_name: string | null; platform: string | null;
+  id: string; srp_id: string | null; srp_no: string | null; catalog_no: string | null; vendor_name: string | null; store_id: string | null; store_name: string | null; platform: string | null; name: string | null;
   created_at: string; created_by: string | null; products: number; connected: number; platforms: Platform[];
 };
 type ConnProduct = {
@@ -77,6 +77,7 @@ export default function StoreConnections({ supabase, clientId, isAdmin, tick, on
   if (open) {
     return (
       <ConnectionEditor supabase={supabase} clientId={clientId} isAdmin={isAdmin} conn={open}
+        onRenamed={(name) => setOpen((o) => (o ? { ...o, name } : o))}
         onBack={() => { setOpen(null); load(); }}
         onDone={(text) => { setOpen(null); setMsg({ ok: true, text }); load(); onChanged(); }} />
     );
@@ -93,10 +94,11 @@ export default function StoreConnections({ supabase, clientId, isAdmin, tick, on
       {log === null ? <Loader center /> : (
         <div className="tbl-wrap" style={{ maxHeight: "66vh" }}>
           <table className="tbl day-tbl">
-            <thead><tr><th>SRP ID</th><th>Catalog ID</th><th>Store Name</th><th>Platform</th><th className="num">Products connected</th><th>Date Create</th><th>Created by</th></tr></thead>
+            <thead><tr><th>Connection Name</th><th>SRP ID</th><th>Catalog ID</th><th>Store Name</th><th>Platform</th><th className="num">Products connected</th><th>Date Create</th><th>Created by</th></tr></thead>
             <tbody>
               {log.map((c) => (
                 <tr key={c.id} onClick={() => { setMsg(null); setOpen(c); }} style={{ cursor: "pointer" }}>
+                  <td style={{ fontWeight: 700 }}>{c.name || <span style={{ color: "var(--muted)", fontWeight: 400 }}>—</span>}</td>
                   <td style={{ fontFamily: "monospace", fontWeight: 700 }}>{c.srp_no || <span style={{ color: "var(--muted)", fontWeight: 400 }}>— (older links)</span>}</td>
                   <td><span style={{ fontFamily: "monospace" }}>{c.catalog_no || "—"}</span>{c.vendor_name && <span style={{ color: "var(--muted)", fontSize: 12 }}> · {c.vendor_name}</span>}</td>
                   <td style={{ fontWeight: 700 }}>{c.store_name || "—"}</td>
@@ -106,7 +108,7 @@ export default function StoreConnections({ supabase, clientId, isAdmin, tick, on
                   <td>{c.created_by || "—"}</td>
                 </tr>
               ))}
-              {log.length === 0 && <tr><td colSpan={7} style={{ textAlign: "center", color: "var(--muted)", padding: 24 }}>No store connected yet — press + Connect new store, pick an SRP and a store.</td></tr>}
+              {log.length === 0 && <tr><td colSpan={8} style={{ textAlign: "center", color: "var(--muted)", padding: 24 }}>No store connected yet — press + Connect new store, pick an SRP and a store.</td></tr>}
             </tbody>
           </table>
         </div>
@@ -129,6 +131,7 @@ function NewConnectionModal({ supabase, clientId, stores, onStores, onClose }: {
   const [platform, setPlatform] = useState("");
   const [err, setErr] = useState("");
   const [saving, setSaving] = useState(false);
+  const [name, setName] = useState("");
   useEffect(() => {
     (async () => {
       const { data } = await supabase.rpc("calc_srp_log", { p_client_id: clientId });
@@ -162,7 +165,7 @@ function NewConnectionModal({ supabase, clientId, stores, onStores, onClose }: {
     if (!srpId) { setErr("Pick the SRP."); return; }
     if (!storeId) { setErr("Pick the store (or add a new one in the dropdown)."); return; }
     setSaving(true);
-    const { data, error } = await supabase.rpc("pr_connection_create", { p_client_id: clientId, p_srp_id: srpId, p_store_id: storeId, p_platform: platform || null });
+    const { data, error } = await supabase.rpc("pr_connection_create", { p_client_id: clientId, p_srp_id: srpId, p_store_id: storeId, p_platform: platform || null, p_name: name.trim() || null });
     setSaving(false);
     if (error) { setErr(error.message.replace(/^[A-Z_]+:\s*/, "")); return; }
     onClose(data as string);
@@ -205,6 +208,9 @@ function NewConnectionModal({ supabase, clientId, stores, onStores, onClose }: {
           </select>
         </div>
       </div>
+      <div className="fld" style={{ maxWidth: 660, marginTop: 12 }}><label>Connection name (optional)</label>
+        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="For example: Panasonic.id - AC only. Use a name when you need a special set of products for the same store." />
+      </div>
       {platform && <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 8 }}>Only the {platform} lines of the SRP are listed, and only {platform.toLowerCase().startsWith("shopee") ? "Shopee" : platform.toLowerCase().startsWith("tiktok") ? "Tokopedia / TikTok Shop" : platform} links are accepted.</div>}
       {err && <div style={{ color: "#f87171", fontSize: 13, marginTop: 10 }}>✗ {err}</div>}
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 16 }}>
@@ -216,8 +222,8 @@ function NewConnectionModal({ supabase, clientId, stores, onStores, onClose }: {
 }
 
 /* ── one connection: every product of the SRP, one Product URL each ── */
-function ConnectionEditor({ supabase, clientId, isAdmin, conn, onBack, onDone }: {
-  supabase: Supabase; clientId: string; isAdmin: boolean; conn: ConnLog; onBack: () => void; onDone: (text: string) => void;
+function ConnectionEditor({ supabase, clientId, isAdmin, conn, onBack, onDone, onRenamed }: {
+  supabase: Supabase; clientId: string; isAdmin: boolean; conn: ConnLog; onBack: () => void; onDone: (text: string) => void; onRenamed: (name: string | null) => void;
 }) {
   const [products, setProducts] = useState<ConnProduct[] | null>(null);
   const [urls, setUrls] = useState<Record<string, string>>({});
@@ -226,6 +232,16 @@ function ConnectionEditor({ supabase, clientId, isAdmin, conn, onBack, onDone }:
   const [err, setErr] = useState("");
   const [saving, setSaving] = useState(false);
   const allowed = allowedPlatforms(conn);
+  const label = conn.name || conn.store_name;
+
+  async function rename() {
+    const n = window.prompt("Connection name (for example: Panasonic.id - AC only)", conn.name || "");
+    if (n === null) return;
+    const name = n.trim() || null;
+    const { error } = await supabase.from("pr_connections").update({ name }).eq("id", conn.id);
+    if (error) { setErr(error.code === "23505" ? "Another connection of this SRP, store and platform already has this name." : error.message); return; }
+    setErr(""); onRenamed(name);
+  }
 
   const load = useCallback(async () => {
     const { data } = await supabase.rpc("pr_connection_products", { p_conn: conn.id });
@@ -301,16 +317,16 @@ function ConnectionEditor({ supabase, clientId, isAdmin, conn, onBack, onDone }:
         const { error } = await supabase.from("price_research_links").insert(toInsert.slice(i, i + 100));
         if (error) { setErr(error.code === "23505" ? dup() : error.message); return; }
       }
-      onDone(`${conn.srp_no || "Older links"} · ${conn.store_name}: saved. ${connectedNow} of ${products.length} products connected${removals.length ? `, ${removals.length} removed` : ""}.`);
+      onDone(`${conn.srp_no || "Older links"} · ${label}: saved. ${connectedNow} of ${products.length} products connected${removals.length ? `, ${removals.length} removed` : ""}.`);
     } finally { setSaving(false); }
   }
 
   async function delConn() {
     const n = (products || []).filter((p) => p.link).length;
-    if (!window.confirm(`Delete the connection of ${conn.srp_no || "the older links"} to ${conn.store_name} with its ${n} Product URL${n === 1 ? "" : "s"} and their price history?`)) return;
+    if (!window.confirm(`Delete the connection of ${conn.srp_no || "the older links"} to ${label} with its ${n} Product URL${n === 1 ? "" : "s"} and their price history?`)) return;
     const { error } = await supabase.from("pr_connections").delete().eq("id", conn.id);
     if (error) { setErr(error.message); return; }
-    onDone(`Connection to ${conn.store_name} deleted.`);
+    onDone(`Connection ${label} deleted.`);
   }
   function back() {
     if (dirtyIds.length && !window.confirm(`${dirtyIds.length} Product URL${dirtyIds.length === 1 ? " is" : "s are"} not saved. Go back without saving?`)) return;
@@ -322,7 +338,8 @@ function ConnectionEditor({ supabase, clientId, isAdmin, conn, onBack, onDone }:
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10, marginBottom: 6 }}>
         <div style={{ display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap" }}>
           <button className="btn-ghost" onClick={back}>← Connections</button>
-          <div style={{ fontSize: 20, fontWeight: 800, color: "#fff" }}>{conn.store_name}{conn.platform ? <span style={{ color: "var(--gold)" }}> · {conn.platform}</span> : null}</div>
+          <div style={{ fontSize: 20, fontWeight: 800, color: "#fff" }}>{label}{conn.platform ? <span style={{ color: "var(--gold)" }}> · {conn.platform}</span> : null}</div>
+          {conn.name && <div style={{ fontSize: 13, color: "var(--muted)" }}>Store <b style={{ color: "var(--text-2)" }}>{conn.store_name}</b></div>}
           <div style={{ fontSize: 13, color: "var(--muted)" }}>
             {conn.srp_no ? <><b style={{ fontFamily: "monospace", color: "var(--gold)" }}>{conn.srp_no}</b> · Catalog <span style={{ fontFamily: "monospace" }}>{conn.catalog_no || "—"}</span></> : "Older links (no SRP)"}
             {" · "}{connectedNow} of {products?.length ?? conn.products} products connected
@@ -331,6 +348,7 @@ function ConnectionEditor({ supabase, clientId, isAdmin, conn, onBack, onDone }:
         {isAdmin && (
           <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
             {dirtyIds.length > 0 && <span style={{ color: "var(--gold)", fontSize: 12.5 }}>{dirtyIds.length} changed</span>}
+            <button className="btn-ghost" onClick={rename}>Rename</button>
             <button className="btn-ghost" onClick={delConn} style={{ color: "#f87171" }}>Delete connection</button>
             <button className="btn-gold" disabled={saving || !dirtyIds.length} onClick={save} style={{ padding: "10px 26px" }}>{saving ? "Saving…" : "Save"}</button>
           </div>

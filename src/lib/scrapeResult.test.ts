@@ -30,9 +30,9 @@ describe("scrape result", () => {
   it("the detail sheet has one line per product x store that has a Product URL", () => {
     const lines = flatRows(data);
     expect(lines).toHaveLength(3);                                                  // P1 x 2, P2 x 1 (the Shopee cell has no link)
-    expect(lines[0].slice(5, 11)).toEqual([500, 450, 1000, 10, -10, "Cheaper than us"]);
-    expect(lines[1][10]).toBe("More expensive than us");
-    expect(lines[2][10]).toBe("Failed");
-    expect(lines[2][12]).toBe("blocked");
+    expect(lines[0].slice(6, 12)).toEqual([500, 450, 1000, 10, -10, "Cheaper than us"]);
+    expect(lines[1][11]).toBe("More expensive than us");
+    expect(lines[2][11]).toBe("Failed");
+    expect(lines[2][13]).toBe("blocked");
   });
 });

@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import Loader from "@/components/Loader";
 import { Modal } from "@/components/ProductCatalog";
 import { PLATFORMS, estimateCost, type Platform } from "@/lib/priceResearch";
-import { colTitle, diffPct, downloadScrapePdf, downloadScrapeXls, oursOf, verdict, type Cell, type ResultData, type ScrapeConn } from "@/lib/scrapeResult";
+import { colLabel, colTitle, diffPct, downloadScrapePdf, downloadScrapeXls, oursOf, verdict, type Cell, type ResultData, type ScrapeConn } from "@/lib/scrapeResult";
 
 // Price Research > Price Guard
 //   First page: the scrape log only (one row per Execute) and the Scrape button.
@@ -14,7 +14,7 @@ import { colTitle, diffPct, downloadScrapePdf, downloadScrapeXls, oursOf, verdic
 // The Scrape button opens a window: pick the connections, see how many links will be scraped, Execute or Cancel.
 type Supabase = ReturnType<typeof createClient>;
 type ScrapeRow = { id: string; created_at: string; created_by: string | null; links: number; connections: ScrapeConn[]; status: "running" | "done" | "failed"; saved: number; failed: number };
-type ConnLog = { id: string; srp_no: string | null; catalog_no: string | null; vendor_name: string | null; store_name: string | null; platform: string | null };
+type ConnLog = { id: string; name: string | null; srp_no: string | null; catalog_no: string | null; vendor_name: string | null; store_name: string | null; platform: string | null };
 type LinkLite = { id: string; connection_id: string | null; platform: Platform };
 
 const MAX_LINKS = 600;
@@ -170,8 +170,8 @@ function ResultTable({ data, rows }: { data: ResultData; rows: ResultData["rows"
             <th>Prod ID</th><th>Product Name</th><th className="num">Our Price</th>
             {cols.map((c) => (
               <th key={c.id} className="num" style={{ whiteSpace: "nowrap" }}>
-                {c.store_name || "—"}
-                <div style={{ fontSize: 10.5, fontWeight: 400, opacity: .75 }}>{[c.platform, c.srp_no].filter(Boolean).join(" · ")}</div>
+                {colLabel(c)}
+                <div style={{ fontSize: 10.5, fontWeight: 400, opacity: .75 }}>{[c.name ? c.store_name : null, c.platform, c.srp_no].filter(Boolean).join(" · ")}</div>
               </th>
             ))}
           </tr>
@@ -259,7 +259,7 @@ function ScrapeModal({ supabase, clientId, busy, onClose, onExecute }: {
           <table className="tbl">
             <thead><tr>
               <th style={{ width: 34 }}><input type="checkbox" title="Pick all" checked={allOn} onChange={(e) => setSel(e.target.checked ? new Set(usable.map((c) => c.id)) : new Set())} /></th>
-              <th>SRP ID</th><th>Catalog ID</th><th>Store Name</th><th>Platform</th><th className="num">Links</th>
+              <th>Connection Name</th><th>SRP ID</th><th>Catalog ID</th><th>Store Name</th><th>Platform</th><th className="num">Links</th>
             </tr></thead>
             <tbody>
               {conns.map((c) => {
@@ -267,15 +267,16 @@ function ScrapeModal({ supabase, clientId, busy, onClose, onExecute }: {
                 return (
                   <tr key={c.id} onClick={() => n && toggle(c.id)} style={{ cursor: n ? "pointer" : "not-allowed", opacity: n ? 1 : 0.5 }}>
                     <td><input type="checkbox" disabled={!n} checked={sel.has(c.id)} onChange={() => toggle(c.id)} onClick={(e) => e.stopPropagation()} /></td>
+                    <td style={{ fontWeight: 700 }}>{c.name || <span style={{ color: "var(--muted)", fontWeight: 400 }}>{c.store_name || "—"}</span>}</td>
                     <td style={{ fontFamily: "monospace", fontWeight: 700 }}>{c.srp_no || "—"}</td>
                     <td><span style={{ fontFamily: "monospace" }}>{c.catalog_no || "—"}</span>{c.vendor_name && <span style={{ color: "var(--muted)", fontSize: 12 }}> · {c.vendor_name}</span>}</td>
-                    <td style={{ fontWeight: 700 }}>{c.store_name || "—"}</td>
+                    <td>{c.store_name || "—"}</td>
                     <td>{c.platform || "—"}</td>
                     <td className="num">{n ? n : <span style={{ color: "var(--muted)", fontSize: 12 }}>no Product URL yet</span>}</td>
                   </tr>
                 );
               })}
-              {conns.length === 0 && <tr><td colSpan={6} style={{ textAlign: "center", color: "var(--muted)", padding: 24 }}>No store connected yet. Connect a store in Prod Connect first.</td></tr>}
+              {conns.length === 0 && <tr><td colSpan={7} style={{ textAlign: "center", color: "var(--muted)", padding: 24 }}>No store connected yet. Connect a store in Prod Connect first.</td></tr>}
             </tbody>
           </table>
         </div>
