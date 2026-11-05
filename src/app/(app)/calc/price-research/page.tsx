@@ -1,9 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { Fragment, useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
-import Loader from "@/components/Loader";
 import { PLATFORMS, type Platform } from "@/lib/priceResearch";
 import StoreConnections from "./StoreConnections";
 import ScrapePanel from "./ScrapePanel";
@@ -11,39 +10,13 @@ import ScrapePanel from "./ScrapePanel";
 export const dynamic = "force-dynamic";
 
 // Price Calculator > Price Research
-//   Price Guard   per product: the SRP first (Baseline), then every connected store: Price Input (the price before the shop's discount),
-//                 Price Discount (what a buyer pays after it), promo labels, and Higher / Under / Same against the SRP.
+//   Price Guard   the scrape log; open a row for its result (our price against every connected store) with the XLS / PDF download. Super Admin scrapes.
 //   Prod Connect  the log of store connections (SRP + Catalog + one store + one platform) and, per connection, a Product URL for every product of the SRP.
-//   Product Catalog  the SRP log (SRP ID automatic | Date Create | Date Active | Total SKU) and, per SRP, its products: Product Name, Prod ID,
-//                 Harga Beli (the calculator's Modal Produk), Harga SRP; typed by hand or imported from an XLS. The SRP in force feeds Price Guard,
-//                 Product URL and the Massive Calculator.
 // Prices are scraped ON DEMAND (the Scrape button of Price Guard: pick connections, Execute) through Apify.
-type Supabase = ReturnType<typeof createClient>;
 type RunInfo = { id: string; platform: Platform; status: "running" | "done" | "failed"; scraped: number; failed: number; error: string | null; started_at: string; links: number };
-type GuardStore = { link_id: string; store: string; platform: Platform; product_url: string; scraped_at: string | null; ok: boolean | null; error: string | null;
-  price_original: number | null; price_sell: number | null; discount_pct: number | null; labels: string[] | null };
-type GuardProduct = { product_id: string; prod_id: string; product_name: string; srp: number | null; srp_id: string | null; scraped_at: string | null; stores: GuardStore[] };
 type TabKey = "guard" | "urls";
 
-const rp = (n: number | null | undefined) => n == null ? "—" : "Rp " + Math.round(n).toLocaleString("id-ID");
 const PLATFORM_LABEL = Object.fromEntries(PLATFORMS.map((p) => [p.v, p.label])) as Record<Platform, string>;
-const today = () => new Date().toISOString().slice(0, 10);
-const MON = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"];
-// dd mmm yyyy (Jan - Des), in Jakarta time
-function dmy(v: string | null | undefined): string {
-  if (!v) return "—";
-  const d = new Date(v); if (Number.isNaN(d.getTime())) return "—";
-  const j = new Date(d.getTime() + 7 * 3600_000);
-  return `${String(j.getUTCDate()).padStart(2, "0")} ${MON[j.getUTCMonth()]} ${j.getUTCFullYear()}`;
-}
-
-// Status against the SRP: the price a buyer pays (Price Discount, or Price Input when there is no discount)
-function status(sell: number | null, srp: number | null): { text: string; color: string } {
-  if (sell == null || !srp) return { text: srp ? "—" : "no Harga Jual", color: "var(--muted)" };
-  const d = (sell / srp - 1) * 100;
-  if (Math.abs(d) < 0.5) return { text: "Same", color: "var(--gold)" };
-  return d < 0 ? { text: `Under ${d.toFixed(1)}%`, color: "#f87171" } : { text: `Higher +${d.toFixed(1)}%`, color: "#86efac" };
-}
 
 export default function PriceResearchPage() {
   const [supabase] = useState(() => createClient());
@@ -148,85 +121,8 @@ export default function PriceResearchPage() {
         )}
         {msg && <div style={{ color: msg.ok ? "var(--gold)" : "#f87171", fontSize: 13, marginBottom: 10 }}>{msg.ok ? "✓" : "✗"} {msg.text}</div>}
 
-        {clientId && tab === "guard" && <ScrapePanel supabase={supabase} clientId={clientId} canScrape={isSuper} tick={tick} busy={busy} onExecute={runScrape} detail={<GuardTab supabase={supabase} clientId={clientId} tick={tick} />} />}
+        {clientId && tab === "guard" && <ScrapePanel supabase={supabase} clientId={clientId} canScrape={isSuper} tick={tick} busy={busy} onExecute={runScrape} />}
         {clientId && tab === "urls" && <StoreConnections supabase={supabase} clientId={clientId} isAdmin={isAdmin} tick={tick} onChanged={() => setTick((t) => t + 1)} />}
-      </div>
-    </>
-  );
-}
-
-/* ── Price Guard: the SRP first, then every store ── */
-function GuardTab({ supabase, clientId, tick }: { supabase: Supabase; clientId: string; tick: number }) {
-  const [asof, setAsof] = useState("");
-  const [q, setQ] = useState("");
-  const [rows, setRows] = useState<GuardProduct[] | null>(null);
-  const [err, setErr] = useState("");
-
-  const load = useCallback(async () => {
-    const { data, error } = await supabase.rpc("price_guard", { p_client_id: clientId, p_asof: asof || null, p_q: q.trim() || null });
-    setErr(error ? error.message : "");
-    setRows((data as GuardProduct[]) || []);
-  }, [supabase, clientId, asof, q]);
-  useEffect(() => { const h = setTimeout(load, q ? 300 : 0); return () => clearTimeout(h); }, [load, q, tick]);
-
-  const th: React.CSSProperties = {};
-  return (
-    <>
-      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 12 }}>
-        <div className="fld" style={{ minWidth: 280, flex: 1 }}><label>Search</label><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Product, Prod ID or store" /></div>
-        <div className="fld" style={{ minWidth: 170 }}><label>Prices as of</label><input type="date" value={asof} max={today()} onChange={(e) => setAsof(e.target.value)} style={{ colorScheme: "dark" }} /></div>
-        {asof && <button className="btn-ghost" onClick={() => setAsof("")}>Now</button>}
-      </div>
-      {err && <div style={{ color: "#f87171", fontSize: 13, marginBottom: 10 }}>✗ {err}</div>}
-      {rows === null ? <Loader center /> : (
-        <div className="tbl-wrap" style={{ maxHeight: "68vh" }}>
-          <table className="tbl day-tbl">
-            <thead><tr>
-              <th style={th}>Date</th><th>Produk</th><th>Store</th><th className="num">Price Input</th><th className="num">Price Discount</th><th>Promo Labels</th><th>Status</th>
-            </tr></thead>
-            <tbody>
-              {rows.map((p) => (
-                <Fragment key={p.product_id}>
-                  <tr style={{ background: "rgba(201,162,39,.07)", borderTop: "2px solid rgba(201,162,39,.25)" }}>
-                    <td style={{ whiteSpace: "nowrap", fontWeight: 700 }}>{dmy(p.scraped_at)}</td>
-                    <td style={{ minWidth: 240, maxWidth: 380, whiteSpace: "normal", overflowWrap: "anywhere", fontWeight: 700 }}>
-                      <div style={{ fontSize: 11, fontWeight: 400, color: "var(--muted)", fontFamily: "monospace" }}>{p.prod_id}{p.srp_id ? ` · ${p.srp_id}` : ""}</div>
-                      {p.product_name}
-                    </td>
-                    <td style={{ fontWeight: 800, color: "var(--gold)" }}>Catalog</td>
-                    <td className="num" style={{ fontWeight: 800 }}>{rp(p.srp)}</td>
-                    <td className="num" style={{ color: "var(--muted)" }}>-</td>
-                    <td style={{ color: "var(--muted)" }}>-</td>
-                    <td><span style={{ padding: "2px 10px", borderRadius: 999, fontSize: 11.5, fontWeight: 800, border: "1px solid rgba(201,162,39,.5)", color: "var(--gold)" }}>Baseline</span></td>
-                  </tr>
-                  {p.stores.map((s) => {
-                    const discounted = s.price_original != null && s.price_sell != null && s.price_original > s.price_sell;
-                    const st = s.ok ? status(s.price_sell, p.srp) : s.ok === false ? { text: "Failed", color: "#f87171" } : { text: "Not scraped", color: "var(--muted)" };
-                    return (
-                      <tr key={s.link_id}>
-                        <td></td><td></td>
-                        <td style={{ whiteSpace: "normal" }}>
-                          <a href={s.product_url} target="_blank" rel="noopener noreferrer" style={{ color: "#e8edf8", fontWeight: 600 }}>{s.store}</a>
-                          <div style={{ fontSize: 11, color: "var(--muted)" }}>{PLATFORM_LABEL[s.platform]}{s.scraped_at && s.scraped_at.slice(0, 10) !== (p.scraped_at || "").slice(0, 10) ? ` · ${dmy(s.scraped_at)}` : ""}</div>
-                        </td>
-                        <td className="num">{s.ok ? rp(s.price_original) : "—"}</td>
-                        <td className="num" style={{ fontWeight: 700 }}>{s.ok && discounted ? rp(s.price_sell) : "-"}</td>
-                        <td style={{ whiteSpace: "normal", maxWidth: 240 }}>
-                          {s.labels?.length ? s.labels.map((l) => <span key={l} style={{ display: "inline-block", margin: "0 4px 4px 0", padding: "2px 8px", borderRadius: 999, fontSize: 11, border: "1px solid rgba(201,162,39,.4)", color: "var(--gold)" }}>{l}</span>) : "-"}
-                        </td>
-                        <td style={{ whiteSpace: "nowrap", fontWeight: 700, color: st.color }} title={s.error || undefined}>{st.text}</td>
-                      </tr>
-                    );
-                  })}
-                </Fragment>
-              ))}
-              {rows.length === 0 && <tr><td colSpan={7} style={{ textAlign: "center", color: "var(--muted)", padding: 24 }}>Nothing to compare yet. Add products in the Product Catalog, connect a store in Prod Connect, then press Scrape.</td></tr>}
-            </tbody>
-          </table>
-        </div>
-      )}
-      <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 8 }}>
-        Price Input = the store&apos;s price before its discount. Price Discount = what a buyer pays after the discount (&quot;-&quot; when there is none). Status compares that price with the Harga Jual of the Catalog valid on the date. Personal vouchers (for example a VIP voucher) and checkout costs differ per buyer and are not public, so they are not included.
       </div>
     </>
   );

@@ -1,22 +1,19 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import Loader from "@/components/Loader";
 import { Modal } from "@/components/ProductCatalog";
 import { PLATFORMS, estimateCost, type Platform } from "@/lib/priceResearch";
+import { colTitle, diffPct, downloadScrapePdf, downloadScrapeXls, oursOf, verdict, type Cell, type ResultData, type ScrapeConn } from "@/lib/scrapeResult";
 
-// Price Research > Price Guard: the button Scrape, the scrape log (one row per Execute) and the result table of the scrape picked in the log:
-//   Prod ID | Product Name | Our Price | one column per connected store (red = cheaper than our price, green = more expensive than our price).
+// Price Research > Price Guard
+//   First page: the scrape log only (one row per Execute) and the Scrape button.
+//   Open a row of the log: the result of that scrape: Prod ID | Product Name | Our Price | one column per connected store
+//   (red = cheaper than our price, green = more expensive than our price), with the XLS and PDF download.
 // The Scrape button opens a window: pick the connections, see how many links will be scraped, Execute or Cancel.
 type Supabase = ReturnType<typeof createClient>;
-type ScrapeConn = { id: string; store_name: string | null; platform: string | null; srp_no: string | null };
 type ScrapeRow = { id: string; created_at: string; created_by: string | null; links: number; connections: ScrapeConn[]; status: "running" | "done" | "failed"; saved: number; failed: number };
-type Cell = {
-  ours: number | null; has_link: boolean; link_id: string | null; ok: boolean | null; error: string | null; price: number | null;
-  original: number | null; discount_pct: number | null; labels: string[] | null; scraped_at: string | null;
-};
-type ResultData = { columns: ScrapeConn[]; rows: { prod_id: string; product_name: string; cells: Record<string, Cell> }[] };
 type ConnLog = { id: string; srp_no: string | null; catalog_no: string | null; vendor_name: string | null; store_name: string | null; platform: string | null };
 type LinkLite = { id: string; connection_id: string | null; platform: Platform };
 
@@ -24,114 +21,140 @@ const MAX_LINKS = 600;
 const RED = "#f87171", GREEN = "#86efac";
 const rp = (n: number | null | undefined) => (n == null ? "—" : "Rp " + Math.round(n).toLocaleString("id-ID"));
 const MON = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"];
+function jkt(v: string) {
+  const d = new Date(v); if (Number.isNaN(d.getTime())) return null;
+  return new Date(d.getTime() + 7 * 3600_000);
+}
 function when(v: string): string {
-  const d = new Date(v); if (Number.isNaN(d.getTime())) return "—";
-  const j = new Date(d.getTime() + 7 * 3600_000);
+  const j = jkt(v); if (!j) return "—";
   const p = (n: number) => String(n).padStart(2, "0");
   return `${p(j.getUTCDate())} ${MON[j.getUTCMonth()]} ${j.getUTCFullYear()} ${p(j.getUTCHours())}:${p(j.getUTCMinutes())}`;
 }
-const colName = (c: ScrapeConn) => `${c.store_name || "—"}${c.platform ? ` · ${c.platform}` : ""}`;
+function stamp(v: string): string {
+  const j = jkt(v); if (!j) return "scrape";
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${j.getUTCFullYear()}-${p(j.getUTCMonth() + 1)}-${p(j.getUTCDate())}-${p(j.getUTCHours())}${p(j.getUTCMinutes())}`;
+}
 
-export default function ScrapePanel({ supabase, clientId, canScrape, tick, busy, onExecute, detail }: {
+export default function ScrapePanel({ supabase, clientId, canScrape, tick, busy, onExecute }: {
   supabase: Supabase; clientId: string; canScrape: boolean; tick: number; busy: boolean;
-  onExecute: (connectionIds: string[]) => Promise<boolean>; detail: ReactNode;
+  onExecute: (connectionIds: string[]) => Promise<boolean>;
 }) {
   const [scrapes, setScrapes] = useState<ScrapeRow[] | null>(null);
-  const [pick, setPick] = useState("");
-  const [result, setResult] = useState<ResultData | null>(null);
-  const [view, setView] = useState<"result" | "detail">("result");
+  const [open, setOpen] = useState<string | null>(null);
   const [modal, setModal] = useState(false);
-  const [q, setQ] = useState("");
 
   const loadLog = useCallback(async () => {
     const { data } = await supabase.rpc("pr_scrapes_log", { p_client_id: clientId });
-    const list = (data as ScrapeRow[]) || [];
-    setScrapes(list);
-    setPick((cur) => (cur && list.some((s) => s.id === cur) ? cur : list[0]?.id || ""));
+    setScrapes((data as ScrapeRow[]) || []);
   }, [supabase, clientId]);
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { loadLog(); }, [loadLog, tick]);
-
+  // while a scrape runs the log keeps itself up to date
+  const anyRunning = !!scrapes?.some((s) => s.status === "running");
   useEffect(() => {
-    if (!pick) return;
-    let alive = true;
-    (async () => {
-      const { data } = await supabase.rpc("pr_scrape_result", { p_scrape: pick });
-      if (alive) setResult((data as ResultData) || { columns: [], rows: [] });
-    })();
-    return () => { alive = false; };
-  }, [supabase, pick, tick]);
+    if (!anyRunning) return;
+    const h = setInterval(loadLog, 5000);
+    return () => clearInterval(h);
+  }, [anyRunning, loadLog]);
 
-  const current = scrapes?.find((s) => s.id === pick) ?? null;
-  const t = q.trim().toLowerCase();
-  const rows = (result?.rows || []).filter((r) => !t || r.product_name.toLowerCase().includes(t) || r.prod_id.toLowerCase().includes(t));
+  const current = scrapes?.find((s) => s.id === open) ?? null;
+  if (open && current) return <ResultPage supabase={supabase} scrape={current} tick={tick} onBack={() => setOpen(null)} />;
 
   return (
     <>
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center", marginBottom: 12 }}>
-        <div className="hint" style={{ flex: 1, margin: 0 }}>Every scrape is in the log; open a row to see its prices against ours.{canScrape ? " Press Scrape, pick the store connections and run it." : ""}</div>
-        <div style={{ display: "flex", gap: 6 }}>
-          <button className="btn-ghost" onClick={() => setView("result")} style={view === "result" ? { borderColor: "var(--gold)", color: "var(--gold)" } : undefined}>Result</button>
-          <button className="btn-ghost" onClick={() => setView("detail")} style={view === "detail" ? { borderColor: "var(--gold)", color: "var(--gold)" } : undefined}>Detail per product</button>
-        </div>
+        <div className="hint" style={{ flex: 1, margin: 0 }}>Every scrape is in this log. Click a row to see its result against our prices.{canScrape ? " Press Scrape to start a new one." : ""}</div>
         {canScrape && <button className="btn-gold" disabled={busy} onClick={() => setModal(true)} style={{ padding: "10px 24px" }}>{busy ? "Scraping on Apify…" : "Scrape"}</button>}
       </div>
-
-      {view === "detail" ? detail : (
-        <>
-          <div style={{ fontWeight: 700, marginBottom: 6 }}>Scrape log</div>
-          {scrapes === null ? <Loader center /> : (
-            <div className="tbl-wrap" style={{ maxHeight: "28vh", marginBottom: 16 }}>
-              <table className="tbl day-tbl">
-                <thead><tr><th>Date</th><th>Connections</th><th className="num">Links</th><th className="num">Saved</th><th className="num">Failed</th><th>Status</th><th>Scraped by</th></tr></thead>
-                <tbody>
-                  {scrapes.map((s) => (
-                    <tr key={s.id} onClick={() => setPick(s.id)} style={{ cursor: "pointer", background: s.id === pick ? "rgba(201,162,39,.10)" : undefined }}>
-                      <td style={{ whiteSpace: "nowrap", fontWeight: s.id === pick ? 800 : 600 }}>{when(s.created_at)}</td>
-                      <td style={{ maxWidth: 520 }}>
-                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                          {s.connections.slice(0, 3).map((c) => (
-                            <span key={c.id} style={{ padding: "2px 10px", borderRadius: 999, fontSize: 12, border: "1px solid rgba(255,255,255,.14)", whiteSpace: "nowrap" }}>
-                              <span style={{ fontFamily: "monospace", color: "var(--muted)" }}>{c.srp_no || "—"}</span> · {colName(c)}
-                            </span>
-                          ))}
-                          {s.connections.length > 3 && <span style={{ color: "var(--muted)", fontSize: 12 }}>+{s.connections.length - 3} more</span>}
-                        </div>
-                      </td>
-                      <td className="num">{s.links}</td>
-                      <td className="num" style={{ fontWeight: 700 }}>{s.saved}</td>
-                      <td className="num" style={{ color: s.failed ? RED : undefined }}>{s.failed}</td>
-                      <td>
-                        {s.status === "running" ? <span style={{ color: "var(--gold)" }}>⏳ Running</span>
-                          : s.status === "done" ? <span style={{ color: GREEN }}>Done</span> : <span style={{ color: RED }}>Failed</span>}
-                      </td>
-                      <td>{s.created_by || "—"}</td>
-                    </tr>
-                  ))}
-                  {scrapes.length === 0 && <tr><td colSpan={7} style={{ textAlign: "center", color: "var(--muted)", padding: 24 }}>No scrape yet — press Scrape and pick the store connections.</td></tr>}
-                </tbody>
-              </table>
-            </div>
-          )}
-
-          {current && (
-            <>
-              <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center", marginBottom: 8 }}>
-                <div style={{ fontWeight: 700 }}>Result of {when(current.created_at)}</div>
-                <div className="fld" style={{ minWidth: 240, flex: "0 1 320px" }}><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search a product or Prod ID" /></div>
-                <div style={{ fontSize: 12.5, color: "var(--muted)", display: "flex", gap: 14, flexWrap: "wrap" }}>
-                  <span><b style={{ color: RED }}>Red</b>: cheaper than our price</span>
-                  <span><b style={{ color: GREEN }}>Green</b>: more expensive than our price</span>
-                </div>
-              </div>
-              {result === null ? <Loader center /> : <ResultTable data={result} rows={rows} />}
-            </>
-          )}
-        </>
+      {scrapes === null ? <Loader center /> : (
+        <div className="tbl-wrap" style={{ maxHeight: "68vh" }}>
+          <table className="tbl day-tbl">
+            <thead><tr><th>Date</th><th>Connections</th><th className="num">Links</th><th className="num">Saved</th><th className="num">Failed</th><th>Status</th><th>Scraped by</th></tr></thead>
+            <tbody>
+              {scrapes.map((s) => (
+                <tr key={s.id} onClick={() => setOpen(s.id)} style={{ cursor: "pointer" }}>
+                  <td style={{ whiteSpace: "nowrap", fontWeight: 700 }}>{when(s.created_at)}</td>
+                  <td style={{ maxWidth: 560 }}>
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                      {s.connections.slice(0, 3).map((c) => (
+                        <span key={c.id} style={{ padding: "2px 10px", borderRadius: 999, fontSize: 12, border: "1px solid rgba(255,255,255,.14)", whiteSpace: "nowrap" }}>
+                          <span style={{ fontFamily: "monospace", color: "var(--muted)" }}>{c.srp_no || "—"}</span> · {colTitle(c)}
+                        </span>
+                      ))}
+                      {s.connections.length > 3 && <span style={{ color: "var(--muted)", fontSize: 12 }}>+{s.connections.length - 3} more</span>}
+                    </div>
+                  </td>
+                  <td className="num">{s.links}</td>
+                  <td className="num" style={{ fontWeight: 700 }}>{s.saved}</td>
+                  <td className="num" style={{ color: s.failed ? RED : undefined }}>{s.failed}</td>
+                  <td>{s.status === "running" ? <span style={{ color: "var(--gold)" }}>⏳ Running</span> : s.status === "done" ? <span style={{ color: GREEN }}>Done</span> : <span style={{ color: RED }}>Failed</span>}</td>
+                  <td>{s.created_by || "—"}</td>
+                </tr>
+              ))}
+              {scrapes.length === 0 && <tr><td colSpan={7} style={{ textAlign: "center", color: "var(--muted)", padding: 24 }}>No scrape yet{canScrape ? " — press Scrape and pick the store connections." : "."}</td></tr>}
+            </tbody>
+          </table>
+        </div>
       )}
-
       {modal && <ScrapeModal supabase={supabase} clientId={clientId} busy={busy} onClose={() => setModal(false)}
         onExecute={async (ids) => { const ok = await onExecute(ids); if (ok) { setModal(false); await loadLog(); } return ok; }} />}
+    </>
+  );
+}
+
+/* ── the result of one scrape ── */
+function ResultPage({ supabase, scrape, tick, onBack }: { supabase: Supabase; scrape: ScrapeRow; tick: number; onBack: () => void }) {
+  const [data, setData] = useState<ResultData | null>(null);
+  const [q, setQ] = useState("");
+  const [saving, setSaving] = useState<"" | "xls" | "pdf">("");
+  const running = scrape.status === "running";
+
+  const load = useCallback(async () => {
+    const { data: d } = await supabase.rpc("pr_scrape_result", { p_scrape: scrape.id });
+    setData((d as ResultData) || { columns: [], rows: [] });
+  }, [supabase, scrape.id]);
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => { load(); }, [load, tick, scrape.status]);
+  useEffect(() => {
+    if (!running) return;
+    const h = setInterval(load, 5000);
+    return () => clearInterval(h);
+  }, [running, load]);
+
+  const t = q.trim().toLowerCase();
+  const rows = (data?.rows || []).filter((r) => !t || r.product_name.toLowerCase().includes(t) || r.prod_id.toLowerCase().includes(t));
+  const meta = { title: `Scrape of ${when(scrape.created_at)}`, by: scrape.created_by, status: scrape.status };
+  async function download(kind: "xls" | "pdf") {
+    if (!data) return;
+    setSaving(kind);
+    try {
+      const all = { ...data, rows };      // what is on the screen (the search filter included)
+      if (kind === "xls") await downloadScrapeXls(all, meta, stamp(scrape.created_at)); else await downloadScrapePdf(all, meta, stamp(scrape.created_at));
+    } finally { setSaving(""); }
+  }
+
+  return (
+    <>
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center", marginBottom: 10 }}>
+        <button className="btn-ghost" onClick={onBack}>← Scrape log</button>
+        <div style={{ fontSize: 18, fontWeight: 800, color: "#fff" }}>Result of {when(scrape.created_at)}</div>
+        <div style={{ fontSize: 12.5, color: "var(--muted)" }}>
+          {scrape.created_by ? `scraped by ${scrape.created_by} · ` : ""}{scrape.saved} saved{scrape.failed ? `, ${scrape.failed} failed` : ""} · {running ? <span style={{ color: "var(--gold)" }}>⏳ running, the prices appear as they arrive</span> : scrape.status === "done" ? "done" : <span style={{ color: RED }}>failed</span>}
+        </div>
+        <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
+          <button className="btn-ghost" disabled={!data || !!saving} onClick={() => download("xls")}>{saving === "xls" ? "Preparing…" : "⬇ XLS"}</button>
+          <button className="btn-ghost" disabled={!data || !!saving} onClick={() => download("pdf")}>{saving === "pdf" ? "Preparing…" : "⬇ PDF"}</button>
+        </div>
+      </div>
+      <div style={{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "center", marginBottom: 10 }}>
+        <div className="fld" style={{ minWidth: 240, flex: "0 1 340px" }}><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search a product or Prod ID" /></div>
+        <div style={{ fontSize: 12.5, color: "var(--muted)", display: "flex", gap: 14, flexWrap: "wrap" }}>
+          <span><b style={{ color: RED }}>Red</b>: cheaper than our price</span>
+          <span><b style={{ color: GREEN }}>Green</b>: more expensive than our price</span>
+        </div>
+      </div>
+      {data === null ? <Loader center /> : <ResultTable data={data} rows={rows} />}
     </>
   );
 }
@@ -140,7 +163,7 @@ export default function ScrapePanel({ supabase, clientId, canScrape, tick, busy,
 function ResultTable({ data, rows }: { data: ResultData; rows: ResultData["rows"] }) {
   const cols = data.columns;
   return (
-    <div className="tbl-wrap" style={{ maxHeight: "60vh" }}>
+    <div className="tbl-wrap" style={{ maxHeight: "66vh" }}>
       <table className="tbl day-tbl">
         <thead>
           <tr>
@@ -155,15 +178,13 @@ function ResultTable({ data, rows }: { data: ResultData; rows: ResultData["rows"
         </thead>
         <tbody>
           {rows.map((r) => {
-            // our price: one value, or one per platform when the connections are for different platforms and the prices differ
-            const ours = cols.map((c) => ({ platform: c.platform, v: r.cells[c.id]?.ours ?? null })).filter((x) => x.v != null);
-            const distinct = [...new Map(ours.map((x) => [x.v, x])).values()];
+            const ours = oursOf(r, cols);
             return (
               <tr key={r.prod_id}>
                 <td style={{ fontFamily: "monospace", fontSize: 12.5 }}>{r.prod_id}</td>
                 <td style={{ minWidth: 220, maxWidth: 340, whiteSpace: "normal", overflowWrap: "anywhere", fontWeight: 700 }}>{r.product_name}</td>
                 <td className="num" style={{ fontWeight: 700, whiteSpace: "nowrap" }}>
-                  {distinct.length === 0 ? "—" : distinct.length === 1 ? rp(distinct[0].v) : distinct.map((x) => <div key={x.platform || "x"}>{rp(x.v)} <span style={{ fontSize: 10.5, fontWeight: 400, color: "var(--muted)" }}>{x.platform}</span></div>)}
+                  {ours.length === 0 ? "—" : ours.length === 1 ? rp(ours[0].v) : ours.map((x) => <div key={x.platform || "x"}>{rp(x.v)} <span style={{ fontSize: 10.5, fontWeight: 400, color: "var(--muted)" }}>{x.platform}</span></div>)}
                 </td>
                 {cols.map((c) => <PriceCell key={c.id} cell={r.cells[c.id]} />)}
               </tr>
@@ -177,17 +198,19 @@ function ResultTable({ data, rows }: { data: ResultData; rows: ResultData["rows"
 }
 
 function PriceCell({ cell }: { cell?: Cell }) {
-  if (!cell || !cell.has_link) return <td className="num" style={{ color: "var(--muted)" }} title="This store does not sell it (no Product URL)">—</td>;
-  if (cell.ok === false) return <td className="num" style={{ color: RED, fontSize: 12 }} title={cell.error || "Scrape failed"}>failed</td>;
-  if (cell.ok == null || cell.price == null) return <td className="num" style={{ color: "var(--muted)" }} title="No price saved yet">…</td>;
-  const ours = cell.ours;
-  const diff = ours ? (cell.price / ours - 1) * 100 : null;
-  const color = diff == null || Math.abs(diff) < 0.05 ? undefined : diff < 0 ? RED : GREEN;
-  const tip = [cell.original && cell.original !== cell.price ? `Before discount: ${rp(cell.original)}` : "", cell.discount_pct ? `Discount ${cell.discount_pct}%` : "", cell.labels?.length ? cell.labels.join(", ") : ""].filter(Boolean).join(" · ");
+  const v = verdict(cell);
+  if (v === "none") return <td className="num" style={{ color: "var(--muted)" }} title="This store does not sell it (no Product URL)">—</td>;
+  if (v === "failed") return <td className="num" style={{ color: RED, fontSize: 12 }} title={cell!.error || "Scrape failed"}>failed</td>;
+  if (v === "pending") return <td className="num" style={{ color: "var(--muted)" }} title="No price saved yet">…</td>;
+  const c = cell!;
+  const d = diffPct(c.price!, c.ours);
+  const color = v === "cheaper" ? RED : v === "pricier" ? GREEN : undefined;
+  const tip = [c.discount_pct ? `Discount ${c.discount_pct}%` : "", c.labels?.length ? c.labels.join(", ") : ""].filter(Boolean).join(" · ");
   return (
-    <td className="num" title={tip || undefined} style={{ whiteSpace: "nowrap", color, background: color ? (diff! < 0 ? "rgba(248,113,113,.08)" : "rgba(134,239,172,.07)") : undefined }}>
-      <div style={{ fontWeight: 700 }}>{rp(cell.price)}</div>
-      {diff != null && <div style={{ fontSize: 11, fontWeight: 400 }}>{diff > 0 ? "+" : ""}{diff.toFixed(1)}%</div>}
+    <td className="num" title={tip || undefined} style={{ whiteSpace: "nowrap", color, background: v === "cheaper" ? "rgba(248,113,113,.08)" : v === "pricier" ? "rgba(134,239,172,.07)" : undefined }}>
+      <div style={{ fontWeight: 700 }}>{rp(c.price)}</div>
+      {d != null && <div style={{ fontSize: 11, fontWeight: 400 }}>{d > 0 ? "+" : ""}{d.toFixed(1)}%</div>}
+      {c.original != null && c.price != null && c.original > c.price && <div style={{ fontSize: 10.5, fontWeight: 400, color: "var(--muted)", textDecoration: "line-through" }}>{rp(c.original)}</div>}
     </td>
   );
 }
