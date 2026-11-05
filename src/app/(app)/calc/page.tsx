@@ -269,8 +269,9 @@ export default function MassiveCalculatorPage() {
     const sign = sort.dir === "asc" ? 1 : -1;
     return [...visible].sort((a, b) => {
       const x = sortValue(a, sort.k), y = sortValue(b, sort.k);
-      if (x === null || x === "") return y === null || y === "" ? 0 : 1;   // empty values always go last
-      if (y === null || y === "") return -1;
+      // an empty value ("— pick —") counts as the smallest: arrow up puts the lines still to be picked on top, arrow down puts them last
+      const xe = x === null || x === "", ye = y === null || y === "";
+      if (xe || ye) return xe && ye ? 0 : xe ? -sign : sign;
       return typeof x === "number" && typeof y === "number" ? sign * (x - y) : sign * String(x).localeCompare(String(y));
     });
   }, [visible, sort, sortValue]);
