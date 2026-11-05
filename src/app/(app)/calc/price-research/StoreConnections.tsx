@@ -12,7 +12,7 @@ import { PLATFORMS, cleanUrl, detectPlatform, type Platform } from "@/lib/priceR
 type Supabase = ReturnType<typeof createClient>;
 type Store = { id: string; name: string };
 type ConnLog = {
-  id: string; srp_id: string | null; srp_no: string | null; catalog_no: string | null; vendor_name: string | null; store_id: string | null; store_name: string | null;
+  id: string; srp_id: string | null; srp_no: string | null; catalog_no: string | null; vendor_name: string | null; store_id: string | null; store_name: string | null; platform: string | null;
   created_at: string; created_by: string | null; products: number; connected: number; platforms: Platform[];
 };
 type ConnProduct = {
@@ -30,8 +30,16 @@ function dmy(v: string | null | undefined): string {
   const j = new Date(d.getTime() + 7 * 3600_000);
   return `${String(j.getUTCDate()).padStart(2, "0")} ${MON[j.getUTCMonth()]} ${j.getUTCFullYear()}`;
 }
+// which kinds of links a connection accepts: a Shopee connection only Shopee links, a Tiktok Tokped one Tokopedia / TikTok Shop links
+function allowedPlatforms(conn: { platform: string | null }): Platform[] | null {
+  const p = (conn.platform || "").toLowerCase();
+  if (p.startsWith("shopee")) return ["shopee"];
+  if (p.startsWith("tiktok") || p.startsWith("tokopedia")) return ["tokopedia", "tiktok"];
+  return null;
+}
 // our selling price to compare with this URL's marketplace: the price of the SRP line of that marketplace, else the lowest one of the product
-function ourPrice(p: ConnProduct, platform: Platform | null): number | null {
+function ourPrice(p: ConnProduct, platform: Platform | null, fixed: boolean): number | null {
+  if (fixed) return p.price.any;
   const key = platform === "shopee" ? "shopee" : platform ? "tiktok" : null;
   return (key ? p.price[key] : null) ?? p.price.any;
 }
@@ -93,7 +101,7 @@ export default function StoreConnections({ supabase, clientId, isAdmin, tick, bu
                   <td style={{ fontFamily: "monospace", fontWeight: 700 }}>{c.srp_no || <span style={{ color: "var(--muted)", fontWeight: 400 }}>— (older links)</span>}</td>
                   <td><span style={{ fontFamily: "monospace" }}>{c.catalog_no || "—"}</span>{c.vendor_name && <span style={{ color: "var(--muted)", fontSize: 12 }}> · {c.vendor_name}</span>}</td>
                   <td style={{ fontWeight: 700 }}>{c.store_name || "—"}</td>
-                  <td>{c.platforms.length ? c.platforms.map((p) => PLATFORM_LABEL[p]).join(", ") : <span style={{ color: "var(--muted)" }}>—</span>}</td>
+                  <td>{c.platform || (c.platforms.length ? c.platforms.map((p) => PLATFORM_LABEL[p]).join(", ") : <span style={{ color: "var(--muted)" }}>—</span>)}</td>
                   <td className="num"><b>{c.connected}</b> <span style={{ color: "var(--muted)" }}>of {c.products}</span></td>
                   <td>{dmy(c.created_at)}</td>
                   <td>{c.created_by || "—"}</td>
@@ -118,6 +126,8 @@ function NewConnectionModal({ supabase, clientId, stores, onStores, onClose }: {
   const [srps, setSrps] = useState<SrpOption[] | null>(null);
   const [srpId, setSrpId] = useState("");
   const [storeId, setStoreId] = useState("");
+  const [platforms, setPlatforms] = useState<string[]>([]);
+  const [platform, setPlatform] = useState("");
   const [err, setErr] = useState("");
   const [saving, setSaving] = useState(false);
   useEffect(() => {
@@ -127,6 +137,15 @@ function NewConnectionModal({ supabase, clientId, stores, onStores, onClose }: {
       setSrps(l); setSrpId(l[0]?.id || "");
     })();
   }, [supabase, clientId]);
+  // the platforms the lines of the chosen SRP are made for (Shopee, Tiktok Tokped ...)
+  useEffect(() => {
+    if (!srpId) return;
+    (async () => {
+      const { data } = await supabase.from("massive_calc_rows").select("fee_platform").eq("srp_id", srpId).not("fee_platform", "is", null);
+      const list = [...new Set(((data as { fee_platform: string }[]) || []).map((r) => r.fee_platform).filter(Boolean))].sort();
+      setPlatforms(list); setPlatform(list[0] || "");
+    })();
+  }, [supabase, srpId]);
 
   async function pickStore(v: string) {
     if (v !== "__new") { setStoreId(v); return; }
@@ -144,7 +163,7 @@ function NewConnectionModal({ supabase, clientId, stores, onStores, onClose }: {
     if (!srpId) { setErr("Pick the SRP."); return; }
     if (!storeId) { setErr("Pick the store (or add a new one in the dropdown)."); return; }
     setSaving(true);
-    const { data, error } = await supabase.rpc("pr_connection_create", { p_client_id: clientId, p_srp_id: srpId, p_store_id: storeId });
+    const { data, error } = await supabase.rpc("pr_connection_create", { p_client_id: clientId, p_srp_id: srpId, p_store_id: storeId, p_platform: platform || null });
     setSaving(false);
     if (error) { setErr(error.message.replace(/^[A-Z_]+:\s*/, "")); return; }
     onClose(data as string);
@@ -152,7 +171,7 @@ function NewConnectionModal({ supabase, clientId, stores, onStores, onClose }: {
   return (
     <Modal onClose={() => onClose(null)} width={720}>
       <div style={{ fontSize: 18, fontWeight: 800, color: "#fff", marginBottom: 6 }}>Connect new store</div>
-      <div style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 12 }}>Pick the SRP whose products you compare, and the competitor store. The next screen lists every product of the SRP, ready for the Product URLs.</div>
+      <div style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 12 }}>Pick the SRP whose products you compare, and the competitor store. The next screen lists every product of the SRP for that platform, ready for the Product URLs.</div>
       {srps === null ? <Loader center /> : (
         <div className="tbl-wrap" style={{ maxHeight: "34vh" }}>
           <table className="tbl">
@@ -172,13 +191,22 @@ function NewConnectionModal({ supabase, clientId, stores, onStores, onClose }: {
           </table>
         </div>
       )}
-      <div className="fld" style={{ maxWidth: 320, marginTop: 14 }}><label>Store name</label>
-        <select value={storeId} onChange={(e) => pickStore(e.target.value)}>
-          <option value="">Select store…</option>
-          {stores.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-          <option value="__new">+ New store…</option>
-        </select>
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 14 }}>
+        <div className="fld" style={{ minWidth: 220, flex: "1 1 220px", maxWidth: 320 }}><label>Platform</label>
+          <select value={platform} onChange={(e) => setPlatform(e.target.value)} disabled={!platforms.length}>
+            {platforms.length === 0 && <option value="">All (the lines have no platform yet)</option>}
+            {platforms.map((x) => <option key={x} value={x}>{x}</option>)}
+          </select>
+        </div>
+        <div className="fld" style={{ minWidth: 220, flex: "1 1 220px", maxWidth: 320 }}><label>Store name</label>
+          <select value={storeId} onChange={(e) => pickStore(e.target.value)}>
+            <option value="">Select store…</option>
+            {stores.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            <option value="__new">+ New store…</option>
+          </select>
+        </div>
       </div>
+      {platform && <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 8 }}>Only the {platform} lines of the SRP are listed, and only {platform.toLowerCase().startsWith("shopee") ? "Shopee" : platform.toLowerCase().startsWith("tiktok") ? "Tokopedia / TikTok Shop" : platform} links are accepted.</div>}
       {err && <div style={{ color: "#f87171", fontSize: 13, marginTop: 10 }}>✗ {err}</div>}
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 16 }}>
         <button className="btn-ghost" onClick={() => onClose(null)}>Cancel</button>
@@ -199,6 +227,7 @@ function ConnectionEditor({ supabase, clientId, isAdmin, conn, busy, onScrape, o
   const [show, setShow] = useState<"all" | "connected" | "missing">("all");
   const [err, setErr] = useState("");
   const [saving, setSaving] = useState(false);
+  const allowed = allowedPlatforms(conn);
 
   const load = useCallback(async () => {
     const { data } = await supabase.rpc("pr_connection_products", { p_conn: conn.id });
@@ -230,11 +259,11 @@ function ConnectionEditor({ supabase, clientId, isAdmin, conn, busy, onScrape, o
         const had = p.link;
         if (!url) { if (had) removals.push(had.id); continue; }
         const platform = detectPlatform(url);
-        if (!platform) { bad.push(p.product_name); continue; }
+        if (!platform || (allowed && !allowed.includes(platform))) { bad.push(p.product_name); continue; }
         if (had) { if (had.product_url !== url) updates.push([had.id, url, platform]); continue; }
         inserts.push({ client_id: clientId, connection_id: conn.id, kode_produk: p.prod_id, product_name: p.product_name, platform, store_id: conn.store_id, store_name: conn.store_name, product_url: url });
       }
-      if (bad.length) { setErr(`${bad.length} URL${bad.length === 1 ? " is" : "s are"} not a Shopee, Tokopedia or TikTok Shop product link: ${bad.slice(0, 3).join("; ")}${bad.length > 3 ? "…" : ""}`); return; }
+      if (bad.length) { setErr(`${bad.length} URL${bad.length === 1 ? " is" : "s are"} not ${allowed ? `a ${conn.platform} product link` : "a Shopee, Tokopedia or TikTok Shop product link"}: ${bad.slice(0, 3).join("; ")}${bad.length > 3 ? "…" : ""}`); return; }
       const dup = () => "A Product URL is already connected to this product in another connection.";
       if (removals.length) {
         for (let i = 0; i < removals.length; i += 100) {
@@ -273,7 +302,7 @@ function ConnectionEditor({ supabase, clientId, isAdmin, conn, busy, onScrape, o
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10, marginBottom: 6 }}>
         <div style={{ display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap" }}>
           <button className="btn-ghost" onClick={back}>← Connections</button>
-          <div style={{ fontSize: 20, fontWeight: 800, color: "#fff" }}>{conn.store_name}</div>
+          <div style={{ fontSize: 20, fontWeight: 800, color: "#fff" }}>{conn.store_name}{conn.platform ? <span style={{ color: "var(--gold)" }}> · {conn.platform}</span> : null}</div>
           <div style={{ fontSize: 13, color: "var(--muted)" }}>
             {conn.srp_no ? <><b style={{ fontFamily: "monospace", color: "var(--gold)" }}>{conn.srp_no}</b> · Catalog <span style={{ fontFamily: "monospace" }}>{conn.catalog_no || "—"}</span></> : "Older links (no SRP)"}
             {" · "}{connectedNow} of {products?.length ?? conn.products} products connected
@@ -315,14 +344,14 @@ function ConnectionEditor({ supabase, clientId, isAdmin, conn, busy, onScrape, o
                     <td style={{ fontFamily: "monospace", fontSize: 12, color: "var(--muted)" }}>{conn.catalog_no || "—"}</td>
                     <td style={{ fontFamily: "monospace", fontSize: 12.5 }}>{p.prod_id}</td>
                     <td style={{ minWidth: 220, maxWidth: 340, whiteSpace: "normal", overflowWrap: "anywhere", fontWeight: 700 }}>{p.product_name}</td>
-                    <td className="num" style={{ fontWeight: 700 }}>{rp(ourPrice(p, platform))}</td>
+                    <td className="num" style={{ fontWeight: 700 }}>{rp(ourPrice(p, platform, !!conn.platform))}</td>
                     <td style={{ minWidth: 300 }}>
                       {isAdmin ? (
                         <input value={urls[p.prod_id] ?? ""} onChange={(e) => setUrls((x) => ({ ...x, [p.prod_id]: e.target.value }))} placeholder="Paste the Product URL, or leave empty if the store does not sell it"
-                          style={{ width: "100%", background: "rgba(10,22,40,.5)", border: `1px solid ${url && !platform ? "rgba(248,113,113,.7)" : "rgba(201,162,39,.25)"}`, borderRadius: 6, padding: "6px 8px", color: "var(--text)", fontSize: 12.5 }} />
+                          style={{ width: "100%", background: "rgba(10,22,40,.5)", border: `1px solid ${url && (!platform || (allowed && !allowed.includes(platform))) ? "rgba(248,113,113,.7)" : "rgba(201,162,39,.25)"}`, borderRadius: 6, padding: "6px 8px", color: "var(--text)", fontSize: 12.5 }} />
                       ) : (p.link ? <a href={p.link.product_url} target="_blank" rel="noopener noreferrer" style={{ color: "#cfe0ff" }}>{p.link.product_url}</a> : "—")}
                     </td>
-                    <td style={{ whiteSpace: "nowrap", fontSize: 12.5 }}>{platform ? PLATFORM_LABEL[platform] : url ? <span style={{ color: "#f87171" }}>not a product link</span> : <span style={{ color: "var(--muted)" }}>—</span>}</td>
+                    <td style={{ whiteSpace: "nowrap", fontSize: 12.5 }}>{platform && !(allowed && !allowed.includes(platform)) ? PLATFORM_LABEL[platform] : url ? <span style={{ color: "#f87171" }}>{platform ? `not a ${conn.platform} link` : "not a product link"}</span> : <span style={{ color: "var(--muted)" }}>—</span>}</td>
                     <td style={{ whiteSpace: "nowrap" }}>
                       {isAdmin && p.link && !changed && <button className="btn-ghost" disabled={busy} onClick={() => onScrape([p.link!.id], p.product_name)}>Scrape</button>}{" "}
                       {isAdmin && urls[p.prod_id] && <button className="btn-ghost" title="Clear this URL" onClick={() => setUrls((x) => ({ ...x, [p.prod_id]: "" }))} style={{ color: "#f87171" }}>✕</button>}
