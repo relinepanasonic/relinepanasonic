@@ -4,19 +4,20 @@ import Link from "next/link";
 import { Fragment, useCallback, useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import Loader from "@/components/Loader";
-import { PLATFORMS, estimateCost, type Platform } from "@/lib/priceResearch";
+import { PLATFORMS, type Platform } from "@/lib/priceResearch";
 import StoreConnections from "./StoreConnections";
+import ScrapePanel from "./ScrapePanel";
 
 export const dynamic = "force-dynamic";
 
 // Price Calculator > Price Research
 //   Price Guard   per product: the SRP first (Baseline), then every connected store: Price Input (the price before the shop's discount),
 //                 Price Discount (what a buyer pays after it), promo labels, and Higher / Under / Same against the SRP.
-//   Product URL   which product is sold by which store, and its Product URL (one product, many stores). Store names come from a dropdown.
+//   Prod Connect  the log of store connections (SRP + Catalog + one store + one platform) and, per connection, a Product URL for every product of the SRP.
 //   Product Catalog  the SRP log (SRP ID automatic | Date Create | Date Active | Total SKU) and, per SRP, its products: Product Name, Prod ID,
 //                 Harga Beli (the calculator's Modal Produk), Harga SRP; typed by hand or imported from an XLS. The SRP in force feeds Price Guard,
 //                 Product URL and the Massive Calculator.
-// Prices are scraped ON DEMAND (button) through Apify.
+// Prices are scraped ON DEMAND (the Scrape button of Price Guard: pick connections, Execute) through Apify.
 type Supabase = ReturnType<typeof createClient>;
 type RunInfo = { id: string; platform: Platform; status: "running" | "done" | "failed"; scraped: number; failed: number; error: string | null; started_at: string; links: number };
 type GuardStore = { link_id: string; store: string; platform: Platform; product_url: string; scraped_at: string | null; ok: boolean | null; error: string | null;
@@ -50,7 +51,6 @@ export default function PriceResearchPage() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [tab, setTab] = useState<TabKey>("guard");
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
-  const [allLinks, setAllLinks] = useState<{ id: string; platform: Platform }[]>([]);
   const [starting, setStarting] = useState(false);
   const [runs, setRuns] = useState<RunInfo[]>([]);
   const [now, setNow] = useState(() => Date.now());
@@ -68,14 +68,6 @@ export default function PriceResearchPage() {
       setIsAdmin(["superadmin", "client_admin"].includes((p as { role?: string } | null)?.role || ""));
     })();
   }, [supabase]);
-
-  useEffect(() => {
-    if (!clientId) return;
-    (async () => {
-      const { data: l } = await supabase.from("price_research_links").select("id, platform").eq("client_id", clientId);
-      setAllLinks((l as { id: string; platform: Platform }[]) || []);
-    })();
-  }, [supabase, clientId, tick]);
 
   const running = runs.filter((r) => r.status === "running");
   const busy = starting || running.length > 0;
@@ -106,13 +98,11 @@ export default function PriceResearchPage() {
   }, [running.length, pollRuns]);
   useEffect(() => { const h = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(h); }, []);
 
-  async function scrape(ids: string[], label: string) {
-    if (!ids.length) { setMsg({ ok: false, text: "No Product URL yet. Connect products to their Product URL first." }); return false; }
-    const counts: Partial<Record<Platform, number>> = {};
-    for (const id of ids) { const p = allLinks.find((l) => l.id === id)?.platform; if (p) counts[p] = (counts[p] || 0) + 1; }
-    if (!window.confirm(`Scrape ${ids.length} price${ids.length === 1 ? "" : "s"} (${label}) now?\nEstimated Apify cost: about US$ ${estimateCost(counts).toFixed(3)}.\nIt runs on Apify and takes about a minute; you can keep working.`)) return false;
+  // Execute of the Scrape window: starts the scrape of every Product URL of the picked connections
+  async function runScrape(connectionIds: string[]) {
+    if (!connectionIds.length) return false;
     setStarting(true); setMsg(null);
-    const res = await fetch("/api/price-research/scrape", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ link_ids: ids }) });
+    const res = await fetch("/api/price-research/scrape", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ connection_ids: connectionIds }) });
     const j = await res.json().catch(() => ({}));
     if (!res.ok) { setStarting(false); setMsg({ ok: false, text: j.error || `Scrape failed (${res.status})` }); return false; }
     await pollRuns();
@@ -144,15 +134,10 @@ export default function PriceResearchPage() {
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 10, marginBottom: 12 }}>
           <div>
             <h3 style={{ margin: 0 }}>Price Research</h3>
-            <div className="hint">Add your products and their prices in the <b>Product Catalog</b> page, connect them to the stores&apos; pages in <b>Product URL</b>, scrape, and read the result in <b>Price Guard</b>.</div>
+            <div className="hint">Add your products and their prices in the <b>Product Catalog</b> page, connect them to the stores&apos; pages in <b>Prod Connect</b>, then scrape and read the result in <b>Price Guard</b>.</div>
           </div>
-          {isAdmin && (
-            <button className="btn-gold" disabled={busy || !allLinks.length} onClick={() => scrape(allLinks.map((l) => l.id), "all Product URLs")} style={{ padding: "10px 22px" }}>
-              {busy ? "Scraping on Apify…" : `Scrape all (${allLinks.length})`}
-            </button>
-          )}
         </div>
-        <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>{subTab("guard", "Price Guard")}{subTab("urls", "Product URL")}</div>
+        <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>{subTab("guard", "Price Guard")}{subTab("urls", "Prod Connect")}</div>
         {running.length > 0 && (
           <div style={{ color: "var(--gold)", fontSize: 13, marginBottom: 10 }}>
             ⏳ Scraping on Apify: {running.map((r) => `${PLATFORM_LABEL[r.platform]} · ${r.links} link${r.links === 1 ? "" : "s"} · ${Math.max(0, Math.round((now - new Date(r.started_at).getTime()) / 1000))}s`).join("   |   ")} — the prices appear when it finishes.
@@ -160,8 +145,8 @@ export default function PriceResearchPage() {
         )}
         {msg && <div style={{ color: msg.ok ? "var(--gold)" : "#f87171", fontSize: 13, marginBottom: 10 }}>{msg.ok ? "✓" : "✗"} {msg.text}</div>}
 
-        {clientId && tab === "guard" && <GuardTab supabase={supabase} clientId={clientId} tick={tick} />}
-        {clientId && tab === "urls" && <StoreConnections supabase={supabase} clientId={clientId} isAdmin={isAdmin} tick={tick} busy={busy} onScrape={scrape} onChanged={() => setTick((t) => t + 1)} />}
+        {clientId && tab === "guard" && <ScrapePanel supabase={supabase} clientId={clientId} isAdmin={isAdmin} tick={tick} busy={busy} onExecute={runScrape} detail={<GuardTab supabase={supabase} clientId={clientId} tick={tick} />} />}
+        {clientId && tab === "urls" && <StoreConnections supabase={supabase} clientId={clientId} isAdmin={isAdmin} tick={tick} onChanged={() => setTick((t) => t + 1)} />}
       </div>
     </>
   );
@@ -232,7 +217,7 @@ function GuardTab({ supabase, clientId, tick }: { supabase: Supabase; clientId: 
                   })}
                 </Fragment>
               ))}
-              {rows.length === 0 && <tr><td colSpan={7} style={{ textAlign: "center", color: "var(--muted)", padding: 24 }}>Nothing to compare yet. Add products in the Product Catalog, connect them to a Product URL, then press Scrape.</td></tr>}
+              {rows.length === 0 && <tr><td colSpan={7} style={{ textAlign: "center", color: "var(--muted)", padding: 24 }}>Nothing to compare yet. Add products in the Product Catalog, connect a store in Prod Connect, then press Scrape.</td></tr>}
             </tbody>
           </table>
         </div>

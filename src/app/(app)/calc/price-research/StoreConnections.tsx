@@ -8,7 +8,7 @@ import { PLATFORMS, cleanUrl, detectPlatform, type Platform } from "@/lib/priceR
 
 // Price Research > Product URL: the log of store connections first (SRP ID | Catalog ID | Store | products with a URL), then one connection:
 // every product of the SRP in one table, with our Harga Jual and the Product URL of that store. A store may not sell every product: a product
-// without URL is simply not connected. Save puts the URLs in the log; then another store can be connected to the same SRP.
+// without URL is simply not connected. Save puts the URLs in the log; then another store can be connected to the same SRP. Scraping is in Price Guard.
 type Supabase = ReturnType<typeof createClient>;
 type Store = { id: string; name: string };
 type ConnLog = {
@@ -44,9 +44,8 @@ function ourPrice(p: ConnProduct, platform: Platform | null, fixed: boolean): nu
   return (key ? p.price[key] : null) ?? p.price.any;
 }
 
-export default function StoreConnections({ supabase, clientId, isAdmin, tick, busy, onScrape, onChanged }: {
-  supabase: Supabase; clientId: string; isAdmin: boolean; tick: number; busy: boolean;
-  onScrape: (ids: string[], label: string) => Promise<boolean>; onChanged: () => void;
+export default function StoreConnections({ supabase, clientId, isAdmin, tick, onChanged }: {
+  supabase: Supabase; clientId: string; isAdmin: boolean; tick: number; onChanged: () => void;
 }) {
   const [log, setLog] = useState<ConnLog[] | null>(null);
   const [stores, setStores] = useState<Store[]>([]);
@@ -77,7 +76,7 @@ export default function StoreConnections({ supabase, clientId, isAdmin, tick, bu
 
   if (open) {
     return (
-      <ConnectionEditor supabase={supabase} clientId={clientId} isAdmin={isAdmin} conn={open} busy={busy} onScrape={onScrape}
+      <ConnectionEditor supabase={supabase} clientId={clientId} isAdmin={isAdmin} conn={open}
         onBack={() => { setOpen(null); load(); }}
         onDone={(text) => { setOpen(null); setMsg({ ok: true, text }); load(); onChanged(); }} />
     );
@@ -217,9 +216,8 @@ function NewConnectionModal({ supabase, clientId, stores, onStores, onClose }: {
 }
 
 /* ── one connection: every product of the SRP, one Product URL each ── */
-function ConnectionEditor({ supabase, clientId, isAdmin, conn, busy, onScrape, onBack, onDone }: {
-  supabase: Supabase; clientId: string; isAdmin: boolean; conn: ConnLog; busy: boolean;
-  onScrape: (ids: string[], label: string) => Promise<boolean>; onBack: () => void; onDone: (text: string) => void;
+function ConnectionEditor({ supabase, clientId, isAdmin, conn, onBack, onDone }: {
+  supabase: Supabase; clientId: string; isAdmin: boolean; conn: ConnLog; onBack: () => void; onDone: (text: string) => void;
 }) {
   const [products, setProducts] = useState<ConnProduct[] | null>(null);
   const [urls, setUrls] = useState<Record<string, string>>({});
@@ -295,7 +293,6 @@ function ConnectionEditor({ supabase, clientId, isAdmin, conn, busy, onScrape, o
     if (dirtyIds.length && !window.confirm(`${dirtyIds.length} Product URL${dirtyIds.length === 1 ? " is" : "s are"} not saved. Go back without saving?`)) return;
     onBack();
   }
-  const savedIds = (products || []).filter((p) => p.link).map((p) => p.link!.id);
 
   return (
     <>
@@ -311,9 +308,6 @@ function ConnectionEditor({ supabase, clientId, isAdmin, conn, busy, onScrape, o
         {isAdmin && (
           <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
             {dirtyIds.length > 0 && <span style={{ color: "var(--gold)", fontSize: 12.5 }}>{dirtyIds.length} changed</span>}
-            <button className="btn-ghost" disabled={busy || !savedIds.length || dirtyIds.length > 0} title={dirtyIds.length ? "Save first" : undefined} onClick={() => onScrape(savedIds, conn.store_name || "this store")}>
-              {busy ? "Scraping…" : `Scrape this store (${savedIds.length})`}
-            </button>
             <button className="btn-ghost" onClick={delConn} style={{ color: "#f87171" }}>Delete connection</button>
             <button className="btn-gold" disabled={saving || !dirtyIds.length} onClick={save} style={{ padding: "10px 26px" }}>{saving ? "Saving…" : "Save"}</button>
           </div>
@@ -353,7 +347,6 @@ function ConnectionEditor({ supabase, clientId, isAdmin, conn, busy, onScrape, o
                     </td>
                     <td style={{ whiteSpace: "nowrap", fontSize: 12.5 }}>{platform && !(allowed && !allowed.includes(platform)) ? PLATFORM_LABEL[platform] : url ? <span style={{ color: "#f87171" }}>{platform ? `not a ${conn.platform} link` : "not a product link"}</span> : <span style={{ color: "var(--muted)" }}>—</span>}</td>
                     <td style={{ whiteSpace: "nowrap" }}>
-                      {isAdmin && p.link && !changed && <button className="btn-ghost" disabled={busy} onClick={() => onScrape([p.link!.id], p.product_name)}>Scrape</button>}{" "}
                       {isAdmin && urls[p.prod_id] && <button className="btn-ghost" title="Clear this URL" onClick={() => setUrls((x) => ({ ...x, [p.prod_id]: "" }))} style={{ color: "#f87171" }}>✕</button>}
                     </td>
                   </tr>

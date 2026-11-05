@@ -27,6 +27,7 @@ vi.mock("@/lib/supabase/admin", () => ({
   createAdminClient: () => ({
     from: (t: string) =>
       t === "price_research_links" ? chain(() => ({ data: links, error: null }))
+      : t === "pr_scrapes" ? { insert: () => ({ select: () => ({ single: async () => ({ data: { id: "SC1" } }) }) }) }
       : t === "price_research_runs" ? chain(() => ({ data: runningRuns, error: null }), (r) => runsInserted.push(r as Record<string, unknown>))
       : chain(() => ({ error: null }), (r) => snapsInserted.push(...(Array.isArray(r) ? r : [r]))),
   }),
@@ -66,6 +67,17 @@ describe("POST /api/price-research/scrape (starts the Apify runs and returns at 
     expect(input.startUrls).toEqual(["https://www.tokopedia.com/rival/ac-1pk"]);            // ?src=x is dropped
     expect(runsInserted).toHaveLength(2);
     expect(runsInserted[0]).toMatchObject({ platform: "tokopedia", apify_run_id: "run1", dataset_id: "ds1", link_ids: ["L1"], client_id: "C" });
+    vi.unstubAllGlobals();
+  });
+
+  it("scrapes the Product URLs of whole connections and records the scrape for the log", async () => {
+    const f = started(); vi.stubGlobal("fetch", f);
+    const { POST } = await import("./route");
+    const res = await POST(post({ connection_ids: ["K1"] }));
+    const j = await res.json();
+    expect(res.status).toBe(200);
+    expect(j.scrape_id).toBe("SC1");
+    expect(runsInserted[0]).toMatchObject({ scrape_id: "SC1" });
     vi.unstubAllGlobals();
   });
 
