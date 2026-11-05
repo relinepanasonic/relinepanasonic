@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowDown, ArrowUp, ArrowUpDown, Copy, Pencil, Search, X } from "lucide-react";
+import { createPortal } from "react-dom";
+import { ArrowDown, ArrowUp, ArrowUpDown, ChevronDown, Copy, Pencil, Search, X } from "lucide-react";
 import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Modal } from "@/components/ProductCatalog";
@@ -589,6 +590,20 @@ export default function MassiveCalculatorPage() {
         .srp-act{display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 12px;border:1px solid rgba(255,255,255,.12);border-radius:9px;background:rgba(10,22,40,.6);color:var(--text);font-size:13px;font-weight:600;cursor:pointer;transition:border-color .15s,background .15s}
         .srp-act:hover:not(:disabled){border-color:var(--gold);background:rgba(201,162,39,.12)}
         .srp-act:disabled{opacity:.4;cursor:not-allowed}
+        /* the fee dropdowns: the whole text is readable (a few rows), in the cell and in the list */
+        .fc-btn{display:inline-flex;align-items:center;justify-content:space-between;gap:6px;min-height:30px;padding:4px 8px;border:1px solid rgba(201,162,39,.25);border-radius:6px;background:rgba(10,22,40,.5);color:var(--text);font:inherit;font-size:12px;text-align:left;cursor:pointer;box-sizing:border-box;max-width:100%}
+        .fc-btn:hover{border-color:rgba(201,162,39,.5)}
+        .fc-btn:focus-visible{outline:2px solid var(--gold);outline-offset:1px}
+        .fc-val{flex:1;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden;white-space:normal;overflow-wrap:anywhere;line-height:1.3}
+        .fc-val.empty{color:var(--muted)}
+        .fc-pop{position:fixed;z-index:10050;display:flex;flex-direction:column;border:1px solid rgba(201,162,39,.4);border-radius:12px;background:var(--navy-deep);box-shadow:0 18px 50px rgba(0,0,0,.6);overflow:hidden}
+        .fc-search{margin:8px;padding:8px 10px;border:1px solid rgba(255,255,255,.12);border-radius:8px;background:rgba(255,255,255,.04);color:var(--text);font-size:13px;outline:0}
+        .fc-search:focus{border-color:var(--gold)}
+        .fc-list{overflow-y:auto;padding:0 6px 8px}
+        .fc-opt{display:block;width:100%;padding:8px 10px;border:0;border-radius:8px;background:none;color:var(--text);font-size:13px;line-height:1.35;text-align:left;white-space:normal;overflow-wrap:anywhere;cursor:pointer}
+        .fc-opt:hover,.fc-opt:focus-visible{background:rgba(201,162,39,.16);outline:0}
+        .fc-opt.on{color:var(--gold-soft);font-weight:700}
+        .fc-none{padding:10px;color:var(--muted);font-size:12.5px}
         .calc-sel{background:rgba(10,22,40,.5);border:1px solid rgba(201,162,39,.25);border-radius:6px;padding:4px 6px;color:var(--text);font-size:12px;max-width:150px}
       `}</style>
 
@@ -860,16 +875,12 @@ function CalcRowLine({ no, row, fee, fees, catalog, selected, onToggle, onSave, 
     onSave(row.id, { ...keysPatch(emptySel), fee_id: null });
   }
 
+  const feeWidth: Record<keyof FeeSel, number> = { platform: 120, jenis_toko: 150, category: 150, sub_category: 210, jenis_product: 240 };
   const feeSelect = (field: keyof FeeSel) => {
     const opts = optionsFor(field, sel, fees);
     const value = sel[field];
     const list = value && !opts.includes(value) ? [value, ...opts] : opts;
-    return (
-      <select className="calc-sel" value={value} onChange={(e) => pick(field, e.target.value)}>
-        <option value="" disabled hidden>— pick —</option>
-        {list.map((o) => <option key={o} value={o}>{o}</option>)}
-      </select>
-    );
+    return <FeeCombo width={feeWidth[field]} value={value} options={list} onChange={(v) => pick(field, v)} />;
   };
 
   const txt = (val: string, onChange: (s: string) => void, width: number) => (
@@ -1031,10 +1042,8 @@ function FeePicker({ fees, value, onChange, blank, free }: { fees: Fee[]; value:
     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
       {order.map((field) => (
         <div className="fld" key={field} style={field === "jenis_product" ? { gridColumn: "1 / -1" } : undefined}><label>{FEE_LABEL[field]}</label>
-          <select value={value[field]} onChange={(e) => onChange(free ? { ...value, [field]: e.target.value } : refineSel({ ...value, [field]: e.target.value }, fees))}>
-            <option value="">{blank}</option>
-            {optionsFor(field, value, fees).map((o) => <option key={o} value={o}>{o}</option>)}
-          </select></div>
+          <FeeCombo width="100%" value={value[field]} placeholder={blank} clearLabel={blank} options={optionsFor(field, value, fees)}
+            onChange={(v) => onChange(free ? { ...value, [field]: v } : refineSel({ ...value, [field]: v }, fees))} /></div>
       ))}
     </div>
   );
@@ -1132,6 +1141,60 @@ function SortTh({ label, k, sort, onSort, className, style }: {
         <Icon size={12} style={{ opacity: active ? 1 : 0.4, flexShrink: 0 }} />
       </span>
     </th>
+  );
+}
+
+// A dropdown whose text can be read in full: the closed cell wraps to a few rows and the list opens as a searchable panel with wrapped options
+// (a native <select> cuts a long text on both sides). clearLabel adds a first row that empties the value.
+function FeeCombo({ value, options, onChange, placeholder = "— pick —", clearLabel, width = 160 }: {
+  value: string; options: string[]; onChange: (v: string) => void; placeholder?: string; clearLabel?: string; width?: number | string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState("");
+  const [pos, setPos] = useState<{ left: number; width: number; top?: number; bottom?: number; maxH: number } | null>(null);
+  const btn = useRef<HTMLButtonElement>(null);
+  const pop = useRef<HTMLDivElement>(null);
+
+  function toggle() {
+    if (open) { setOpen(false); return; }
+    const r = btn.current!.getBoundingClientRect();
+    const w = Math.min(Math.max(r.width, 400), window.innerWidth - 24);
+    const left = Math.min(Math.max(12, r.left), window.innerWidth - w - 12);
+    const below = window.innerHeight - r.bottom - 12, above = r.top - 12;
+    const up = below < 240 && above > below;
+    setPos({ left, width: w, maxH: Math.max(180, Math.min(380, up ? above : below)), ...(up ? { bottom: window.innerHeight - r.top + 4 } : { top: r.bottom + 4 }) });
+    setQ(""); setOpen(true);
+  }
+  useEffect(() => {
+    if (!open) return;
+    const down = (e: MouseEvent) => { const t = e.target as Node; if (!pop.current?.contains(t) && !btn.current?.contains(t)) setOpen(false); };
+    const key = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
+    const scroll = (e: Event) => { if (!pop.current?.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener("mousedown", down); document.addEventListener("keydown", key); window.addEventListener("scroll", scroll, true);
+    return () => { document.removeEventListener("mousedown", down); document.removeEventListener("keydown", key); window.removeEventListener("scroll", scroll, true); };
+  }, [open]);
+
+  const needle = q.trim().toLowerCase();
+  const shown = needle ? options.filter((o) => o.toLowerCase().includes(needle)) : options;
+  const choose = (v: string) => { setOpen(false); if (v !== value) onChange(v); };
+  return (
+    <>
+      <button ref={btn} type="button" className="fc-btn" style={{ width }} title={value || undefined} aria-haspopup="listbox" aria-expanded={open} onClick={toggle}>
+        <span className={`fc-val${value ? "" : " empty"}`}>{value || placeholder}</span>
+        <ChevronDown size={14} style={{ flexShrink: 0, opacity: .7 }} />
+      </button>
+      {open && pos && createPortal(
+        <div ref={pop} className="fc-pop" style={{ left: pos.left, width: pos.width, top: pos.top, bottom: pos.bottom, maxHeight: pos.maxH }}>
+          <input className="fc-search" autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Type to search" />
+          <div className="fc-list" role="listbox">
+            {clearLabel && !needle && <button type="button" className="fc-opt" onClick={() => choose("")} style={{ color: "var(--muted)" }}>{clearLabel}</button>}
+            {shown.map((o) => <button type="button" key={o} role="option" aria-selected={o === value} className={`fc-opt${o === value ? " on" : ""}`} onClick={() => choose(o)}>{o}</button>)}
+            {shown.length === 0 && <div className="fc-none">Nothing matches “{q}”.</div>}
+          </div>
+        </div>,
+        document.body,
+      )}
+    </>
   );
 }
 
