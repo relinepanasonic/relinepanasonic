@@ -256,6 +256,7 @@ export default function MassiveCalculatorPage() {
       case "markup": return c.hargaMarkupPct;
       case "biaya": return c.totalBiaya;
       case "profit": return c.profit;
+      case "profitpct": return c.marginPct;
       case "fcat": return r.fee_category || "";
       case "fsub": return r.fee_sub_category || "";
       case "fjenis": return r.fee_jenis_product || "";
@@ -281,6 +282,7 @@ export default function MassiveCalculatorPage() {
       case "pajakrp": return c.pajakRp;
       case "lain": return r.biaya_lain_rp;
       case "nett": return c.profit;
+      case "nettpct": return c.marginPct;
       default: return null;
     }
   }, [feesById, catByProd, rows]);
@@ -770,6 +772,7 @@ export default function MassiveCalculatorPage() {
                   <SortTh className="num" style={stickyTh} k="markup" label="Harga Jual (%)" sort={sort} onSort={toggleSort} />
                   <SortTh className="num" style={stickyTh} k="biaya" label="Total Biaya" sort={sort} onSort={toggleSort} />
                   <SortTh className="num" style={stickyTh} k="profit" label="Profit" sort={sort} onSort={toggleSort} />
+                  <SortTh className="num" style={stickyTh} k="profitpct" label="Profit %" sort={sort} onSort={toggleSort} />
                   <SortTh style={stickyTh} k="fcat" label="Category (Fee)" sort={sort} onSort={toggleSort} />
                   <SortTh style={stickyTh} k="fsub" label="Sub Category" sort={sort} onSort={toggleSort} />
                   <SortTh style={stickyTh} k="fjenis" label="Jenis Product" sort={sort} onSort={toggleSort} />
@@ -795,6 +798,7 @@ export default function MassiveCalculatorPage() {
                   <SortTh className="num" style={stickyTh} k="pajakrp" label="Pajak Rp" sort={sort} onSort={toggleSort} />
                   <SortTh className="num" style={stickyTh} k="lain" label="Biaya Lain" sort={sort} onSort={toggleSort} />
                   <SortTh className="num" style={stickyTh} k="nett" label="Nett Profit" sort={sort} onSort={toggleSort} />
+                  <SortTh className="num" style={stickyTh} k="nettpct" label="Nett Profit %" sort={sort} onSort={toggleSort} />
                   <th style={stickyTh}></th>
                 </tr>
               </thead>
@@ -805,10 +809,10 @@ export default function MassiveCalculatorPage() {
                     scope={listScope} onSave={saveRow} onDelete={deleteRow} onPending={onPending} />
                 ))}
                 {!loading && rows.length === 0 && (
-                  <tr><td colSpan={39} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>This SRP has no lines.</td></tr>
+                  <tr><td colSpan={41} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>This SRP has no lines.</td></tr>
                 )}
                 {loading && (
-                  <tr><td colSpan={39} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>Loading…</td></tr>
+                  <tr><td colSpan={41} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>Loading…</td></tr>
                 )}
               </tbody>
             </table>
@@ -983,9 +987,8 @@ function CalcRowLine({ no, row, fee, fees, catalog, selected, onToggle, scope, o
         </span>
       </td>
       <td className="num" style={{ fontWeight: 700 }}>Rp {formatRp(calc.totalBiaya)}</td>
-      <td className="num" style={{ fontWeight: 700, color: calc.profit >= 0 ? "#4ade80" : "#ff9a9a" }}>
-        Rp {formatRp(calc.profit)}<div style={{ fontSize: 11, fontWeight: 400 }}>{calc.marginPct === null ? "—" : `${calc.marginPct.toFixed(1)}%`}</div>
-      </td>
+      <td className="num" style={{ fontWeight: 700, color: calc.profit >= 0 ? "#4ade80" : "#ff9a9a" }}>Rp {formatRp(calc.profit)}</td>
+      <td className="num" style={{ fontWeight: 600, color: calc.profit >= 0 ? "#4ade80" : "#ff9a9a" }}>{calc.marginPct === null ? "—" : `${calc.marginPct.toFixed(1)}%`}</td>
       <td>{feeSelect("category")}</td>
       <td>{feeSelect("sub_category")}</td>
       <td>{feeSelect("jenis_product")}
@@ -1014,9 +1017,8 @@ function CalcRowLine({ no, row, fee, fees, catalog, selected, onToggle, scope, o
       <td className="num calc-ro">{pajakPctOf(fee)}%</td>
       <td className="num calc-ro">Rp {formatRp(calc.pajakRp)}</td>
       <td className="num">Rp {txt(v.biaya_lain_rp, (s) => setV((st) => ({ ...st, biaya_lain_rp: formatRp(parseRp(s)) })), 80)}</td>
-      <td className="num" style={{ fontWeight: 700, color: calc.profit >= 0 ? "#4ade80" : "#ff9a9a" }}>
-        Rp {formatRp(calc.profit)}<div style={{ fontSize: 11, fontWeight: 400 }}>{calc.marginPct === null ? "—" : `${calc.marginPct.toFixed(1)}%`}</div>
-      </td>
+      <td className="num" style={{ fontWeight: 700, color: calc.profit >= 0 ? "#4ade80" : "#ff9a9a" }}>Rp {formatRp(calc.profit)}</td>
+      <td className="num" style={{ fontWeight: 600, color: calc.profit >= 0 ? "#4ade80" : "#ff9a9a" }}>{calc.marginPct === null ? "—" : `${calc.marginPct.toFixed(1)}%`}</td>
       <td>
         <div style={{ display: "flex", gap: 6 }}>
           {dirty && <>
