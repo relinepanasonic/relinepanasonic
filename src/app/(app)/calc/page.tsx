@@ -182,7 +182,6 @@ export default function MassiveCalculatorPage() {
   const [busy, setBusy] = useState(false);
   const [picking, setPicking] = useState(false);
   const [catalogAll, setCatalogAll] = useState<CatalogItem[]>([]);
-  const [lowest, setLowest] = useState<Map<string, number>>(new Map());   // Prod ID -> the lowest competitor price (Price Guard)
   const [log, setLog] = useState<SrpLog[] | null>(null);
   const [srp, setSrp] = useState<OpenSrp | null>(null);
   const [srpItems, setSrpItems] = useState<CatalogItem[]>([]);            // the products and prices of the Catalog the open SRP was made from
@@ -234,7 +233,6 @@ export default function MassiveCalculatorPage() {
       case "catalog": return cat?.srp_no ?? "";
       case "beli": return cat?.harga_beli ?? null;
       case "jualcat": return cat?.harga_srp ?? null;
-      case "lowest": return lowest.get(r.prod_id || "") ?? null;
       case "line": return r.product_line || "";
       case "modal": return r.modal_produk_rp;
       case "jual": return r.harga_jual_rp;
@@ -268,7 +266,7 @@ export default function MassiveCalculatorPage() {
       case "nett": return c.profit;
       default: return null;
     }
-  }, [feesById, catByProd, lowest, rows]);
+  }, [feesById, catByProd, rows]);
   const shown = useMemo(() => {
     if (!sort) return visible;
     const sign = sort.dir === "asc" ? 1 : -1;
@@ -290,19 +288,12 @@ export default function MassiveCalculatorPage() {
   const loadBase = useCallback(async (cid: string) => {
     // the fees of the Marketplace Fee version in force (lines made with an older version keep their own fee rows: see ensureFees)
     const { data: feeList } = await supabase.rpc("market_fee_active", { p_client_id: cid });
-    const [f, cat, guard] = await Promise.all([
+    const [f, cat] = await Promise.all([
       feeList ? fetchAll<Fee>(supabase, "market_fees", cid, "category", undefined, feeList as string) : Promise.resolve([] as Fee[]),
       supabase.rpc("pr_srp_catalog", { p_client_id: cid }),
-      supabase.rpc("price_guard", { p_client_id: cid }),
     ]);
     setFees(f);
     setCatalogAll((cat.data as CatalogItem[]) || []);
-    const m = new Map<string, number>();
-    for (const g of ((guard.data as { prod_id: string; stores: { ok: boolean | null; price_sell: number | null }[] }[]) || [])) {
-      const prices = g.stores.filter((x) => x.ok && x.price_sell).map((x) => x.price_sell as number);
-      if (prices.length) m.set(g.prod_id, Math.min(...prices));
-    }
-    setLowest(m);
   }, [supabase]);
 
   useEffect(() => {
@@ -674,7 +665,6 @@ export default function MassiveCalculatorPage() {
                   <SortTh style={stickyTh} k="catalog" label="Catalog ID" sort={sort} onSort={toggleSort} />
                   <SortTh className="num" style={stickyTh} k="beli" label="Harga Beli" sort={sort} onSort={toggleSort} />
                   <SortTh className="num" style={stickyTh} k="jualcat" label="Harga Jual (Catalog)" sort={sort} onSort={toggleSort} />
-                  <SortTh className="num" style={stickyTh} k="lowest" label="Lowest Competitor" sort={sort} onSort={toggleSort} />
                   <SortTh style={stickyTh} k="line" label="Category" sort={sort} onSort={toggleSort} />
                   <SortTh className="num" style={stickyTh} k="modal" label="Modal Produk" sort={sort} onSort={toggleSort} />
                   <SortTh className="num" style={stickyTh} k="jual" label="Harga Jual (Rp)" sort={sort} onSort={toggleSort} />
@@ -712,14 +702,14 @@ export default function MassiveCalculatorPage() {
               <tbody>
                 {shown.map((r, i) => (
                   <CalcRowLine key={`${r.id}-${rev}`} no={i + 1} selected={selected.has(r.id)} onToggle={toggleOne} row={r} fee={r.fee_id ? feesById.get(r.fee_id) ?? null : null} fees={fees}
-                    catalog={srpItems} lowest={lowest}
+                    catalog={srpItems}
                     onSave={saveRow} onDelete={deleteRow} onPending={onPending} />
                 ))}
                 {!loading && rows.length === 0 && (
-                  <tr><td colSpan={43} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>This SRP has no lines.</td></tr>
+                  <tr><td colSpan={42} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>This SRP has no lines.</td></tr>
                 )}
                 {loading && (
-                  <tr><td colSpan={43} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>Loading…</td></tr>
+                  <tr><td colSpan={42} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>Loading…</td></tr>
                 )}
               </tbody>
             </table>
@@ -733,9 +723,9 @@ export default function MassiveCalculatorPage() {
   );
 }
 
-function CalcRowLine({ no, row, fee, fees, catalog, lowest, selected, onToggle, onSave, onDelete, onPending }: {
+function CalcRowLine({ no, row, fee, fees, catalog, selected, onToggle, onSave, onDelete, onPending }: {
   no: number; row: CalcRow; fee: Fee | null; fees: Fee[];
-  catalog: CatalogItem[]; lowest: Map<string, number>;
+  catalog: CatalogItem[];
   onPending: (id: string, patch: Partial<CalcRow> | null) => void;
   onSave: (id: string, patch: Partial<CalcRow>) => void;
   onDelete: (id: string) => void;
@@ -801,7 +791,6 @@ function CalcRowLine({ no, row, fee, fees, catalog, lowest, selected, onToggle, 
 
   const catalogById = new Map(catalog.map((c) => [c.prod_id, c]));
   const cat = v.prod_id ? catalogById.get(v.prod_id) ?? null : null;
-  const low = v.prod_id ? lowest.get(v.prod_id) ?? null : null;
   // picking a catalog product fills the name, the Prod ID, Modal Produk = its Harga Beli and (as the starting point) Harga Jual = its Harga Jual
   function pickProduct(prodId: string) {
     const c = prodId ? catalogById.get(prodId) : null;
@@ -880,7 +869,6 @@ function CalcRowLine({ no, row, fee, fees, catalog, lowest, selected, onToggle, 
       <td className="num" style={{ fontWeight: 600 }}>{cat?.harga_srp != null ? `Rp ${formatRp(cat.harga_srp)}` : "—"}
         {cat?.harga_srp != null && parsed.harga_jual_rp !== cat.harga_srp && <div><button onClick={() => setV((s) => ({ ...s, harga_jual_rp: formatRp(cat.harga_srp as number) }))} className="btn-ghost" style={{ padding: "0 6px", fontSize: 10 }} title="Use the Harga Jual of the Catalog">= Catalog</button></div>}
       </td>
-      <td className="num calc-ro">{low != null ? `Rp ${formatRp(low)}` : "—"}{low != null && parsed.harga_jual_rp > 0 && <div style={{ fontSize: 11, color: parsed.harga_jual_rp > low ? "#ff9a9a" : "#4ade80" }}>{parsed.harga_jual_rp > low ? "+" : ""}{((parsed.harga_jual_rp / low - 1) * 100).toFixed(1)}% vs ours</div>}</td>
       <td>
         <input type="text" value={v.product_line} onChange={(e) => setV((s) => ({ ...s, product_line: e.target.value }))}
           placeholder="e.g. RAC" style={{ width: 70, background: "rgba(10,22,40,.5)", border: "1px solid rgba(201,162,39,.25)", borderRadius: 6, padding: "4px 6px", color: "var(--text)", fontSize: 12.5 }} />
