@@ -231,9 +231,6 @@ export default function MassiveCalculatorPage() {
       case "prod": return r.prod_id || "";
       case "name": return r.item_product || "";
       case "catalog": return cat?.srp_no ?? "";
-      case "beli": return cat?.harga_beli ?? null;
-      case "jualcat": return cat?.harga_srp ?? null;
-      case "line": return r.product_line || "";
       case "modal": return r.modal_produk_rp;
       case "jual": return r.harga_jual_rp;
       case "markup": return c.hargaMarkupPct;
@@ -482,18 +479,20 @@ export default function MassiveCalculatorPage() {
   }
 
   // Edit selected: the same values on every ticked line. The fee values picked change on each line on its own; a line keeps the ones not picked.
-  async function massEdit(patch: Partial<CalcRow>, choice: FeeSel | null): Promise<string> {
+  async function massEdit(patch: Partial<CalcRow>, choice: FeeSel | null, markupPct: number | null): Promise<string> {
     if (!srp || !selectedRows.length) return "";
     if (dirtyCount && !confirm(`${dirtyCount} line${dirtyCount === 1 ? " has" : "s have"} changes that are not saved. The mass edit replaces them. Continue?`)) return "cancel";
     setBusy(true);
     try {
       let incomplete = 0;
       const jobs = selectedRows.map((r): [string, Partial<CalcRow>] => {
-        if (!choice) return [r.id, patch];
+        // a Harga Jual % is worked out on each line from its own Modal Produk (or the new one set in the same edit)
+        const base: Partial<CalcRow> = markupPct === null ? patch : { ...patch, harga_jual_rp: Math.round((patch.modal_produk_rp ?? r.modal_produk_rp) * (1 + markupPct / 100)) };
+        if (!choice) return [r.id, base];
         const m = mergeFee(r, choice);
         const hit = resolveFee(m, fees);
         if (!hit && FEE_FIELDS.some((k) => m[k])) incomplete++;
-        return [r.id, { ...patch, ...keysPatch(m), fee_id: hit?.id ?? null }];
+        return [r.id, { ...base, ...keysPatch(m), fee_id: hit?.id ?? null }];
       });
       for (let i = 0; i < jobs.length; i += 20) {
         const res = await Promise.all(jobs.slice(i, i + 20).map(([id, p]) => supabase.from("massive_calc_rows").update(p).eq("id", id)));
@@ -693,9 +692,6 @@ export default function MassiveCalculatorPage() {
                   <SortTh style={stickyTh} k="prod" label="Product ID" sort={sort} onSort={toggleSort} />
                   <SortTh style={stickyTh} k="name" label="Product Name" sort={sort} onSort={toggleSort} />
                   <SortTh style={stickyTh} k="catalog" label="Catalog ID" sort={sort} onSort={toggleSort} />
-                  <SortTh className="num" style={stickyTh} k="beli" label="Harga Beli" sort={sort} onSort={toggleSort} />
-                  <SortTh className="num" style={stickyTh} k="jualcat" label="Harga Jual (Catalog)" sort={sort} onSort={toggleSort} />
-                  <SortTh style={stickyTh} k="line" label="Category" sort={sort} onSort={toggleSort} />
                   <SortTh className="num" style={stickyTh} k="modal" label="Modal Produk" sort={sort} onSort={toggleSort} />
                   <SortTh className="num" style={stickyTh} k="jual" label="Harga Jual (Rp)" sort={sort} onSort={toggleSort} />
                   <SortTh className="num" style={stickyTh} k="markup" label="Harga Jual (%)" sort={sort} onSort={toggleSort} />
@@ -736,10 +732,10 @@ export default function MassiveCalculatorPage() {
                     onSave={saveRow} onDelete={deleteRow} onPending={onPending} />
                 ))}
                 {!loading && rows.length === 0 && (
-                  <tr><td colSpan={42} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>This SRP has no lines.</td></tr>
+                  <tr><td colSpan={39} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>This SRP has no lines.</td></tr>
                 )}
                 {loading && (
-                  <tr><td colSpan={42} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>Loading…</td></tr>
+                  <tr><td colSpan={39} style={{ textAlign: "center", color: "var(--muted)", padding: 20 }}>Loading…</td></tr>
                 )}
               </tbody>
             </table>
@@ -777,6 +773,7 @@ function CalcRowLine({ no, row, fee, fees, catalog, selected, onToggle, onSave, 
     paylater_6mo_on: row.paylater_6mo_on,
   }));
   const [sel, setSel] = useState<FeeSel>(() => keysOf(row));
+  const [pctText, setPctText] = useState<string | null>(null);   // what is being typed in the Harga Jual % box
 
   const parsed = {
     item_product: v.item_product,
@@ -825,6 +822,14 @@ function CalcRowLine({ no, row, fee, fees, catalog, selected, onToggle, onSave, 
   function pickProduct(prodId: string) {
     const c = prodId ? catalogById.get(prodId) : null;
     setV((st) => ({ ...st, prod_id: prodId, item_product: c ? c.product_name : st.item_product, modal_produk_rp: c && c.harga_beli != null ? formatRp(c.harga_beli) : st.modal_produk_rp, harga_jual_rp: c && c.harga_srp != null ? formatRp(c.harga_srp) : st.harga_jual_rp }));
+  }
+
+  // Harga Jual % = how far Harga Jual is above Modal Produk: typing it sets the Harga Jual
+  function setMarkup(text: string) {
+    setPctText(text);
+    const n = Number(text.replace(",", "."));
+    if (text.trim() === "" || !Number.isFinite(n)) return;
+    setV((st) => ({ ...st, harga_jual_rp: formatRp(Math.round(parseRp(st.modal_produk_rp) * (1 + n / 100))) }));
   }
 
   function save() { onSave(row.id, parsed); }
@@ -893,19 +898,17 @@ function CalcRowLine({ no, row, fee, fees, catalog, selected, onToggle, onSave, 
         </select>
       </td>
       <td className="calc-ro" style={{ fontFamily: "monospace" }}>{cat?.srp_no || "—"}</td>
-      <td className="num" style={{ fontWeight: 600 }}>{cat?.harga_beli != null ? `Rp ${formatRp(cat.harga_beli)}` : "—"}
-        {cat?.harga_beli != null && parsed.modal_produk_rp !== cat.harga_beli && <div><button onClick={() => setV((s) => ({ ...s, modal_produk_rp: formatRp(cat.harga_beli as number) }))} className="btn-ghost" style={{ padding: "0 6px", fontSize: 10 }} title="Use Harga Beli as Modal Produk">= Beli</button></div>}
-      </td>
-      <td className="num" style={{ fontWeight: 600 }}>{cat?.harga_srp != null ? `Rp ${formatRp(cat.harga_srp)}` : "—"}
-        {cat?.harga_srp != null && parsed.harga_jual_rp !== cat.harga_srp && <div><button onClick={() => setV((s) => ({ ...s, harga_jual_rp: formatRp(cat.harga_srp as number) }))} className="btn-ghost" style={{ padding: "0 6px", fontSize: 10 }} title="Use the Harga Jual of the Catalog">= Catalog</button></div>}
-      </td>
-      <td>
-        <input type="text" value={v.product_line} onChange={(e) => setV((s) => ({ ...s, product_line: e.target.value }))}
-          placeholder="e.g. RAC" style={{ width: 70, background: "rgba(10,22,40,.5)", border: "1px solid rgba(201,162,39,.25)", borderRadius: 6, padding: "4px 6px", color: "var(--text)", fontSize: 12.5 }} />
-      </td>
       <td className="num">Rp {txt(v.modal_produk_rp, (s) => setV((st) => ({ ...st, modal_produk_rp: formatRp(parseRp(s)) })), 90)}</td>
       <td className="num">Rp {txt(v.harga_jual_rp, (s) => setV((st) => ({ ...st, harga_jual_rp: formatRp(parseRp(s)) })), 90)}</td>
-      <td className="num calc-ro">{calc.hargaMarkupPct === null ? "—" : `${calc.hargaMarkupPct.toFixed(1)}%`}</td>
+      <td className="num">
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}>
+          <input type="text" inputMode="decimal" title="Harga Jual above Modal Produk: change it and the Harga Jual follows"
+            value={pctText ?? (calc.hargaMarkupPct === null ? "" : calc.hargaMarkupPct.toFixed(1))}
+            onChange={(e) => setMarkup(e.target.value.replace(/[^\d.,-]/g, ""))} onBlur={() => setPctText(null)}
+            style={{ width: 62, textAlign: "right", background: "rgba(10,22,40,.5)", border: "1px solid rgba(201,162,39,.25)", borderRadius: 6, padding: "4px 6px", color: "var(--text)", fontSize: 12.5 }} />
+          <span style={{ color: "var(--muted)" }}>%</span>
+        </span>
+      </td>
       <td className="num" style={{ fontWeight: 700 }}>Rp {formatRp(calc.totalBiaya)}</td>
       <td className="num" style={{ fontWeight: 700, color: calc.profit >= 0 ? "#4ade80" : "#ff9a9a" }}>
         Rp {formatRp(calc.profit)}<div style={{ fontSize: 11, fontWeight: 400 }}>{calc.marginPct === null ? "—" : `${calc.marginPct.toFixed(1)}%`}</div>
@@ -1037,9 +1040,9 @@ const triSelect = (label: string, v: Tri, set: (x: Tri) => void) => (
     <select value={v} onChange={(e) => set(e.target.value as Tri)}><option value="">— keep —</option><option value="Yes">Yes</option><option value="No">No</option></select></div>
 );
 
-function MassEditModal({ fees, count, busy, onClose, onApply }: { fees: Fee[]; count: number; busy: boolean; onClose: () => void; onApply: (patch: Partial<CalcRow>, choice: FeeSel | null) => Promise<string> }) {
+function MassEditModal({ fees, count, busy, onClose, onApply }: { fees: Fee[]; count: number; busy: boolean; onClose: () => void; onApply: (patch: Partial<CalcRow>, choice: FeeSel | null, markupPct: number | null) => Promise<string> }) {
   const [sel, setSel] = useState<FeeSel>(emptySel);
-  const [f, setF] = useState({ product_line: "", target_roas: "", berat_kg: "", ukuran_cm3: "", biaya_lain_rp: "", modal_produk_rp: "", harga_jual_rp: "" });
+  const [f, setF] = useState({ markup_pct: "", target_roas: "", berat_kg: "", ukuran_cm3: "", biaya_lain_rp: "", modal_produk_rp: "", harga_jual_rp: "" });
   const [t, setT] = useState<{ ongkir: Tri; promo: Tri; p3: Tri; p6: Tri }>({ ongkir: "", promo: "", p3: "", p6: "" });
   const [err, setErr] = useState("");
   const choice = FEE_FIELDS.some((k) => sel[k]) ? sel : null;
@@ -1047,7 +1050,9 @@ function MassEditModal({ fees, count, busy, onClose, onApply }: { fees: Fee[]; c
   async function apply() {
     setErr("");
     const patch: Partial<CalcRow> = {};
-    if (f.product_line.trim()) patch.product_line = f.product_line.trim();
+    const mk = f.markup_pct.trim() === "" ? null : Number(f.markup_pct.replace(",", "."));
+    if (mk !== null && !Number.isFinite(mk)) { setErr("Harga Jual % must be a number, for example 25."); return; }
+    if (mk !== null && f.harga_jual_rp.trim() !== "") { setErr("Fill the Harga Jual in Rp or the Harga Jual %, not both."); return; }
     const n = (k: "target_roas" | "berat_kg" | "ukuran_cm3") => { const v = f[k].trim() === "" ? undefined : Number(f[k].replace(",", ".")); if (v !== undefined && Number.isFinite(v)) patch[k] = v; };
     n("target_roas"); n("berat_kg"); n("ukuran_cm3");
     const r = (k: "biaya_lain_rp" | "modal_produk_rp" | "harga_jual_rp") => { const v = num(f[k]); if (v !== undefined && Number.isFinite(v)) patch[k] = v; };
@@ -1056,8 +1061,8 @@ function MassEditModal({ fees, count, busy, onClose, onApply }: { fees: Fee[]; c
     if (t.promo) patch.promo_xtra_on = t.promo === "Yes";
     if (t.p3) patch.paylater_3mo_on = t.p3 === "Yes";
     if (t.p6) patch.paylater_6mo_on = t.p6 === "Yes";
-    if (!Object.keys(patch).length && !choice) { setErr("Nothing to change: fill at least one field."); return; }
-    const m = await onApply(patch, choice);
+    if (!Object.keys(patch).length && !choice && mk === null) { setErr("Nothing to change: fill at least one field."); return; }
+    const m = await onApply(patch, choice, mk);
     if (m && m !== "cancel") setErr(m);
   }
   const inp = (k: keyof typeof f, label: string, ph = "") => (
@@ -1071,7 +1076,7 @@ function MassEditModal({ fees, count, busy, onClose, onApply }: { fees: Fee[]; c
       <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 8 }}>Pick only what changes (for example just the Platform). Each line keeps its other fee values, and gets the fee row that matches the result.</div>
       <FeePicker fees={fees} value={sel} onChange={setSel} blank="— keep —" free />
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginTop: 14 }}>
-        {inp("modal_produk_rp", "Modal Produk (Rp)")}{inp("harga_jual_rp", "Harga Jual (Rp)")}{inp("target_roas", "Target ROAS")}{inp("product_line", "Product Line")}
+        {inp("modal_produk_rp", "Modal Produk (Rp)")}{inp("harga_jual_rp", "Harga Jual (Rp)")}{inp("markup_pct", "Harga Jual (% over Modal)")}{inp("target_roas", "Target ROAS")}
         {inp("berat_kg", "Berat (kg)")}{inp("ukuran_cm3", "Uk PxLxT (cm³)")}{inp("biaya_lain_rp", "Biaya Lain (Rp)")}<div />
         {triSelect("Gratis Ongkir", t.ongkir, (x) => setT({ ...t, ongkir: x }))}{triSelect("Promo Xtra", t.promo, (x) => setT({ ...t, promo: x }))}
         {triSelect("Paylater 3 Bln", t.p3, (x) => setT({ ...t, p3: x }))}{triSelect("Paylater 6 Bln", t.p6, (x) => setT({ ...t, p6: x }))}
