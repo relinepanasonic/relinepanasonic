@@ -518,6 +518,10 @@ export default function MassiveCalculatorPage() {
       let incomplete = 0;
       const copies = selectedRows.map((r) => {
         const m = choice ? mergeFee(r, choice) : keysOf(r);
+        // another platform sorts the products in its own categories: the copy starts without Jenis Toko / Category / Sub Category / Jenis Product, unless they are picked in the form
+        if (choice?.platform && choice.platform !== (r.fee_platform ?? "")) {
+          for (const k of ["jenis_toko", "category", "sub_category", "jenis_product"] as const) if (!choice[k]) m[k] = "";
+        }
         const hit = resolveFee(m, fees);
         if (!hit && FEE_FIELDS.some((k) => m[k])) incomplete++;
         return {
@@ -533,7 +537,7 @@ export default function MassiveCalculatorPage() {
       }
       await reloadRows(srp.id);
       setMassOpen(null); setSelected(new Set());
-      setMsg({ ok: true, text: `${copies.length} line${copies.length === 1 ? "" : "s"} duplicated.${incomplete ? ` ${incomplete} cop${incomplete === 1 ? "y has" : "ies have"} Platform / Jenis Toko but no fee row yet.` : ""}` });
+      setMsg({ ok: true, text: `${copies.length} line${copies.length === 1 ? "" : "s"} duplicated.${incomplete ? ` ${incomplete} cop${incomplete === 1 ? "y has" : "ies have"} no fee row yet: pick Jenis Toko, Category, Sub Category and Jenis Product of the new platform.` : ""}` });
       return "";
     } finally { setBusy(false); }
   }
@@ -1116,7 +1120,7 @@ function MassDuplicateModal({ fees, count, busy, onClose, onApply }: { fees: Fee
   return (
     <Modal onClose={onClose} width={680}>
       <div style={{ fontSize: 18, fontWeight: 800, color: "#fff", marginBottom: 4 }}>Duplicate {count} selected line{count === 1 ? "" : "s"}</div>
-      <div style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 12 }}>Each ticked line is copied with all its values. To make the copies for another marketplace, pick only what changes (for example the Platform and Jenis Toko of Tiktok); each copy keeps its other fee values and gets the matching fee row.</div>
+      <div style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 12 }}>Each ticked line is copied with all its values. To make the copies for another marketplace, pick the new Platform (for example Tiktok Tokped): the copies then start with Jenis Toko, Category, Sub Category and Jenis Product empty, because each marketplace sorts the products in its own categories. Pick any of them here to fill them in. If the Platform stays the same, each copy keeps the values of its line.</div>
       <FeePicker fees={fees} value={sel} onChange={setSel} blank="— same as the line —" free />
       {err && <div style={{ color: "#f87171", fontSize: 13, marginTop: 10 }}>✗ {err}</div>}
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 16 }}>
