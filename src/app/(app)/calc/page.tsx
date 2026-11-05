@@ -162,7 +162,7 @@ async function fetchAll<T>(supabase: ReturnType<typeof createClient>, table: str
   return all;
 }
 
-type SrpLog = { id: string; srp_no: string; catalog_no: string | null; vendor_name: string | null; created_at: string; created_by: string | null; total_sku: number };
+type SrpLog = { id: string; srp_no: string; catalog_no: string | null; vendor_name: string | null; created_at: string; created_by: string | null; total_sku: number; sku_shopee: number; sku_tiktok: number };
 type OpenSrp = { id: string; srp_no: string; list_id: string | null; catalog_no: string | null; vendor_name: string | null; created_at: string };
 const MON = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"];
 function dmy(v: string | null | undefined): string {
@@ -653,18 +653,19 @@ export default function MassiveCalculatorPage() {
           {log === null ? <div style={{ color: "var(--muted)", padding: 20 }}>Loading…</div> : (
             <div className="tbl-wrap" style={{ maxHeight: "66vh" }}>
               <table className="tbl day-tbl">
-                <thead><tr><th>SRP ID</th><th>Catalog ID</th><th>Date Create</th><th className="num">Total SKU</th><th>Created by</th></tr></thead>
+                <thead><tr><th>SRP ID</th><th>Catalog ID</th><th>Date Create</th><th className="num">Total SKU Shopee</th><th className="num">Total SKU Tiktok Tokped</th><th>Created by</th></tr></thead>
                 <tbody>
                   {log.map((r) => (
                     <tr key={r.id} onClick={() => openSrp(r.id)} style={{ cursor: "pointer" }}>
                       <td style={{ fontFamily: "monospace", fontWeight: 700 }}>{r.srp_no}</td>
                       <td><span style={{ fontFamily: "monospace" }}>{r.catalog_no || "—"}</span>{r.vendor_name && <span style={{ color: "var(--muted)", fontSize: 12 }}> · {r.vendor_name}</span>}</td>
                       <td>{dmy(r.created_at)}</td>
-                      <td className="num" style={{ fontWeight: 700 }}>{r.total_sku}</td>
+                      <td className="num" style={{ fontWeight: 700 }}>{r.sku_shopee}</td>
+                      <td className="num" style={{ fontWeight: 700 }}>{r.sku_tiktok}</td>
                       <td>{r.created_by || "—"}</td>
                     </tr>
                   ))}
-                  {log.length === 0 && <tr><td colSpan={5} style={{ textAlign: "center", color: "var(--muted)", padding: 24 }}>No SRP yet — press + Create New SRP and pick a Catalog.</td></tr>}
+                  {log.length === 0 && <tr><td colSpan={6} style={{ textAlign: "center", color: "var(--muted)", padding: 24 }}>No SRP yet — press + Create New SRP and pick a Catalog.</td></tr>}
                 </tbody>
               </table>
             </div>
