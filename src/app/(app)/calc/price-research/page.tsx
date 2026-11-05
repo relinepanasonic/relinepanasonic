@@ -4,8 +4,8 @@ import Link from "next/link";
 import { Fragment, useCallback, useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import Loader from "@/components/Loader";
-import { PLATFORMS, cleanUrl, detectPlatform, estimateCost, type Platform } from "@/lib/priceResearch";
-import { Modal } from "@/components/ProductCatalog";
+import { PLATFORMS, estimateCost, type Platform } from "@/lib/priceResearch";
+import StoreConnections from "./StoreConnections";
 
 export const dynamic = "force-dynamic";
 
@@ -18,9 +18,6 @@ export const dynamic = "force-dynamic";
 //                 Product URL and the Massive Calculator.
 // Prices are scraped ON DEMAND (button) through Apify.
 type Supabase = ReturnType<typeof createClient>;
-type CatalogItem = { prod_id: string; product_name: string; harga_beli: number | null; harga_srp: number | null; srp_no: string | null };
-type Store = { id: string; name: string };
-type LinkRow = { id: string; kode_produk: string; platform: Platform; store_id: string | null; store_name: string | null; product_url: string };
 type RunInfo = { id: string; platform: Platform; status: "running" | "done" | "failed"; scraped: number; failed: number; error: string | null; started_at: string; links: number };
 type GuardStore = { link_id: string; store: string; platform: Platform; product_url: string; scraped_at: string | null; ok: boolean | null; error: string | null;
   price_original: number | null; price_sell: number | null; discount_pct: number | null; labels: string[] | null };
@@ -52,7 +49,6 @@ export default function PriceResearchPage() {
   const [clientId, setClientId] = useState("");
   const [isAdmin, setIsAdmin] = useState(false);
   const [tab, setTab] = useState<TabKey>("guard");
-  const [urlFilter, setUrlFilter] = useState("");
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [allLinks, setAllLinks] = useState<{ id: string; platform: Platform }[]>([]);
   const [starting, setStarting] = useState(false);
@@ -126,7 +122,7 @@ export default function PriceResearchPage() {
   }
 
   const subTab = (v: TabKey, label: string) => (
-    <button onClick={() => { setTab(v); if (v !== "urls") setUrlFilter(""); }} style={{ padding: "9px 20px", borderRadius: 10, cursor: "pointer", fontSize: 14, fontWeight: 700,
+    <button onClick={() => setTab(v)} style={{ padding: "9px 20px", borderRadius: 10, cursor: "pointer", fontSize: 14, fontWeight: 700,
       border: tab === v ? "1px solid var(--gold)" : "1px solid rgba(255,255,255,.1)", background: tab === v ? "rgba(201,162,39,.15)" : "rgba(10,22,40,.5)", color: tab === v ? "var(--gold)" : "#e8edf8" }}>{label}</button>
   );
 
@@ -165,7 +161,7 @@ export default function PriceResearchPage() {
         {msg && <div style={{ color: msg.ok ? "var(--gold)" : "#f87171", fontSize: 13, marginBottom: 10 }}>{msg.ok ? "✓" : "✗"} {msg.text}</div>}
 
         {clientId && tab === "guard" && <GuardTab supabase={supabase} clientId={clientId} tick={tick} />}
-        {clientId && tab === "urls" && <UrlsTab supabase={supabase} clientId={clientId} isAdmin={isAdmin} tick={tick} busy={busy} filter={urlFilter} setFilter={setUrlFilter} onScrape={scrape} onChanged={() => setTick((t) => t + 1)} />}
+        {clientId && tab === "urls" && <StoreConnections supabase={supabase} clientId={clientId} isAdmin={isAdmin} tick={tick} busy={busy} onScrape={scrape} onChanged={() => setTick((t) => t + 1)} />}
       </div>
     </>
   );
@@ -245,189 +241,5 @@ function GuardTab({ supabase, clientId, tick }: { supabase: Supabase; clientId: 
         Price Input = the store&apos;s price before its discount. Price Discount = what a buyer pays after the discount (&quot;-&quot; when there is none). Status compares that price with the Harga Jual of the Catalog valid on the date. Personal vouchers (for example a VIP voucher) and checkout costs differ per buyer and are not public, so they are not included.
       </div>
     </>
-  );
-}
-
-/* ── Product URL: product ↔ store ↔ Product URL ── */
-function UrlsTab({ supabase, clientId, isAdmin, tick, busy, filter, setFilter, onScrape, onChanged }: {
-  supabase: Supabase; clientId: string; isAdmin: boolean; tick: number; busy: boolean; filter: string; setFilter: (v: string) => void;
-  onScrape: (ids: string[], label: string) => Promise<boolean>; onChanged: () => void;
-}) {
-  const [products, setProducts] = useState<CatalogItem[] | null>(null);
-  const [stores, setStores] = useState<Store[]>([]);
-  const [links, setLinks] = useState<LinkRow[]>([]);
-  const [f, setF] = useState({ product_id: "", store_id: "", url: "" });
-  const [err, setErr] = useState("");
-  const [manage, setManage] = useState(false);
-
-  useEffect(() => {
-    (async () => {
-      const [{ data: p }, { data: s }, { data: l }] = await Promise.all([
-        supabase.rpc("pr_srp_catalog", { p_client_id: clientId }),
-        supabase.from("pr_stores").select("id, name").eq("client_id", clientId).order("name"),
-        supabase.from("price_research_links").select("id, kode_produk, platform, store_id, store_name, product_url").eq("client_id", clientId).order("created_at"),
-      ]);
-      setProducts((p as CatalogItem[]) || []); setStores((s as Store[]) || []); setLinks((l as LinkRow[]) || []);
-    })();
-  }, [supabase, clientId, tick]);
-
-  async function addStoreByName(name: string): Promise<Store | null> {
-    const n = name.trim(); if (!n) return null;
-    const have = stores.find((s) => s.name.toLowerCase() === n.toLowerCase());
-    if (have) return have;
-    const { data, error } = await supabase.from("pr_stores").insert({ client_id: clientId, name: n }).select("id, name").single();
-    if (error) { setErr(error.message); return null; }
-    return data as Store;
-  }
-  async function pickStore(v: string) {
-    if (v !== "__new") { setF({ ...f, store_id: v }); return; }
-    const name = window.prompt("New store name");
-    if (!name) return;
-    const s = await addStoreByName(name);
-    if (s) { setStores((x) => [...x, s].sort((a, b) => a.name.localeCompare(b.name))); setF({ ...f, store_id: s.id }); }
-  }
-  async function connect() {
-    setErr("");
-    const product = products?.find((p) => p.prod_id === f.product_id);
-    const store = stores.find((s) => s.id === f.store_id);
-    const url = cleanUrl(f.url);
-    if (!product) { setErr("Pick a product."); return; }
-    if (!store) { setErr("Pick a store (or add a new one in the dropdown)."); return; }
-    const platform = detectPlatform(url);
-    if (!platform) { setErr("The Product URL must be a Shopee, Tokopedia or TikTok Shop product link."); return; }
-    const { error } = await supabase.from("price_research_links").insert({
-      client_id: clientId, kode_produk: product.prod_id, product_name: product.product_name, platform, store_id: store.id, store_name: store.name, product_url: url,
-    });
-    if (error) { setErr(error.code === "23505" ? "This Product URL is already connected to this product." : error.message); return; }
-    setF({ ...f, url: "" });
-    onChanged();
-  }
-  async function changeStore(l: LinkRow, storeId: string) {
-    const s = stores.find((x) => x.id === storeId); if (!s) return;
-    await supabase.from("price_research_links").update({ store_id: s.id, store_name: s.name }).eq("id", l.id);
-    onChanged();
-  }
-  async function del(l: LinkRow) {
-    if (!window.confirm("Remove this Product URL and its price history?")) return;
-    await supabase.from("price_research_links").delete().eq("id", l.id);
-    onChanged();
-  }
-
-  const t = filter.trim().toLowerCase();
-  const shown = (products || []).filter((p) => !t || p.product_name.toLowerCase().includes(t) || p.prod_id.toLowerCase().includes(t)
-    || links.some((l) => l.kode_produk === p.prod_id && ((l.store_name || "").toLowerCase().includes(t) || l.product_url.toLowerCase().includes(t))));
-  const linked = shown.filter((p) => links.some((l) => l.kode_produk === p.prod_id));
-
-  return (
-    <>
-      {isAdmin && (
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 14, paddingBottom: 14, borderBottom: "1px solid var(--line)" }}>
-          <div className="fld" style={{ minWidth: 240, flex: "1 1 240px" }}><label>Product</label>
-            <select value={f.product_id} onChange={(e) => setF({ ...f, product_id: e.target.value })}>
-              <option value="">{products && products.length ? "Select product…" : "Add products first (Product Catalog tab)"}</option>
-              {(products || []).map((p) => <option key={p.prod_id} value={p.prod_id}>{p.prod_id} · {p.product_name}</option>)}
-            </select>
-          </div>
-          <div className="fld" style={{ minWidth: 190, flex: "0 1 200px" }}><label>Store name</label>
-            <select value={f.store_id} onChange={(e) => pickStore(e.target.value)}>
-              <option value="">Select store…</option>
-              {stores.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-              <option value="__new">+ New store…</option>
-            </select>
-          </div>
-          <div className="fld" style={{ minWidth: 260, flex: "2 1 260px" }}><label>Product URL</label><input value={f.url} onChange={(e) => setF({ ...f, url: e.target.value })} onKeyDown={(e) => e.key === "Enter" && connect()} placeholder="https://shopee.co.id/…-i.<shop>.<item>  or  tokopedia.com/…  or  shop-id.tokopedia.com/pdp/…" /></div>
-          <button className="btn-gold" onClick={connect} style={{ padding: "10px 22px" }}>+ Connect</button>
-          <button className="btn-ghost" onClick={() => setManage(true)}>Stores ({stores.length})</button>
-        </div>
-      )}
-      {err && <div style={{ color: "#f87171", fontSize: 13, marginBottom: 10 }}>✗ {err}</div>}
-      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 10 }}>
-        <div className="fld" style={{ minWidth: 260, flex: 1 }}><label>Search</label><input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Product, Prod ID, store or URL" /></div>
-      </div>
-      {products === null ? <Loader center /> : (
-        <div className="tbl-wrap" style={{ maxHeight: "62vh" }}>
-          <table className="tbl day-tbl">
-            <thead><tr><th>Product ID</th><th>Product Name</th><th>Store Name</th><th>Product URL</th><th></th></tr></thead>
-            <tbody>
-              {linked.map((p) => {
-                const ls = links.filter((l) => l.kode_produk === p.prod_id);
-                return ls.map((l, i) => (
-                  <tr key={l.id} style={i === 0 ? { borderTop: "2px solid rgba(201,162,39,.2)" } : undefined}>
-                    <td style={{ fontFamily: "monospace", fontSize: 12.5 }}>{i === 0 ? p.prod_id : ""}</td>
-                    <td style={{ minWidth: 220, maxWidth: 340, whiteSpace: "normal", overflowWrap: "anywhere", fontWeight: 700 }}>{i === 0 ? p.product_name : ""}</td>
-                    <td style={{ whiteSpace: "nowrap" }}>
-                      {isAdmin ? (
-                        <select value={l.store_id || ""} onChange={(e) => changeStore(l, e.target.value)} style={{ minWidth: 150 }}>
-                          {!l.store_id && <option value="">{l.store_name || "—"}</option>}
-                          {stores.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-                        </select>
-                      ) : (l.store_name || "—")}
-                      <div style={{ fontSize: 11, color: "var(--muted)" }}>{PLATFORM_LABEL[l.platform]}</div>
-                    </td>
-                    <td style={{ maxWidth: 420, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}><a href={l.product_url} target="_blank" rel="noopener noreferrer" style={{ color: "#cfe0ff" }} title={l.product_url}>{l.product_url}</a></td>
-                    <td style={{ whiteSpace: "nowrap" }}>
-                      {isAdmin && <button className="btn-ghost" disabled={busy} onClick={() => onScrape([l.id], "1 Product URL")}>Scrape</button>}{" "}
-                      {isAdmin && <button className="btn-ghost" onClick={() => del(l)} style={{ color: "#f87171" }}>✕</button>}
-                    </td>
-                  </tr>
-                ));
-              })}
-              {linked.length === 0 && <tr><td colSpan={5} style={{ textAlign: "center", color: "var(--muted)", padding: 24 }}>{(products || []).length ? "No Product URL connected yet — choose a product, a store and paste the URL above." : "No product yet. Add your products in the Product Catalog tab first."}</td></tr>}
-            </tbody>
-          </table>
-        </div>
-      )}
-      {manage && <StoresModal supabase={supabase} clientId={clientId} stores={stores} links={links} onClose={() => { setManage(false); onChanged(); }} />}
-    </>
-  );
-}
-
-function StoresModal({ supabase, clientId, stores, links, onClose }: { supabase: Supabase; clientId: string; stores: Store[]; links: LinkRow[]; onClose: () => void }) {
-  const [list, setList] = useState(stores);
-  const [name, setName] = useState("");
-  const [err, setErr] = useState("");
-  const used = (id: string) => links.filter((l) => l.store_id === id).length;
-  async function add() {
-    setErr("");
-    const n = name.trim(); if (!n) return;
-    const { data, error } = await supabase.from("pr_stores").insert({ client_id: clientId, name: n }).select("id, name").single();
-    if (error) { setErr(error.code === "23505" ? "This store name already exists." : error.message); return; }
-    setList((x) => [...x, data as Store].sort((a, b) => a.name.localeCompare(b.name))); setName("");
-  }
-  async function rename(s: Store) {
-    const n = window.prompt("Store name", s.name); if (!n || n.trim() === s.name) return;
-    const { error } = await supabase.from("pr_stores").update({ name: n.trim() }).eq("id", s.id);
-    if (error) { setErr(error.code === "23505" ? "This store name already exists." : error.message); return; }
-    await supabase.from("price_research_links").update({ store_name: n.trim() }).eq("store_id", s.id);
-    setList((x) => x.map((y) => y.id === s.id ? { ...y, name: n.trim() } : y));
-  }
-  async function del(s: Store) {
-    if (used(s.id)) { setErr("This store is still connected to a Product URL."); return; }
-    await supabase.from("pr_stores").delete().eq("id", s.id);
-    setList((x) => x.filter((y) => y.id !== s.id));
-  }
-  return (
-    <Modal onClose={onClose} width={520}>
-      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12 }}>
-        <div style={{ fontSize: 18, fontWeight: 800, color: "#fff" }}>Store names</div>
-        <button className="btn-ghost" onClick={onClose}>✕ Close</button>
-      </div>
-      <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-        <input style={{ flex: 1 }} value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && add()} placeholder="New store name (e.g. SM.Elektro)" />
-        <button className="btn-gold" onClick={add} style={{ padding: "8px 18px" }}>+ Add</button>
-      </div>
-      {err && <div style={{ color: "#f87171", fontSize: 12.5, marginBottom: 8 }}>✗ {err}</div>}
-      <div style={{ maxHeight: "50vh", overflowY: "auto" }}>
-        {list.map((s) => (
-          <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 2px", borderBottom: "1px solid var(--line)" }}>
-            <span style={{ flex: 1 }}>{s.name}</span>
-            <span style={{ fontSize: 11.5, color: "var(--muted)" }}>{used(s.id)} URL{used(s.id) === 1 ? "" : "s"}</span>
-            <button className="btn-ghost" onClick={() => rename(s)}>Rename</button>
-            <button className="btn-ghost" onClick={() => del(s)} style={{ color: "#f87171" }}>✕</button>
-          </div>
-        ))}
-        {list.length === 0 && <div style={{ color: "var(--muted)", padding: 14, textAlign: "center" }}>No store yet.</div>}
-      </div>
-    </Modal>
   );
 }
