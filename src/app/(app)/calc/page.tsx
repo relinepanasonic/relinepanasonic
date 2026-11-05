@@ -969,7 +969,7 @@ function CalcRowLine({ no, row, fee, fees, catalog, selected, onToggle, scope, o
       <td>{feeSelect("jenis_toko")}</td>
       <td className="calc-ro" style={{ fontFamily: "monospace" }}>{cat?.prod_id || "—"}</td>
       <td>
-        <select className="calc-sel" value={v.prod_id} onChange={(e) => pickProduct(e.target.value)} style={{ width: 230, maxWidth: 230 }} title="The product comes from the Product Catalog">
+        <select className="calc-sel" value={v.prod_id} onChange={(e) => pickProduct(e.target.value)} style={{ width: 230, maxWidth: 230 }} title={cat?.product_name || v.item_product || undefined}>
           <option value="">{v.item_product ? `${v.item_product} (not in catalog)` : "— pick product —"}</option>
           {catalog.map((c) => <option key={c.prod_id} value={c.prod_id}>{c.product_name}</option>)}
         </select>
