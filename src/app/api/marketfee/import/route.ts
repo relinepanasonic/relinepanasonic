@@ -106,6 +106,8 @@ export async function POST(req: NextRequest) {
       else row[h.field] = parseRp(raw);
     }
     if (!row.platform) row.platform = "Shopee";
+    // Biaya Layanan Mall only exists for a Mall store: Regular / Star stores pay none
+    if (!/mall/i.test(String(row.jenis_toko ?? ""))) row.biaya_layanan_mall_pct = 0;
     byKey.set(["category", "sub_category", "jenis_product", "platform", "jenis_toko"].map((k) => row[k]).join(""), row);
   }
   const mapped = [...byKey.values()];

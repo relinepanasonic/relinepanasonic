@@ -111,6 +111,9 @@ function parseRp(s: string): number { return Number(s.replace(/[^\d-]/g, "")) ||
 // "biasa" tier to the "khusus" tier once the product is over 5kg or
 // 20,000 cm3 (Tiktok has no such tier split, it always uses the one
 // pct/cap pair on the fee row).
+// Biaya Layanan Mall only exists for a Mall store (Shopee Mall, Tiktok Mall): a Regular / Star store pays none, whatever the fee row says
+const mallPctOf = (fee: Fee | null) => (fee && /mall/i.test(fee.jenis_toko ?? "") ? fee.biaya_layanan_mall_pct ?? 0 : 0);
+
 // Pajak of a line: the fee row's Pajak, or the standard 0.5% when the line has no fee row yet
 const PAJAK_DEFAULT_PCT = 0.5;
 const pajakPctOf = (fee: Fee | null) => (fee ? fee.pajak_pct ?? 0 : PAJAK_DEFAULT_PCT);
@@ -124,7 +127,7 @@ function computeCalc(input: {
   const hargaJual = input.hargaJual;
   const platformFeeRp = ((fee?.platform_fee_pct ?? 0) / 100) * hargaJual;
   const biayaProsesRp = fee?.biaya_proses_pesanan_rp ?? 0;
-  const biayaLayananRp = ((fee?.biaya_layanan_mall_pct ?? 0) / 100) * hargaJual;
+  const biayaLayananRp = (mallPctOf(fee) / 100) * hargaJual;
 
   const isShopee = (fee?.platform || "").toLowerCase().includes("shopee");
   const isKhusus = isShopee && (input.beratKg > 5 || input.ukuranCm3 > 20000);
@@ -262,7 +265,7 @@ export default function MassiveCalculatorPage() {
       case "pfpct": return fee?.platform_fee_pct ?? 0;
       case "pfrp": return c.platformFeeRp;
       case "proses": return c.biayaProsesRp;
-      case "mallpct": return fee?.biaya_layanan_mall_pct ?? 0;
+      case "mallpct": return mallPctOf(fee);
       case "mallrp": return c.biayaLayananRp;
       case "ongkir": return yn(r.gratis_ongkir_on);
       case "berat": return r.berat_kg;
@@ -993,7 +996,7 @@ function CalcRowLine({ no, row, fee, fees, catalog, selected, onToggle, scope, o
       <td className="num calc-ro">{fee ? `${fee.platform_fee_pct}%` : "—"}</td>
       <td className="num calc-ro">Rp {formatRp(calc.platformFeeRp)}</td>
       <td className="num calc-ro">Rp {formatRp(calc.biayaProsesRp)}</td>
-      <td className="num calc-ro">{fee ? `${fee.biaya_layanan_mall_pct}%` : "—"}</td>
+      <td className="num calc-ro">{fee ? `${mallPctOf(fee)}%` : "—"}</td>
       <td className="num calc-ro">Rp {formatRp(calc.biayaLayananRp)}</td>
       <td style={{ textAlign: "center" }}>
         {yesNo(v.gratis_ongkir_on, (val) => setV((s) => ({ ...s, gratis_ongkir_on: val })))}
