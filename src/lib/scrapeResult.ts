@@ -39,7 +39,6 @@ export function oursOf(row: ResultRow, columns: ScrapeConn[]): { platform: strin
   return [...new Map(all.map((x) => [x.v, x])).values()];
 }
 const rp = (n: number | null | undefined) => (n == null ? "" : "Rp " + Math.round(n).toLocaleString("id-ID"));
-const pct = (d: number | null) => (d == null ? "" : `${d > 0 ? "+" : ""}${d.toFixed(1)}%`);
 const VERDICT_TEXT: Record<Verdict, string> = { cheaper: "Cheaper than us", pricier: "More expensive than us", same: "Same", failed: "Failed", pending: "No price yet", none: "Not sold" };
 
 // one line per product x store (the second sheet of the XLS)
@@ -84,63 +83,9 @@ export async function downloadScrapeXls(data: ResultData, meta: ResultMeta, file
   const flat = XLSX.utils.aoa_to_sheet([FLAT_HEAD, ...flatRows(data)]);
   flat["!cols"] = FLAT_HEAD.map((h, i) => ({ wch: i === 1 ? 46 : Math.max(12, h.length + 2) }));
   XLSX.utils.book_append_sheet(wb, flat, "Detail");
-  const info = XLSX.utils.aoa_to_sheet([["Price Guard"], [meta.title], ["Checked by", meta.by || ""], ["Status", meta.status], [""],
+  const info = XLSX.utils.aoa_to_sheet([["Prof Toko Online"], ["Price Guard Project"], [meta.title], ["Price Research by", meta.by || ""], ["Status", meta.status], ["Tokens used", `${data.columns.length} (1 token = 1 connection)`], [""],
     ["How to read", "A price below our price means the competitor is cheaper than us; above it, more expensive. The % is the difference with our price."]]);
   info["!cols"] = [{ wch: 18 }, { wch: 90 }];
   XLSX.utils.book_append_sheet(wb, info, "Info");
   XLSX.writeFile(wb, `price-guard-${fileStamp}.xlsx`);
-}
-
-export async function downloadScrapePdf(data: ResultData, meta: ResultMeta, fileStamp: string) {
-  const { jsPDF } = await import("jspdf");
-  const autoTable = (await import("jspdf-autotable")).default;
-  const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "a4" });
-  doc.setFont("helvetica", "bold"); doc.setFontSize(15); doc.setTextColor(11, 26, 51);
-  doc.text("Price Guard", 32, 34);
-  doc.setFont("helvetica", "normal"); doc.setFontSize(8.5); doc.setTextColor(85, 98, 122);
-  doc.text(`${meta.title}${meta.by ? ` · checked by ${meta.by}` : ""}`, 32, 48);
-  doc.text("Red: the competitor is cheaper than our price · Green: more expensive than our price", 32, 60);
-
-  const verdicts: Verdict[][] = [];
-  const body = data.rows.map((r) => {
-    const ours = oursOf(r, data.columns);
-    const line: string[] = [r.prod_id, r.product_name, ours.length === 0 ? "" : ours.map((x) => (ours.length > 1 ? `${rp(x.v)} ${x.platform || ""}` : rp(x.v))).join("\n")];
-    const vs: Verdict[] = [];
-    for (const c of data.columns) {
-      const cell = r.cells[c.id], v = verdict(cell);
-      vs.push(v);
-      if (v === "none") line.push("-");
-      else if (v === "failed") line.push("failed");
-      else if (v === "pending") line.push("...");
-      else { const d = diffPct(cell!.price!, cell!.ours); line.push(`${rp(cell!.price)}${d == null ? "" : `\n${pct(d)}`}`); }
-    }
-    verdicts.push(vs);
-    return line;
-  });
-  const n = data.columns.length;
-  const storeW = n > 0 ? Math.max(58, Math.min(90, Math.floor((842 - 64 - 60 - 170 - 70) / n))) : 80;
-  autoTable(doc, {
-    startY: 70, margin: { left: 32, right: 32 }, theme: "grid",
-    styles: { fontSize: n > 5 ? 6.5 : 7.5, cellPadding: 3, textColor: [11, 26, 51], lineColor: [213, 219, 230], lineWidth: 0.3, valign: "middle" },
-    headStyles: { fillColor: [232, 237, 246], textColor: [11, 26, 51], fontStyle: "bold" },
-    head: [["Prod ID", "Product Name", "Our Price", ...data.columns.map((c) => colLabels(data.columns).get(c.id)!)]],
-    body,
-    columnStyles: { 0: { cellWidth: 60 }, 1: { cellWidth: 170 }, 2: { halign: "right", cellWidth: 62 }, ...Object.fromEntries(data.columns.map((_, i) => [3 + i, { halign: "right", cellWidth: storeW }])) },
-    didParseCell: (h) => {
-      if (h.section === "head" && h.column.index >= 2) h.cell.styles.halign = "right";
-      if (h.section !== "body" || h.column.index < 3) return;
-      const v = verdicts[h.row.index]?.[h.column.index - 3];
-      if (v === "cheaper") { h.cell.styles.textColor = [200, 40, 40]; h.cell.styles.fillColor = [253, 235, 235]; }
-      else if (v === "pricier") { h.cell.styles.textColor = [20, 120, 60]; h.cell.styles.fillColor = [231, 247, 237]; }
-      else if (v === "none" || v === "pending") h.cell.styles.textColor = [150, 160, 180];
-      else if (v === "failed") h.cell.styles.textColor = [200, 40, 40];
-    },
-  });
-  const pages = doc.getNumberOfPages();
-  for (let i = 1; i <= pages; i++) {
-    doc.setPage(i); doc.setFontSize(7.5); doc.setTextColor(122, 134, 156);
-    doc.text(`Price Guard · ${meta.title}`, 32, 580);
-    doc.text(`${i} / ${pages}`, 842 - 32, 580, { align: "right" });
-  }
-  doc.save(`price-guard-${fileStamp}.pdf`);
 }
