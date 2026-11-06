@@ -38,5 +38,7 @@ describe("scrape summary", () => {
     expect(s.types.find((t) => t.type === "TV")!.worst).toBeNull();
     expect(s.needChange).toBe(2);
     expect(s.changes[0]).toMatchObject({ prod_id: "AC1", price: 800, rp: -200 });
+    expect(s.market[0]).toMatchObject({ prod_id: "AC1", ours: 1000, avg: 850, low: 800, rp: -150 });   // the market is the average of the competitors, not the lowest
+    expect(s.market.map((m) => m.prod_id)).toEqual(["AC1", "AC2"]);
   });
 });

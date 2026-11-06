@@ -118,14 +118,14 @@ export async function downloadScrapePdf(data: ResultData, meta: ResultMeta, file
   y = lastY(doc) + 18;
 
   // 3 · our price change to SRP
-  heading("3. Our price change to SRP (to match the lowest competitor)");
+  heading("3. Our SRP vs the Avg Market Price");
   doc.setFont("helvetica", "normal"); doc.setFontSize(8.5); doc.setTextColor(...MUTED);
-  doc.text(s.needChange ? `${s.needChange} of ${s.products} products have a competitor below our SRP; matching them means ${pct(s.avgChange)} on average. The 15 biggest changes:` : "No competitor is below our SRP: no change needed.", M, y + 12);
+  doc.text(s.needChange ? `${s.needChange} of ${s.products} products have an Avg Market Price below our SRP; moving to it means ${pct(s.avgChange)} on average. The 15 biggest changes:` : "The Avg Market Price is not below our SRP on any product: no change needed.", M, y + 12);
   if (s.needChange) {
     autoTable(doc, { ...tableBase, startY: y + 18,
-      head: [["Prod ID", "Product Name", "Category", "Our SRP", "New SRP", "Change (Rp)", "Change (%)", "Lowest at"]],
-      body: s.changes.slice(0, 15).map((c) => [c.prod_id, c.product_name, c.type, rp(c.ours), rp(c.price), rp(c.rp), pct(c.pct), c.store]),
-      columnStyles: { 1: { cellWidth: 210 }, 3: { halign: "right" }, 4: { halign: "right" }, 5: { halign: "right" }, 6: { halign: "right", fontStyle: "bold", textColor: RED } },
+      head: [["Prod ID", "Product Name", "Category", "Our SRP", "Avg Market Price", "Lowest Market Price", "Change (Rp)", "Change (%)", "Lowest at"]],
+      body: s.market.slice(0, 15).map((c) => [c.prod_id, c.product_name, c.type, rp(c.ours), rp(c.avg), rp(c.low), rp(c.rp), pct(c.pct), c.lowStore]),
+      columnStyles: { 1: { cellWidth: 190 }, 3: { halign: "right" }, 4: { halign: "right" }, 5: { halign: "right" }, 6: { halign: "right" }, 7: { halign: "right", fontStyle: "bold", textColor: RED } },
     });
     y = lastY(doc) + 18;
   } else y += 30;

@@ -23,10 +23,12 @@ export function productType(name: string): string {
 export type StoreStat = { id: string; label: string; platform: string | null; sold: number; compared: number; cheaper: number; pricier: number; same: number; broken: number; noPrice: number;
   avgDown: number | null; avgAll: number | null; coverage: number };
 export type ProductGap = { prod_id: string; product_name: string; type: string; ours: number; price: number; store: string; pct: number; rp: number };
+// our SRP against the market of ONE product: the average and the lowest competitor price
+export type MarketGap = { prod_id: string; product_name: string; type: string; ours: number; avg: number; low: number; lowStore: string; pct: number; rp: number };
 export type TypeStat = { type: string; products: number; compared: number; cheaper: number; worst: ProductGap | null; avgChange: number | null };
 export type Summary = {
   tokens: number; products: number; links: number; compared: number; cheaper: number; pricier: number; same: number; notSold: number; broken: number; noPrice: number; pending: number;
-  avgDown: number | null; avgAll: number | null; stores: StoreStat[]; dumping: StoreStat | null; types: TypeStat[]; changes: ProductGap[]; needChange: number; avgChange: number | null;
+  avgDown: number | null; avgAll: number | null; stores: StoreStat[]; dumping: StoreStat | null; types: TypeStat[]; changes: ProductGap[]; market: MarketGap[]; needChange: number; avgChange: number | null;
   insights: string[];
 };
 
@@ -38,10 +40,12 @@ export function summarize(data: ResultData): Summary {
   const count: Record<Verdict, number> = { cheaper: 0, pricier: 0, same: 0, broken: 0, noprice: 0, pending: 0, none: 0 };
   const per = new Map(data.columns.map((c) => [c.id, { downs: [] as number[], all: [] as number[], s: { id: c.id, label: labels.get(c.id)!, platform: c.platform, sold: 0, compared: 0, cheaper: 0, pricier: 0, same: 0, broken: 0, noPrice: 0, avgDown: null as number | null, avgAll: null as number | null, coverage: 0 } }]));
   const gaps: ProductGap[] = [];
+  const market: MarketGap[] = [];
   const allDown: number[] = [], all: number[] = [];
 
   for (const r of data.rows) {
     let best: ProductGap | null = null;
+    const priced: { price: number; ours: number; store: string }[] = [];
     for (const c of data.columns) {
       const cell = r.cells[c.id], v = verdict(cell), p = per.get(c.id)!;
       count[v]++;
@@ -52,10 +56,16 @@ export function summarize(data: ResultData): Summary {
       const d = diffPct(cell!.price!, cell!.ours);
       if (d == null) continue;
       p.s.compared++; p.all.push(d); all.push(d);
+      if (cell!.ours != null) priced.push({ price: cell!.price!, ours: cell!.ours, store: labels.get(c.id)! });
       if (v === "cheaper") { p.s.cheaper++; p.downs.push(d); allDown.push(d); } else if (v === "pricier") p.s.pricier++; else p.s.same++;
       if (v === "cheaper" && (!best || d < best.pct)) best = { prod_id: r.prod_id, product_name: r.product_name, type: productType(r.product_name), ours: cell!.ours!, price: cell!.price!, store: labels.get(c.id)!, pct: d, rp: cell!.price! - cell!.ours! };
     }
     if (best) gaps.push(best);
+    if (priced.length) {
+      const avgP = priced.reduce((a, x) => a + x.price, 0) / priced.length, ours = priced.reduce((a, x) => a + x.ours, 0) / priced.length;
+      const low = priced.reduce((a, x) => (x.price < a.price ? x : a));
+      if (avgP < ours) market.push({ prod_id: r.prod_id, product_name: r.product_name, type: productType(r.product_name), ours, avg: avgP, low: low.price, lowStore: low.store, pct: (avgP / ours - 1) * 100, rp: avgP - ours });
+    }
   }
 
   const stores = [...per.values()].map(({ s, downs, all: a }) => ({ ...s, avgDown: avg(downs), avgAll: avg(a), coverage: data.rows.length ? s.sold / data.rows.length : 0 }));
@@ -76,12 +86,13 @@ export function summarize(data: ResultData): Summary {
   }
   const types = [...byType.values()].sort((a, b) => (a.worst?.pct ?? 1) - (b.worst?.pct ?? 1));
   const changes = [...gaps].sort((a, b) => a.pct - b.pct);
+  market.sort((a, b) => a.pct - b.pct);
 
   const compared = count.cheaper + count.pricier + count.same;
   const sum: Summary = {
     tokens: data.columns.length, products: data.rows.length, links: compared + count.broken + count.noprice + count.pending, compared, cheaper: count.cheaper, pricier: count.pricier, same: count.same,
-    notSold: count.none, broken: count.broken, noPrice: count.noprice, pending: count.pending, avgDown: avg(allDown), avgAll: avg(all), stores, dumping: ranked[0] || null, types, changes,
-    needChange: changes.length, avgChange: avg(changes.map((x) => x.pct)), insights: [],
+    notSold: count.none, broken: count.broken, noPrice: count.noprice, pending: count.pending, avgDown: avg(allDown), avgAll: avg(all), stores, dumping: ranked[0] || null, types, changes, market,
+    needChange: market.length, avgChange: avg(market.map((x) => x.pct)), insights: [],
   };
   sum.insights = insights(sum);
   return sum;
