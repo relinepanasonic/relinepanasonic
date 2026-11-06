@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import Loader from "@/components/Loader";
 import { Modal } from "@/components/ProductCatalog";
-import { PLATFORMS, cleanUrl, detectPlatform, type Platform } from "@/lib/priceResearch";
+import { PLATFORMS, cleanUrl, detectPlatform, isProductUrl, type Platform } from "@/lib/priceResearch";
 
 // Price Research > Product URL: the log of store connections first (SRP ID | Catalog ID | Store | products with a URL), then one connection:
 // every product of the SRP in one table, with our Harga Jual and the Product URL of that store. A store may not sell every product: a product
@@ -273,7 +273,7 @@ function ConnectionEditor({ supabase, clientId, isAdmin, conn, onBack, onDone, o
         const had = p.link;
         if (!url) { if (had) removals.push(had.id); continue; }
         const platform = detectPlatform(url);
-        if (!platform || (allowed && !allowed.includes(platform))) { bad.push(p.product_name); continue; }
+        if (!platform || !isProductUrl(platform, url) || (allowed && !allowed.includes(platform))) { bad.push(p.product_name); continue; }
         if (had) { if (had.product_url !== url) updates.push([had.id, url, platform]); continue; }
         inserts.push({ client_id: clientId, connection_id: conn.id, kode_produk: p.prod_id, product_name: p.product_name, platform, store_id: conn.store_id, store_name: conn.store_name, product_url: url });
       }
@@ -383,10 +383,10 @@ function ConnectionEditor({ supabase, clientId, isAdmin, conn, onBack, onDone, o
                     <td style={{ minWidth: 300 }}>
                       {isAdmin ? (
                         <input value={urls[p.prod_id] ?? ""} onChange={(e) => setUrls((x) => ({ ...x, [p.prod_id]: e.target.value }))} placeholder="Paste the Product URL, or leave empty if the store does not sell it"
-                          style={{ width: "100%", background: "rgba(10,22,40,.5)", border: `1px solid ${url && (!platform || (allowed && !allowed.includes(platform))) ? "rgba(248,113,113,.7)" : "rgba(201,162,39,.25)"}`, borderRadius: 6, padding: "6px 8px", color: "var(--text)", fontSize: 12.5 }} />
+                          style={{ width: "100%", background: "rgba(10,22,40,.5)", border: `1px solid ${url && (!platform || !isProductUrl(platform, url) || (allowed && !allowed.includes(platform))) ? "rgba(248,113,113,.7)" : "rgba(201,162,39,.25)"}`, borderRadius: 6, padding: "6px 8px", color: "var(--text)", fontSize: 12.5 }} />
                       ) : (p.link ? <a href={p.link.product_url} target="_blank" rel="noopener noreferrer" style={{ color: "#cfe0ff" }}>{p.link.product_url}</a> : "—")}
                     </td>
-                    <td style={{ whiteSpace: "nowrap", fontSize: 12.5 }}>{platform && !(allowed && !allowed.includes(platform)) ? PLATFORM_LABEL[platform] : url ? <span style={{ color: "#f87171" }}>{platform ? `not a ${conn.platform} link` : "not a product link"}</span> : <span style={{ color: "var(--muted)" }}>—</span>}</td>
+                    <td style={{ whiteSpace: "nowrap", fontSize: 12.5 }}>{platform && isProductUrl(platform, url) && !(allowed && !allowed.includes(platform)) ? PLATFORM_LABEL[platform] : url ? <span style={{ color: "#f87171" }}>{platform && isProductUrl(platform, url) ? `not a ${conn.platform} link` : "not a product link"}</span> : <span style={{ color: "var(--muted)" }}>—</span>}</td>
                     <td style={{ whiteSpace: "nowrap" }}>
                       {isAdmin && urls[p.prod_id] && <button className="btn-ghost" title="Clear this URL" onClick={() => setUrls((x) => ({ ...x, [p.prod_id]: "" }))} style={{ color: "#f87171" }}>✕</button>}
                     </td>

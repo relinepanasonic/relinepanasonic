@@ -23,13 +23,16 @@ export function verdict(cell?: Cell): Verdict {
   if (d == null || Math.abs(d) < 0.05) return "same";
   return d < 0 ? "cheaper" : "pricier";
 }
-// a connection is shown by its name, or by its store when it has none
-export const colLabel = (c: ScrapeConn) => c.name || c.store_name || "—";
-// the header of a column: just the connection name; the platform is added only when two columns would otherwise read the same
+// a connection is shown by its STORE name (the connection name is only for the Prod Connect log)
+export const colLabel = (c: ScrapeConn) => c.store_name || c.name || "—";
+// the header of a column: the store name; the platform is added only when two columns would otherwise read the same, then the connection name
 export function colLabels(columns: ScrapeConn[]): Map<string, string> {
+  const dupOf = (labels: string[]) => new Set(labels.filter((x, i) => labels.indexOf(x) !== i));
   const base = columns.map(colLabel);
-  const dup = new Set(base.filter((x, i) => base.indexOf(x) !== i));
-  return new Map(columns.map((c, i) => [c.id, dup.has(base[i]) && c.platform ? `${base[i]} · ${c.platform}` : base[i]]));
+  const d1 = dupOf(base);
+  const withPlatform = columns.map((c, i) => (d1.has(base[i]) && c.platform ? `${base[i]} · ${c.platform}` : base[i]));
+  const d2 = dupOf(withPlatform);
+  return new Map(columns.map((c, i) => [c.id, d2.has(withPlatform[i]) && c.name ? `${withPlatform[i]} · ${c.name}` : withPlatform[i]]));
 }
 export const colTitle = (c: ScrapeConn) => `${colLabel(c)}${c.platform ? ` · ${c.platform}` : ""}`;
 

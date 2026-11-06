@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { currentSchema } from "@/lib/workspace-server";
-import { actorFor, buildInput, cleanUrl, PLATFORMS, type Platform } from "@/lib/priceResearch";
+import { actorFor, buildInput, cleanUrl, isProductUrl, NOT_PRODUCT_URL, PLATFORMS, type Platform } from "@/lib/priceResearch";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -53,7 +53,10 @@ export async function POST(req: NextRequest) {
   const started: { platform: Platform; links: number }[] = [];
 
   for (const { v: platform } of PLATFORMS) {
-    const group = links.filter((l) => l.platform === platform);
+    const all = links.filter((l) => l.platform === platform);
+    // a link that is no product page (a search page ...) is not sent to the actor: it would cost credit and return nothing
+    const group = all.filter((l) => isProductUrl(platform, cleanUrl(l.product_url)));
+    all.filter((l) => !group.includes(l)).forEach((l) => failLink(l, NOT_PRODUCT_URL));
     if (!group.length) continue;
     // a scrape already running for the same links is not started twice
     const { data: running } = await admin.from("price_research_runs").select("link_ids").eq("platform", platform).eq("status", "running");

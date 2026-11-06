@@ -31,6 +31,20 @@ export function urlMatchesPlatform(p: Platform, url: string): boolean {
   return host.endsWith("tiktok.com") || host === "shop-id.tokopedia.com" || host.endsWith(".tokopedia.com");
 }
 
+// A link of the right marketplace is still no product when it is a search, category or shop page (for example https://shopee.co.id/mall/search):
+// the actor returns nothing for it, and the link would only show up as "failed".
+export function isProductUrl(p: Platform, url: string): boolean {
+  let u: URL;
+  try { u = new URL(url); } catch { return false; }
+  if (p === "shopee") return /-i\.\d+\.\d+/.test(u.pathname) || /\/product\/\d+\/\d+/.test(u.pathname);
+  if (p === "tokopedia") {
+    const seg = u.pathname.split("/").filter(Boolean);
+    return seg.length >= 2 && !["search", "find", "p", "discovery", "promo", "shop"].includes(seg[0].toLowerCase());
+  }
+  return /\d{6,}/.test(u.pathname);
+}
+export const NOT_PRODUCT_URL = "Not a product link (a search, category or shop page): paste the link of the product page";
+
 export function buildInput(p: Platform, urls: string[]): Record<string, unknown> {
   if (p === "shopee") return { mode: "product", country: "ID", startUrls: urls, maxItems: urls.length };
   if (p === "tokopedia") return { startUrls: urls, maxResults: urls.length, proxyConfiguration: { useApifyProxy: true } };

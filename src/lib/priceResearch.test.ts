@@ -57,3 +57,16 @@ describe("price research helpers", () => {
     expect(estimateCost({})).toBe(0);
   });
 });
+
+describe("product link check", () => {
+  it("a search page is no product link", async () => {
+    const { isProductUrl } = await import("./priceResearch");
+    expect(isProductUrl("shopee", "https://shopee.co.id/mall/search")).toBe(false);
+    expect(isProductUrl("shopee", "https://shopee.co.id/Panasonic-AC-i.818619470.20134555163")).toBe(true);
+    expect(isProductUrl("shopee", "https://shopee.co.id/product/818619470/20134555163")).toBe(true);
+    expect(isProductUrl("tokopedia", "https://www.tokopedia.com/search")).toBe(false);
+    expect(isProductUrl("tokopedia", "https://www.tokopedia.com/panasonic/ac-1-pk")).toBe(true);
+    expect(isProductUrl("tiktok", "https://shop-id.tokopedia.com/pdp/ac/1729384756123")).toBe(true);
+    expect(isProductUrl("tiktok", "https://shop-id.tokopedia.com/")).toBe(false);
+  });
+});

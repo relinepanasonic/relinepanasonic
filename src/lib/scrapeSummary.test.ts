@@ -26,7 +26,7 @@ describe("scrape summary", () => {
     expect(s.tokens).toBe(2);
     expect(s.compared).toBe(4);
     expect([s.cheaper, s.pricier, s.notSold, s.failed]).toEqual([3, 1, 1, 1]);
-    expect(s.dumping?.label).toBe("Shop A");        // A: (-20 -5) / 2 = -12.5% on average; B: -10%
+    expect(s.dumping?.label).toBe("A");        // A: (-20 -5) / 2 = -12.5% on average; B: -10%
     expect(s.dumping?.avgDown).toBeCloseTo(-12.5);
   });
 
