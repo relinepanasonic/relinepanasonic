@@ -67,7 +67,7 @@ export async function downloadScrapePdf(data: ResultData, meta: ResultMeta, file
   const tiles: [string, string, string][] = [
     ["Tokens used", String(s.tokens), "1 token = 1 connection"],
     ["Products", String(s.products), `${s.links} links researched`],
-    ["Prices compared", String(s.compared), s.failed ? `${s.failed} failed` : "all links read"],
+    ["Prices compared", String(s.compared), s.broken || s.noPrice ? `${s.broken} broken link · ${s.noPrice} no price` : "all links read"],
     ["Cheaper than us", s.compared ? `${Math.round((s.cheaper / s.compared) * 100)}%` : "-", `${s.cheaper} of ${s.compared} prices`],
     ["Avg price below ours", pct(s.avgDown), "only where cheaper"],
   ];
@@ -137,7 +137,7 @@ export async function downloadScrapePdf(data: ResultData, meta: ResultMeta, file
   const row = (t: string, x: number, yy: number) => { doc.setFont("helvetica", "bold"); doc.setFontSize(10); doc.setTextColor(...NAVY); doc.text(t, x, yy); };
 
   row("Result of all research links", M, y);
-  const mix: [string, number, [number, number, number]][] = [["Cheaper than us", s.cheaper, RED], ["Same as us", s.same, [120, 130, 150]], ["More expensive than us", s.pricier, GREEN], ["Not sold", s.notSold, [190, 197, 210]], ["Failed / no price yet", s.failed + s.pending, [230, 160, 60]]];
+  const mix: [string, number, [number, number, number]][] = [["Cheaper than us", s.cheaper, RED], ["Same as us", s.same, [120, 130, 150]], ["More expensive than us", s.pricier, GREEN], ["Not sold", s.notSold, [190, 197, 210]], ["Broken link", s.broken, [230, 120, 60]], ["No price found", s.noPrice + s.pending, [230, 175, 60]]];
   const total = mix.reduce((a, b) => a + b[1], 0) || 1;
   const endMix = bars(doc, M, y + 10, half, mix.map(([label, v, color]) => ({ label, v, color, text: `${v} (${Math.round((v / total) * 100)}%)` })), Math.max(...mix.map((m) => m[1]), 1));
 
@@ -176,7 +176,8 @@ export async function downloadScrapePdf(data: ResultData, meta: ResultMeta, file
       const cell = r.cells[c.id], v = verdict(cell);
       vs.push(v);
       if (v === "none") line.push("-");
-      else if (v === "failed") line.push("failed");
+      else if (v === "broken") line.push("broken link");
+      else if (v === "noprice") line.push("no price found");
       else if (v === "pending") line.push("...");
       else { const d = diffPct(cell!.price!, cell!.ours); line.push(`${rp(cell!.price)}${d == null ? "" : `\n${pct(d)}`}`); }
     }
@@ -199,7 +200,8 @@ export async function downloadScrapePdf(data: ResultData, meta: ResultMeta, file
       if (v === "cheaper") { h.cell.styles.textColor = RED; h.cell.styles.fillColor = [253, 235, 235]; }
       else if (v === "pricier") { h.cell.styles.textColor = GREEN; h.cell.styles.fillColor = [231, 247, 237]; }
       else if (v === "none" || v === "pending") h.cell.styles.textColor = [150, 160, 180];
-      else if (v === "failed") h.cell.styles.textColor = RED;
+      else if (v === "broken") h.cell.styles.textColor = [200, 100, 30];
+      else if (v === "noprice") h.cell.styles.textColor = [170, 125, 20];
     },
   });
 

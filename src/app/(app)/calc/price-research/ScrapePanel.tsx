@@ -203,7 +203,8 @@ function ResultTable({ data, rows }: { data: ResultData; rows: ResultData["rows"
 function PriceCell({ cell }: { cell?: Cell }) {
   const v = verdict(cell);
   if (v === "none") return <td className="num" style={{ color: "var(--muted)" }} title="This store does not sell it (no Product URL)">—</td>;
-  if (v === "failed") return <td className="num" style={{ color: RED, fontSize: 12 }} title={cell!.error || "Price Research failed"}>failed</td>;
+  if (v === "broken") return <td className="num" style={{ color: "#fb923c", fontSize: 12 }} title={cell!.error || "The link does not lead to a product"}>Broken link</td>;
+  if (v === "noprice") return <td className="num" style={{ color: "#fbbf24", fontSize: 12 }} title={cell!.error || "The product page gave no price"}>No price found</td>;
   if (v === "pending") return <td className="num" style={{ color: "var(--muted)" }} title="No price saved yet">…</td>;
   const c = cell!;
   const d = diffPct(c.price!, c.ours);

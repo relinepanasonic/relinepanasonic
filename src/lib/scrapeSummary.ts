@@ -20,12 +20,12 @@ export function productType(name: string): string {
   return "Other";
 }
 
-export type StoreStat = { id: string; label: string; platform: string | null; sold: number; compared: number; cheaper: number; pricier: number; same: number; failed: number;
+export type StoreStat = { id: string; label: string; platform: string | null; sold: number; compared: number; cheaper: number; pricier: number; same: number; broken: number; noPrice: number;
   avgDown: number | null; avgAll: number | null; coverage: number };
 export type ProductGap = { prod_id: string; product_name: string; type: string; ours: number; price: number; store: string; pct: number; rp: number };
 export type TypeStat = { type: string; products: number; compared: number; cheaper: number; worst: ProductGap | null; avgChange: number | null };
 export type Summary = {
-  tokens: number; products: number; links: number; compared: number; cheaper: number; pricier: number; same: number; notSold: number; failed: number; pending: number;
+  tokens: number; products: number; links: number; compared: number; cheaper: number; pricier: number; same: number; notSold: number; broken: number; noPrice: number; pending: number;
   avgDown: number | null; avgAll: number | null; stores: StoreStat[]; dumping: StoreStat | null; types: TypeStat[]; changes: ProductGap[]; needChange: number; avgChange: number | null;
   insights: string[];
 };
@@ -35,8 +35,8 @@ const f1 = (n: number) => `${n > 0 ? "+" : ""}${n.toFixed(1)}%`;
 
 export function summarize(data: ResultData): Summary {
   const labels = colLabels(data.columns);
-  const count: Record<Verdict, number> = { cheaper: 0, pricier: 0, same: 0, failed: 0, pending: 0, none: 0 };
-  const per = new Map(data.columns.map((c) => [c.id, { downs: [] as number[], all: [] as number[], s: { id: c.id, label: labels.get(c.id)!, platform: c.platform, sold: 0, compared: 0, cheaper: 0, pricier: 0, same: 0, failed: 0, avgDown: null as number | null, avgAll: null as number | null, coverage: 0 } }]));
+  const count: Record<Verdict, number> = { cheaper: 0, pricier: 0, same: 0, broken: 0, noprice: 0, pending: 0, none: 0 };
+  const per = new Map(data.columns.map((c) => [c.id, { downs: [] as number[], all: [] as number[], s: { id: c.id, label: labels.get(c.id)!, platform: c.platform, sold: 0, compared: 0, cheaper: 0, pricier: 0, same: 0, broken: 0, noPrice: 0, avgDown: null as number | null, avgAll: null as number | null, coverage: 0 } }]));
   const gaps: ProductGap[] = [];
   const allDown: number[] = [], all: number[] = [];
 
@@ -46,7 +46,8 @@ export function summarize(data: ResultData): Summary {
       const cell = r.cells[c.id], v = verdict(cell), p = per.get(c.id)!;
       count[v]++;
       if (v !== "none") p.s.sold++;
-      if (v === "failed") p.s.failed++;
+      if (v === "broken") p.s.broken++;
+      if (v === "noprice") p.s.noPrice++;
       if (v !== "cheaper" && v !== "pricier" && v !== "same") continue;
       const d = diffPct(cell!.price!, cell!.ours);
       if (d == null) continue;
@@ -78,8 +79,8 @@ export function summarize(data: ResultData): Summary {
 
   const compared = count.cheaper + count.pricier + count.same;
   const sum: Summary = {
-    tokens: data.columns.length, products: data.rows.length, links: compared + count.failed + count.pending, compared, cheaper: count.cheaper, pricier: count.pricier, same: count.same,
-    notSold: count.none, failed: count.failed, pending: count.pending, avgDown: avg(allDown), avgAll: avg(all), stores, dumping: ranked[0] || null, types, changes,
+    tokens: data.columns.length, products: data.rows.length, links: compared + count.broken + count.noprice + count.pending, compared, cheaper: count.cheaper, pricier: count.pricier, same: count.same,
+    notSold: count.none, broken: count.broken, noPrice: count.noprice, pending: count.pending, avgDown: avg(allDown), avgAll: avg(all), stores, dumping: ranked[0] || null, types, changes,
     needChange: changes.length, avgChange: avg(changes.map((x) => x.pct)), insights: [],
   };
   sum.insights = insights(sum);
@@ -98,6 +99,7 @@ function insights(s: Summary): string[] {
   if (wt) out.push(`The most exposed product type is ${wt.type} (${wt.cheaper} of ${wt.compared} prices below ours).`);
   const weak = s.stores.filter((x) => x.coverage < 0.5);
   if (weak.length) out.push(`${weak.length} connection${weak.length > 1 ? "s sell" : " sells"} fewer than half of our products (${weak.map((x) => x.label).join(", ")}), so the comparison there is partial.`);
-  if (s.failed > 0) out.push(`${s.failed} link${s.failed > 1 ? "s" : ""} could not be read; run the Price Research again for them.`);
+  if (s.broken > 0) out.push(`${s.broken} broken link${s.broken > 1 ? "s" : ""}: they do not lead to a product page, fix them in Prod Connect.`);
+  if (s.noPrice > 0) out.push(`${s.noPrice} product${s.noPrice > 1 ? "s" : ""} with no price found (sold out, hidden or blocked): run the Price Research again later.`);
   return out;
 }

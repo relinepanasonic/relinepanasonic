@@ -10,14 +10,16 @@ export type ResultData = { columns: ScrapeConn[]; rows: ResultRow[] };
 export type ResultMeta = { title: string; by: string | null; status: string };
 
 // cheaper = the competitor sells below our price (red); pricier = above it (green)
-export type Verdict = "cheaper" | "pricier" | "same" | "failed" | "pending" | "none";
+// broken = the link does not lead to a product; noprice = the product page was read but no price came out (sold out, hidden, blocked ...)
+export type Verdict = "cheaper" | "pricier" | "same" | "broken" | "noprice" | "pending" | "none";
+export const isBrokenError = (e: string | null | undefined) => /not a product link|no result for this url|not found|404|invalid url/i.test(e || "");
 
 export function diffPct(price: number, ours: number | null): number | null {
   return ours ? (price / ours - 1) * 100 : null;
 }
 export function verdict(cell?: Cell): Verdict {
   if (!cell || !cell.has_link) return "none";
-  if (cell.ok === false) return "failed";
+  if (cell.ok === false) return isBrokenError(cell.error) ? "broken" : "noprice";
   if (cell.ok == null || cell.price == null) return "pending";
   const d = diffPct(cell.price, cell.ours);
   if (d == null || Math.abs(d) < 0.05) return "same";
@@ -42,7 +44,7 @@ export function oursOf(row: ResultRow, columns: ScrapeConn[]): { platform: strin
   return [...new Map(all.map((x) => [x.v, x])).values()];
 }
 const rp = (n: number | null | undefined) => (n == null ? "" : "Rp " + Math.round(n).toLocaleString("id-ID"));
-const VERDICT_TEXT: Record<Verdict, string> = { cheaper: "Cheaper than us", pricier: "More expensive than us", same: "Same", failed: "Failed", pending: "No price yet", none: "Not sold" };
+const VERDICT_TEXT: Record<Verdict, string> = { cheaper: "Cheaper than us", pricier: "More expensive than us", same: "Same", broken: "Broken link", noprice: "No price found", pending: "No price yet", none: "Not sold" };
 
 // one line per product x store (the second sheet of the XLS)
 export function flatRows(data: ResultData) {
@@ -72,7 +74,8 @@ export async function downloadScrapeXls(data: ResultData, meta: ResultMeta, file
     for (const c of data.columns) {
       const cell = r.cells[c.id], v = verdict(cell);
       if (v === "none") { line.push("", ""); continue; }
-      if (v === "failed") { line.push("failed", ""); continue; }
+      if (v === "broken") { line.push("broken link", ""); continue; }
+      if (v === "noprice") { line.push("no price found", ""); continue; }
       if (v === "pending") { line.push("no price yet", ""); continue; }
       const d = diffPct(cell!.price!, cell!.ours);
       line.push(cell!.price!, d == null ? "" : Math.round(d * 10) / 10);

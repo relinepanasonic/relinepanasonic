@@ -8,7 +8,9 @@ describe("scrape result", () => {
     expect(verdict(cell({ price: 900 }))).toBe("cheaper");
     expect(verdict(cell({ price: 1100 }))).toBe("pricier");
     expect(verdict(cell({ price: 1000 }))).toBe("same");
-    expect(verdict(cell({ ok: false, price: null, error: "x" }))).toBe("failed");
+    expect(verdict(cell({ ok: false, price: null, error: "x" }))).toBe("noprice");
+    expect(verdict(cell({ ok: false, price: null, error: "The result has no price" }))).toBe("noprice");
+    expect(verdict(cell({ ok: false, price: null, error: "Not a product link (a search page)" }))).toBe("broken");
     expect(verdict(cell({ ok: null, price: null }))).toBe("pending");
     expect(verdict(cell({ has_link: false }))).toBe("none");
     expect(verdict(undefined)).toBe("none");
@@ -32,7 +34,7 @@ describe("scrape result", () => {
     expect(lines).toHaveLength(3);                                                  // P1 x 2, P2 x 1 (the Shopee cell has no link)
     expect(lines[0].slice(6, 12)).toEqual([500, 450, 1000, 10, -10, "Cheaper than us"]);
     expect(lines[1][11]).toBe("More expensive than us");
-    expect(lines[2][11]).toBe("Failed");
+    expect(lines[2][11]).toBe("No price found");
     expect(lines[2][13]).toBe("blocked");
   });
 });
