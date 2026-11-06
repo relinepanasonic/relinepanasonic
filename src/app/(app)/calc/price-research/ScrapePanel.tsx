@@ -139,7 +139,11 @@ function ResultPage({ supabase, scrape, tick, onBack }: { supabase: Supabase; sc
     <>
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center", marginBottom: 10 }}>
         <button className="btn-ghost" onClick={onBack}>← Price Research log</button>
-        <div style={{ fontSize: 18, fontWeight: 800, color: "#fff" }}>Result of {when(scrape.created_at)}</div>
+        <div>
+          <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: ".08em", color: "var(--gold)" }}>PROF TOKO ONLINE</div>
+          <div style={{ fontSize: 20, fontWeight: 800, color: "#fff" }}>Price Guard Project</div>
+          <div style={{ fontSize: 12.5, color: "var(--muted)" }}>{meta.title}</div>
+        </div>
         <div style={{ fontSize: 12.5, color: "var(--muted)" }}>
           {scrape.created_by ? `researched by ${scrape.created_by} · ` : ""}{scrape.saved} saved{scrape.failed ? `, ${scrape.failed} failed` : ""} · {running ? <span style={{ color: "var(--gold)" }}>⏳ running, the prices appear as they arrive</span> : scrape.status === "done" ? "done" : <span style={{ color: RED }}>failed</span>}
         </div>
