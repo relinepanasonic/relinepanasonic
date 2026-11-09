@@ -97,7 +97,7 @@ export async function downloadScrapeXls(data: ResultData, meta: ResultMeta, file
   const flat = XLSX.utils.aoa_to_sheet([FLAT_HEAD, ...flatRows(data)]);
   flat["!cols"] = FLAT_HEAD.map((h, i) => ({ wch: i === 1 ? 46 : Math.max(12, h.length + 2) }));
   XLSX.utils.book_append_sheet(wb, flat, "Detail");
-  const info = XLSX.utils.aoa_to_sheet([["Prof Toko Online"], ["Price Guard Project"], [meta.title], ["Price Research by", meta.by || ""], ["Status", meta.status], ["Tokens used", `${data.columns.length} (1 token = 1 connection)`], [""],
+  const info = XLSX.utils.aoa_to_sheet([["Prof Toko Online"], ["Price Guard Project"], [meta.title], ["Price Research by", meta.by || ""], ["Status", meta.status], ["Tokens used", `${flatRows(data).length} (1 token = 1 link)`], [""],
     ["How to read", "A price below our price means the competitor is cheaper than us; above it, more expensive. The % is the difference with our price."]]);
   info["!cols"] = [{ wch: 18 }, { wch: 90 }];
   XLSX.utils.book_append_sheet(wb, info, "Info");

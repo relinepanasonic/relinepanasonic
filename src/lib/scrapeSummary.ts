@@ -92,7 +92,7 @@ export function summarize(data: ResultData): Summary {
 
   const compared = count.cheaper + count.pricier + count.same;
   const sum: Summary = {
-    tokens: data.columns.length, products: data.rows.length, links: compared + count.broken + count.noprice + count.pending, compared, cheaper: count.cheaper, pricier: count.pricier, same: count.same,
+    tokens: compared + count.broken + count.noprice + count.pending, products: data.rows.length, links: compared + count.broken + count.noprice + count.pending, compared, cheaper: count.cheaper, pricier: count.pricier, same: count.same,
     notSold: count.none, broken: count.broken, noPrice: count.noprice, pending: count.pending, avgDown: avg(allDown), avgAll: avg(all), stores, dumping: ranked[0] || null, types, changes, market,
     needChange: market.length, avgChange: avg(market.map((x) => x.pct)), insights: [],
   };

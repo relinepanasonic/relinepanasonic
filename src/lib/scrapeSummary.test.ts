@@ -21,9 +21,9 @@ describe("scrape summary", () => {
     ],
   };
 
-  it("tokens = connections; dumping store = lowest average price below ours", () => {
+  it("tokens = links; dumping store = lowest average price below ours", () => {
     const s = summarize(data);
-    expect(s.tokens).toBe(2);
+    expect(s.tokens).toBe(5);                        // 5 links with a Product URL (one has no price)
     expect(s.compared).toBe(4);
     expect([s.cheaper, s.pricier, s.notSold, s.noPrice, s.broken]).toEqual([3, 1, 1, 1, 0]);
     expect(s.dumping?.label).toBe("A");        // A: (-20 -5) / 2 = -12.5% on average; B: -10%

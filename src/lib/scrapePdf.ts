@@ -66,7 +66,7 @@ export async function downloadScrapePdf(data: ResultData, meta: ResultMeta, file
 
   // ── KPI tiles ──
   const tiles: [string, string, string][] = [
-    ["Tokens used", String(s.tokens), "1 token = 1 connection"],
+    ["Tokens used", String(s.tokens), "1 token = 1 link"],
     ["Products", String(s.products), `${s.links} links researched`],
     ["Prices compared", String(s.compared), s.broken || s.noPrice ? `${s.broken} broken link · ${s.noPrice} no price` : "all links read"],
     ["Cheaper than us", s.compared ? `${Math.round((s.cheaper / s.compared) * 100)}%` : "-", `${s.cheaper} of ${s.compared} prices`],
@@ -159,7 +159,7 @@ export async function downloadScrapePdf(data: ResultData, meta: ResultMeta, file
   row("Reading", M, y); y += 12;
   doc.setFont("helvetica", "normal"); doc.setFontSize(8.5); doc.setTextColor(...MUTED);
   for (const l of s.insights.slice(5)) { const p = doc.splitTextToSize(`• ${l}`, PAGE_W - 2 * M); doc.text(p, M, y); y += p.length * 11; }
-  const note = doc.splitTextToSize("A price below our price is red (the competitor is cheaper); above it is green. Gap = competitor price / our price - 1. Average price below ours only counts the prices that are cheaper than ours. Tokens: 1 token is used per connection researched.", PAGE_W - 2 * M);
+  const note = doc.splitTextToSize("A price below our price is red (the competitor is cheaper); above it is green. Gap = competitor price / our price - 1. Average price below ours only counts the prices that are cheaper than ours. Tokens: 1 token is used per link researched.", PAGE_W - 2 * M);
   doc.text(note, M, y + 4);
 
   // ── the full price table ──
