@@ -14,7 +14,17 @@ import { colLabels, colTitle, diffPct, downloadScrapeXls, oursOf, verdict, type 
 //   (red = cheaper than our price, green = more expensive than our price), with the XLS and PDF download.
 // The Scrape button opens a window: pick the connections, see how many links will be scraped, Execute or Cancel.
 type Supabase = ReturnType<typeof createClient>;
-type ScrapeRow = { id: string; created_at: string; created_by: string | null; links: number; connections: ScrapeConn[]; status: "running" | "done" | "failed"; saved: number; failed: number };
+type ScrapeRow = { id: string; created_at: string; created_by: string | null; links: number; connections: ScrapeConn[]; status: "running" | "done" | "failed"; finished_at?: string | null; saved: number; failed: number };
+
+// how long a Price Research took, from Execute to done (a running one counts up to now)
+function took(s: ScrapeRow): string {
+  const from = new Date(s.created_at).getTime();
+  const to = s.finished_at ? new Date(s.finished_at).getTime() : s.status === "running" ? Date.now() : NaN;
+  if (!Number.isFinite(from) || !Number.isFinite(to)) return "—";
+  const sec = Math.max(0, Math.round((to - from) / 1000));
+  const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), r = sec % 60;
+  return h ? `${h}h ${m}m ${r}s` : m ? `${m}m ${r}s` : `${r}s`;
+}
 type ConnLog = { id: string; name: string | null; srp_no: string | null; catalog_no: string | null; vendor_name: string | null; store_name: string | null; platform: string | null };
 type LinkLite = { id: string; connection_id: string | null; platform: Platform };
 
@@ -71,7 +81,7 @@ export default function ScrapePanel({ supabase, clientId, canScrape, tick, busy,
       {scrapes === null ? <Loader center /> : (
         <div className="tbl-wrap" style={{ maxHeight: "68vh" }}>
           <table className="tbl day-tbl">
-            <thead><tr><th>Date</th><th>Connections</th><th className="num">Links</th><th className="num">Saved</th><th className="num">Failed</th><th>Status</th><th>Researched by</th></tr></thead>
+            <thead><tr><th>Date</th><th>Connections</th><th className="num">Links</th><th className="num">Saved</th><th className="num">Failed</th><th>Status</th><th className="num">Time</th><th>Researched by</th></tr></thead>
             <tbody>
               {scrapes.map((s) => (
                 <tr key={s.id} onClick={() => setOpen(s.id)} style={{ cursor: "pointer" }}>
@@ -90,10 +100,11 @@ export default function ScrapePanel({ supabase, clientId, canScrape, tick, busy,
                   <td className="num" style={{ fontWeight: 700 }}>{s.saved}</td>
                   <td className="num" style={{ color: s.failed ? RED : undefined }}>{s.failed}</td>
                   <td>{s.status === "running" ? <span style={{ color: "var(--gold)" }}>⏳ Running</span> : s.status === "done" ? <span style={{ color: GREEN }}>Done</span> : <span style={{ color: RED }}>Failed</span>}</td>
+                  <td className="num" style={{ whiteSpace: "nowrap", color: s.status === "running" ? "var(--gold)" : undefined }}>{took(s)}</td>
                   <td>{s.created_by || "—"}</td>
                 </tr>
               ))}
-              {scrapes.length === 0 && <tr><td colSpan={7} style={{ textAlign: "center", color: "var(--muted)", padding: 24 }}>No Price Research yet{canScrape ? " — press Price Research and pick the store connections." : "."}</td></tr>}
+              {scrapes.length === 0 && <tr><td colSpan={8} style={{ textAlign: "center", color: "var(--muted)", padding: 24 }}>No Price Research yet{canScrape ? " — press Price Research and pick the store connections." : "."}</td></tr>}
             </tbody>
           </table>
         </div>
