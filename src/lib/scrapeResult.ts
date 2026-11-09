@@ -5,7 +5,15 @@ export type Cell = {
   ours: number | null; has_link: boolean; link_id: string | null; ok: boolean | null; error: string | null; price: number | null;
   original: number | null; discount_pct: number | null; labels: string[] | null; scraped_at: string | null;
 };
-export type ResultRow = { prod_id: string; product_name: string; cells: Record<string, Cell> };
+export type ResultRow = { prod_id: string; product_name: string; category?: string | null; cells: Record<string, Cell> };
+
+// the categories of the SRP price list, in the order the report reads: RAC, REF, WM, WD, TV, IAQ, Kitchen 1, Kitchen 2, Beauty (anything else last)
+export const CATEGORY_ORDER = ["RAC", "REF", "WM", "WD", "TV", "IAQ", "Kitchen 1", "Kitchen 2", "Beauty"];
+export const categoryRank = (c: string | null | undefined) => { const i = CATEGORY_ORDER.indexOf(c || ""); return i < 0 ? CATEGORY_ORDER.length : i; };
+// stable: inside a category the order given (by product name) stays
+export function sortByCategory<T extends { category?: string | null }>(rows: T[]): T[] {
+  return rows.map((r, i) => [r, i] as const).sort((a, b) => categoryRank(a[0].category) - categoryRank(b[0].category) || a[1] - b[1]).map((x) => x[0]);
+}
 export type ResultData = { columns: ScrapeConn[]; rows: ResultRow[] };
 export type ResultMeta = { title: string; by: string | null; status: string };
 
@@ -65,12 +73,12 @@ export const FLAT_HEAD = ["Prod ID", "Product Name", "SRP ID", "Connection", "St
 
 export async function downloadScrapeXls(data: ResultData, meta: ResultMeta, fileStamp: string) {
   const XLSX = await import("xlsx");
-  const head: string[] = ["Prod ID", "Product Name", "Our Price"];
+  const head: string[] = ["Prod ID", "Category", "Product Name", "Our Price"];
   const labels = colLabels(data.columns);
   for (const c of data.columns) head.push(labels.get(c.id)!, `${labels.get(c.id)} vs our price %`);
-  const body = data.rows.map((r) => {
+  const body = sortByCategory(data.rows).map((r) => {
     const ours = oursOf(r, data.columns);
-    const line: (string | number)[] = [r.prod_id, r.product_name, ours.length === 1 ? ours[0].v : ours.map((x) => `${x.platform || ""} ${rp(x.v)}`.trim()).join(" / ")];
+    const line: (string | number)[] = [r.prod_id, r.category || "", r.product_name, ours.length === 1 ? ours[0].v : ours.map((x) => `${x.platform || ""} ${rp(x.v)}`.trim()).join(" / ")];
     for (const c of data.columns) {
       const cell = r.cells[c.id], v = verdict(cell);
       if (v === "none") { line.push("", ""); continue; }
@@ -84,7 +92,7 @@ export async function downloadScrapeXls(data: ResultData, meta: ResultMeta, file
   });
   const wb = XLSX.utils.book_new();
   const ws = XLSX.utils.aoa_to_sheet([head, ...body]);
-  ws["!cols"] = head.map((h, i) => ({ wch: i === 1 ? 46 : Math.max(14, Math.min(26, h.length + 2)) }));
+  ws["!cols"] = head.map((h, i) => ({ wch: i === 2 ? 46 : Math.max(14, Math.min(26, h.length + 2)) }));
   XLSX.utils.book_append_sheet(wb, ws, "Result");
   const flat = XLSX.utils.aoa_to_sheet([FLAT_HEAD, ...flatRows(data)]);
   flat["!cols"] = FLAT_HEAD.map((h, i) => ({ wch: i === 1 ? 46 : Math.max(12, h.length + 2) }));

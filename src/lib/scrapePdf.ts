@@ -1,5 +1,6 @@
 // The PDF of a Price Research result: Prof Toko Online header, executive summary, analytics, then the full price table.
-import { colLabels, diffPct, oursOf, verdict, type ResultData, type ResultMeta, type Verdict } from "./scrapeResult";
+import { colLabels, diffPct, oursOf, sortByCategory, verdict, type ResultData, type ResultMeta, type Verdict } from "./scrapeResult";
+import type { RowInput } from "jspdf-autotable";
 import { summarize, type Summary } from "./scrapeSummary";
 
 const NAVY: [number, number, number] = [11, 26, 51];
@@ -168,7 +169,20 @@ export async function downloadScrapePdf(data: ResultData, meta: ResultMeta, file
   doc.text("Red: the competitor is cheaper than our price · Green: more expensive than our price", M, 54);
 
   const verdicts: Verdict[][] = [];
-  const body = data.rows.map((r) => {
+  const nCols = 3 + data.columns.length;
+  const sorted = sortByCategory(data.rows);
+  const counts = new Map<string, number>();
+  for (const r of sorted) counts.set(r.category || "Other", (counts.get(r.category || "Other") || 0) + 1);
+  const WHITE: [number, number, number] = [255, 255, 255];
+  const body: RowInput[] = [];
+  let lastCat: string | null = null;
+  sorted.forEach((r) => {
+    const cat = r.category || "Other";
+    if (cat !== lastCat) {
+      lastCat = cat;
+      body.push([{ content: `${cat.toUpperCase()}  ·  ${counts.get(cat)} product${counts.get(cat) === 1 ? "" : "s"}`, colSpan: nCols, styles: { fillColor: NAVY, textColor: WHITE, fontStyle: "bold", halign: "left", fontSize: 8.5 } }]);
+      verdicts.push([]);
+    }
     const ours = oursOf(r, data.columns);
     const line: string[] = [r.prod_id, r.product_name, ours.length === 0 ? "" : ours.map((x) => (ours.length > 1 ? `${rp(x.v)} ${x.platform || ""}` : rp(x.v))).join("\n")];
     const vs: Verdict[] = [];
@@ -182,7 +196,7 @@ export async function downloadScrapePdf(data: ResultData, meta: ResultMeta, file
       else { const d = diffPct(cell!.price!, cell!.ours); line.push(`${rp(cell!.price)}${d == null ? "" : `\n${pct(d)}`}`); }
     }
     verdicts.push(vs);
-    return line;
+    body.push(line);
   });
   const n = data.columns.length;
   const storeW = n > 0 ? Math.max(58, Math.min(90, Math.floor((PAGE_W - 64 - 60 - 170 - 70) / n))) : 80;

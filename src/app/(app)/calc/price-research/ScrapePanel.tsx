@@ -6,7 +6,7 @@ import Loader from "@/components/Loader";
 import { Modal } from "@/components/ProductCatalog";
 import { PLATFORMS, estimateCost, type Platform } from "@/lib/priceResearch";
 import { downloadScrapePdf } from "@/lib/scrapePdf";
-import { colLabels, colTitle, diffPct, downloadScrapeXls, oursOf, verdict, type Cell, type ResultData, type ScrapeConn } from "@/lib/scrapeResult";
+import { sortByCategory, colLabels, colTitle, diffPct, downloadScrapeXls, oursOf, verdict, type Cell, type ResultData, type ScrapeConn } from "@/lib/scrapeResult";
 
 // Price Research > Price Guard
 //   First page: the scrape log only (one row per Execute) and the Scrape button.
@@ -135,7 +135,7 @@ function ResultPage({ supabase, scrape, tick, onBack }: { supabase: Supabase; sc
   }, [running, load]);
 
   const t = q.trim().toLowerCase();
-  const rows = (data?.rows || []).filter((r) => !t || r.product_name.toLowerCase().includes(t) || r.prod_id.toLowerCase().includes(t));
+  const rows = sortByCategory(data?.rows || []).filter((r) => !t || r.product_name.toLowerCase().includes(t) || r.prod_id.toLowerCase().includes(t));
   const meta = { title: `Price Research of ${when(scrape.created_at)}`, by: scrape.created_by, status: scrape.status };
   async function download(kind: "xls" | "pdf") {
     if (!data) return;
@@ -184,7 +184,7 @@ function ResultTable({ data, rows }: { data: ResultData; rows: ResultData["rows"
       <table className="tbl day-tbl">
         <thead>
           <tr>
-            <th>Prod ID</th><th>Product Name</th><th className="num">Our Price</th>
+            <th>Prod ID</th><th>Category</th><th>Product Name</th><th className="num">Our Price</th>
             {cols.map((c) => (
               <th key={c.id} className="num" style={{ whiteSpace: "nowrap" }}>{labels.get(c.id)}</th>
             ))}
@@ -196,6 +196,7 @@ function ResultTable({ data, rows }: { data: ResultData; rows: ResultData["rows"
             return (
               <tr key={r.prod_id}>
                 <td style={{ fontFamily: "monospace", fontSize: 12.5 }}>{r.prod_id}</td>
+                <td style={{ whiteSpace: "nowrap", fontSize: 12, color: "var(--gold)", fontWeight: 700 }}>{r.category || "—"}</td>
                 <td style={{ minWidth: 220, maxWidth: 340, whiteSpace: "normal", overflowWrap: "anywhere", fontWeight: 700 }}>{r.product_name}</td>
                 <td className="num" style={{ fontWeight: 700, whiteSpace: "nowrap" }}>
                   {ours.length === 0 ? "—" : ours.length === 1 ? rp(ours[0].v) : ours.map((x) => <div key={x.platform || "x"}>{rp(x.v)} <span style={{ fontSize: 10.5, fontWeight: 400, color: "var(--muted)" }}>{x.platform}</span></div>)}
@@ -204,7 +205,7 @@ function ResultTable({ data, rows }: { data: ResultData; rows: ResultData["rows"
               </tr>
             );
           })}
-          {rows.length === 0 && <tr><td colSpan={3 + cols.length} style={{ textAlign: "center", color: "var(--muted)", padding: 24 }}>No product with a Product URL in this scrape.</td></tr>}
+          {rows.length === 0 && <tr><td colSpan={4 + cols.length} style={{ textAlign: "center", color: "var(--muted)", padding: 24 }}>No product with a Product URL in this scrape.</td></tr>}
         </tbody>
       </table>
     </div>

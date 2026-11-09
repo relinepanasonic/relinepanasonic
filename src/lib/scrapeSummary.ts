@@ -1,5 +1,5 @@
 // Executive summary + analytics of ONE Price Research (Price Guard result). Pure functions, used by the PDF.
-import { colLabels, diffPct, verdict, type ResultData, type Verdict } from "./scrapeResult";
+import { categoryRank, colLabels, diffPct, verdict, type ResultData, type ResultRow, type Verdict } from "./scrapeResult";
 
 // a product type from its name (AC, TV, Washing Machine ...): the catalog has no category, and the marketplace categories differ per platform
 const TYPES: [string, RegExp][] = [
@@ -15,6 +15,8 @@ const TYPES: [string, RegExp][] = [
   ["Hair & Beauty", /hair|rambut|shaver|cukur|beauty|trimmer/i],
   ["Cleaning", /vacuum|penyedot|setrika|iron/i],
 ];
+// the category of the SRP price list (RAC, REF ...) when the product has one, else a guess from its name
+export const typeOf = (r: Pick<ResultRow, "product_name" | "category">) => r.category || productType(r.product_name);
 export function productType(name: string): string {
   for (const [t, re] of TYPES) if (re.test(name)) return t;
   return "Other";
@@ -58,13 +60,13 @@ export function summarize(data: ResultData): Summary {
       p.s.compared++; p.all.push(d); all.push(d);
       if (cell!.ours != null) priced.push({ price: cell!.price!, ours: cell!.ours, store: labels.get(c.id)! });
       if (v === "cheaper") { p.s.cheaper++; p.downs.push(d); allDown.push(d); } else if (v === "pricier") p.s.pricier++; else p.s.same++;
-      if (v === "cheaper" && (!best || d < best.pct)) best = { prod_id: r.prod_id, product_name: r.product_name, type: productType(r.product_name), ours: cell!.ours!, price: cell!.price!, store: labels.get(c.id)!, pct: d, rp: cell!.price! - cell!.ours! };
+      if (v === "cheaper" && (!best || d < best.pct)) best = { prod_id: r.prod_id, product_name: r.product_name, type: typeOf(r), ours: cell!.ours!, price: cell!.price!, store: labels.get(c.id)!, pct: d, rp: cell!.price! - cell!.ours! };
     }
     if (best) gaps.push(best);
     if (priced.length) {
       const avgP = priced.reduce((a, x) => a + x.price, 0) / priced.length, ours = priced.reduce((a, x) => a + x.ours, 0) / priced.length;
       const low = priced.reduce((a, x) => (x.price < a.price ? x : a));
-      if (avgP < ours) market.push({ prod_id: r.prod_id, product_name: r.product_name, type: productType(r.product_name), ours, avg: avgP, low: low.price, lowStore: low.store, pct: (avgP / ours - 1) * 100, rp: avgP - ours });
+      if (avgP < ours) market.push({ prod_id: r.prod_id, product_name: r.product_name, type: typeOf(r), ours, avg: avgP, low: low.price, lowStore: low.store, pct: (avgP / ours - 1) * 100, rp: avgP - ours });
     }
   }
 
@@ -75,7 +77,7 @@ export function summarize(data: ResultData): Summary {
 
   const byType = new Map<string, TypeStat>();
   for (const r of data.rows) {
-    const t = productType(r.product_name);
+    const t = typeOf(r);
     if (!byType.has(t)) byType.set(t, { type: t, products: 0, compared: 0, cheaper: 0, worst: null, avgChange: null });
     const ts = byType.get(t)!; ts.products++;
     for (const c of data.columns) { const v = verdict(r.cells[c.id]); if (v === "cheaper" || v === "pricier" || v === "same") ts.compared++; if (v === "cheaper") ts.cheaper++; }
@@ -84,7 +86,7 @@ export function summarize(data: ResultData): Summary {
     const g = gaps.filter((x) => x.type === t).sort((a, b) => a.pct - b.pct);
     ts.worst = g[0] || null; ts.avgChange = avg(g.map((x) => x.pct));
   }
-  const types = [...byType.values()].sort((a, b) => (a.worst?.pct ?? 1) - (b.worst?.pct ?? 1));
+  const types = [...byType.values()].sort((a, b) => categoryRank(a.type) - categoryRank(b.type) || a.type.localeCompare(b.type));
   const changes = [...gaps].sort((a, b) => a.pct - b.pct);
   market.sort((a, b) => a.pct - b.pct);
 
