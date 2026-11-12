@@ -7,6 +7,8 @@ import { isPageHidden } from "@/lib/workspace";
 import { useWorkspaceId } from "@/lib/useWorkspace";
 import { fmtDateTime } from "@/lib/dates";
 import { MONTH_LIST, type DataSource } from "@/lib/parse";
+import WeeklyReportButton from "@/components/WeeklyReportButton";
+import { reportWeek } from "@/lib/erpWeekly";
 
 export const dynamic = "force-dynamic";
 
@@ -70,7 +72,7 @@ function todayISO(): string { return toISO(new Date()); }
 type CityRow = { value: string; pic: string | null };
 type UploadRow = {
   id: string; source: DataSource; filename: string | null; row_count: number; created_at: string;
-  meta: { admin?: string; city?: string; pic_client?: string; store_name?: string; bulan?: string; week?: string; year?: number; kind?: string; ads_level?: string } | null;
+  meta: { admin?: string; city?: string; pic_client?: string; store_name?: string; bulan?: string; week?: string; year?: number; kind?: string; ads_level?: string; tanggal?: string } | null;
 };
 type DealerRow = {
   store_name: string; city: string; sales: number; traffic: number; in_cart: number; ad_cost: number;
@@ -110,6 +112,7 @@ export default function UploadPage() {
   const [files,   setFiles]   = useState<Record<string, File | null>>({});
   const [busy,    setBusy]    = useState(false);
   const [log,     setLog]     = useState<string[]>([]);
+  const [justUploaded, setJustUploaded] = useState<{ store: string; week: string | null } | null>(null);   // the dealer + week of the upload that just finished: offers the WhatsApp report
   const [uploads, setUploads] = useState<UploadRow[]>([]);
   const [coverage, setCoverage] = useState<Record<string, Coverage>>({});
   const [dealerRows, setDealerRows] = useState<DealerRow[]>([]);
@@ -202,7 +205,8 @@ export default function UploadPage() {
   }
 
   async function submit() {
-    setBusy(true); setLog([]);
+    setBusy(true); setLog([]); setJustUploaded(null);
+    let uploaded = 0;
     if (!clientId) { setLog(["Workspace not ready."]); setBusy(false); return; }
     const chosenSlots   = SLOTS.filter((s) => files[s.source]);
     const chosenAdSlots = AD_SLOTS.filter((s) => files[s.key]);
@@ -228,6 +232,7 @@ export default function UploadPage() {
       try {
         const res = await fetch("/api/upload", { method: "POST", body: fd });
         const j = await res.json();
+        if (res.ok) uploaded++;
         setLog((l) => [...l, res.ok ? `✓ ${slot.label}: ${j.rows} rows` : `✗ ${slot.label}: ${j.error}`]);
       } catch (e) {
         setLog((l) => [...l, `✗ ${slot.label}: ${String(e)}`]);
@@ -244,7 +249,8 @@ export default function UploadPage() {
         try {
           const res = await fetch("/api/upload", { method: "POST", body: fd });
           const j = await res.json();
-          setLog((l) => [...l, res.ok ? `✓ ${slot.label}: ${j.rows} rows` : `✗ ${slot.label}: ${j.error}`]);
+          if (res.ok) uploaded++;
+        setLog((l) => [...l, res.ok ? `✓ ${slot.label}: ${j.rows} rows` : `✗ ${slot.label}: ${j.error}`]);
         } catch (e) {
           setLog((l) => [...l, `✗ ${slot.label}: ${String(e)}`]);
         }
@@ -255,13 +261,15 @@ export default function UploadPage() {
         try {
           const res = await fetch("/api/ads-group/upload", { method: "POST", body: fd });
           const j = await res.json();
-          setLog((l) => [...l, res.ok ? `✓ ${slot.label}: ${j.rows} rows` : `✗ ${slot.label}: ${j.error}`]);
+          if (res.ok) uploaded++;
+        setLog((l) => [...l, res.ok ? `✓ ${slot.label}: ${j.rows} rows` : `✗ ${slot.label}: ${j.error}`]);
         } catch (e) {
           setLog((l) => [...l, `✗ ${slot.label}: ${String(e)}`]);
         }
       }
     }
     setBusy(false);
+    if (uploaded > 0 && form.dealer && form.bulan !== BASELINE) setJustUploaded({ store: form.dealer, week: reportWeek({ tanggal: form.tanggal_mulai, year: form.year, month: form.bulan, week: form.week }) });
     loadUploads(clientId);
   }
 
@@ -503,6 +511,12 @@ export default function UploadPage() {
             {log.map((l, i) => <div key={i} style={{ color: l.startsWith("✓") ? "var(--gold)" : "#f87171", marginBottom: 4 }}>{l}</div>)}
           </div>
         )}
+        {justUploaded && !busy && (
+          <div style={{ marginTop: 14, display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap" }}>
+            <WeeklyReportButton store={justUploaded.store} week={justUploaded.week} />
+            <span style={{ fontSize: 12.5, color: "var(--muted)" }}>{justUploaded.store}{justUploaded.week ? ` · week of ${justUploaded.week}` : ""}</span>
+          </div>
+        )}
       </div>
 
       {/* ───── Earning + Demographic: own cards ───── */}
@@ -533,7 +547,7 @@ export default function UploadPage() {
             <thead>
               <tr>
                 <th>Time Upload</th><th>Month</th><th>Week</th><th>Admin</th><th>File</th>
-                <th>Tipe</th><th>City</th><th>Dealer</th><th></th>
+                <th>Tipe</th><th>City</th><th>Dealer</th><th>Client group</th><th></th>
               </tr>
             </thead>
             <tbody>
@@ -579,11 +593,16 @@ export default function UploadPage() {
                           : <Multi items={b.cov.stores} />)
                       : b.dealer}
                   </td>
+                  <td>
+                    {!b.cov && b.dealer !== "—" && b.month !== BASELINE && b.month !== "—" && (
+                      <WeeklyReportButton compact store={b.dealer} week={reportWeek({ tanggal: Object.values(b.bySource).map((u) => u?.meta?.tanggal).find(Boolean), year: b.year, month: b.month, week: b.week })} />
+                    )}
+                  </td>
                   <td><button onClick={() => delBatch(b)} style={delBtnStyle}>Delete</button></td>
                 </tr>
               ))}
               {shownBatches.length === 0 && (
-                <tr><td colSpan={9} style={{ color: "var(--muted)", textAlign: "center", padding: 20 }}>
+                <tr><td colSpan={10} style={{ color: "var(--muted)", textAlign: "center", padding: 20 }}>
                   {uploads.length ? "No uploads match these filters" : "No uploads yet"}
                 </td></tr>
               )}
