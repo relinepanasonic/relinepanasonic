@@ -8,13 +8,13 @@ import { LangProvider, LANGS, useLangContext } from "@/lib/dashLang";
 import { clientWorkspaceId, isPageHidden } from "@/lib/workspace";
 import { useWorkspace } from "@/lib/useWorkspace";
 
-type Role = "superadmin" | "client_admin" | "branch_manager" | "store_user" | "advertiser" | "pic_panasonic" | "sales";
+type Role = "superadmin" | "client_admin" | "branch_manager" | "store_user" | "advertiser" | "pic_panasonic" | "sales" | "distributor" | "fulfillment";
 
 const NAV: { href: string; icon: string; label: string; short?: string; roles?: Role[] }[] = [
-  { href: "/",          icon: "📊", label: "Dashboard",           roles: ["superadmin", "branch_manager", "advertiser", "pic_panasonic", "sales"] },
+  { href: "/",          icon: "📊", label: "Dashboard",           roles: ["superadmin", "branch_manager", "advertiser", "pic_panasonic", "sales", "distributor", "fulfillment"] },
   { href: "/ads",       icon: "🎯", label: "Ads Performance", short: "Ads",     roles: ["superadmin", "advertiser"] },
-  { href: "/operational", icon: "🏬", label: "Demographic", short: "Demographic", roles: ["superadmin", "client_admin", "branch_manager", "pic_panasonic", "sales"] },
-  { href: "/finance",   icon: "💹", label: "Earning", short: "Earning",         roles: ["superadmin", "client_admin", "branch_manager", "pic_panasonic", "sales"] },
+  { href: "/operational", icon: "🏬", label: "Demographic", short: "Demographic", roles: ["superadmin", "client_admin", "branch_manager", "pic_panasonic", "sales", "distributor", "fulfillment"] },
+  { href: "/finance",   icon: "💹", label: "Earning", short: "Earning",         roles: ["superadmin", "client_admin", "branch_manager", "pic_panasonic", "sales", "distributor", "fulfillment"] },
   { href: "/payout",    icon: "💸", label: "Payout", short: "Payout", roles: ["superadmin", "client_admin"] },
   { href: "/calc",      icon: "🧮", label: "Price Calculator", short: "Calc",    roles: ["superadmin", "client_admin", "branch_manager", "pic_panasonic", "sales"] },
   { href: "/upload",    icon: "⬆️", label: "Upload Data", short: "Upload",         roles: ["superadmin", "client_admin"] },
@@ -30,6 +30,8 @@ const ROLE_LABEL: Record<Role, string> = {
   advertiser:     "Advertiser",
   pic_panasonic:  "PIC Panasonic",
   sales:          "Sales",
+  distributor:    "Distributor",
+  fulfillment:    "Fulfillment",
 };
 
 // Mobile bottom-nav priority. Someone who can see up to 5 pages gets them all in

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { WORKSPACES, isWorkspaceId, type WorkspaceId } from "@/lib/workspace";
+import { WORKSPACES, isWorkspaceId, schemaFor, type WorkspaceId } from "@/lib/workspace";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@supabase/supabase-js";
 
 const admin = () =>
@@ -32,7 +33,7 @@ export async function GET(req: NextRequest) {
   const db = admin();
   let q = db
     .from("invites")
-    .select("id,token,owner_name,store_name,role,created_at,expires_at,used_at,workspaces")
+    .select("id,token,owner_name,store_name,role,created_at,expires_at,used_at,workspaces,scope_company_id,scope_vendor_id")
     .order("created_at", { ascending: false });
   if (caller.role === "client_admin") {
     q = q.eq("role", "branch_manager").eq("client_id", caller.client_id);
@@ -53,7 +54,7 @@ export async function POST(req: NextRequest) {
   const caller = await verifyAdmin(req);
   if (!caller) return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
 
-  const body = await req.json() as { owner_name: string; store_name?: string; role: string; username?: string | null; client_id?: string | null; scope_stores?: string[]; workspaces?: string[] };
+  const body = await req.json() as { owner_name: string; store_name?: string; role: string; username?: string | null; client_id?: string | null; scope_stores?: string[]; workspaces?: string[]; scope_company_id?: string | null; scope_vendor_id?: string | null };
   if (!body.owner_name?.trim()) return NextResponse.json({ error: "Owner name is required" }, { status: 400 });
 
   const isClientAdmin = caller.role === "client_admin";
@@ -72,6 +73,21 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "You do not have access to this workspace" }, { status: 403 });
   }
 
+  // Distributor / Fulfillment (Light Solution and Alpha Project only): a Super Admin links the person to ONE distributor (company) or ONE fulfillment
+  // (vendor) of the workspace; they see only that part of the structure. They get exactly one workspace.
+  const isLevel = role === "distributor" || role === "fulfillment";
+  let scopeCompany: string | null = null, scopeVendor: string | null = null;
+  if (isLevel) {
+    if (caller.role !== "superadmin") return NextResponse.json({ error: "Only a Super Admin can invite a Distributor or Fulfillment user" }, { status: 403 });
+    if (cookieWs === "gobel") return NextResponse.json({ error: "Distributor and Fulfillment users exist in Light Solution and Alpha Project only" }, { status: 400 });
+    workspaces = [cookieWs];
+    const id = role === "distributor" ? body.scope_company_id : body.scope_vendor_id;
+    if (!id || typeof id !== "string") return NextResponse.json({ error: role === "distributor" ? "Pick the distributor" : "Pick the fulfillment center" }, { status: 400 });
+    const { data: hit } = await createAdminClient(schemaFor(cookieWs)).from(role === "distributor" ? "companies" : "vendors").select("id").eq("id", id).maybeSingle();
+    if (!hit) return NextResponse.json({ error: "That " + (role === "distributor" ? "distributor" : "fulfillment center") + " does not exist in this workspace" }, { status: 400 });
+    if (role === "distributor") scopeCompany = id; else scopeVendor = id;
+  }
+
   const db = admin();
   const { data: inv, error } = await db
     .from("invites")
@@ -83,6 +99,8 @@ export async function POST(req: NextRequest) {
       client_id:    clientId,
       created_by:   caller.user.id,
       scope_stores: role === "sales" ? (body.scope_stores?.length ? body.scope_stores : null) : null,
+      scope_company_id: scopeCompany,
+      scope_vendor_id:  scopeVendor,
       // join copies this to the new profile (profiles.workspaces)
       workspaces,
     })

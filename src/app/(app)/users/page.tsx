@@ -14,7 +14,10 @@ type Profile = {
   username: string | null; role: string; scope_store: string | null; scope_city: string | null;
   scope_stores: string[] | null;
   workspaces: string[] | null;
+  scope_company_id: string | null; scope_vendor_id: string | null;      // Distributor: its company; Fulfillment: its vendor (Light Solution / Alpha Project)
 };
+type Company = { id: string; name: string };
+type Vendor = { id: string; name: string; company_id: string | null };
 type Invite = {
   id: string; token: string; owner_name: string;
   store_name: string | null; role: string;
@@ -29,6 +32,8 @@ const INVITE_ROLES = [
   { v: "branch_manager",l: "Dealer Owner",  scope: "store" },
   { v: "client_admin",  l: "Admin",         scope: null },
   { v: "advertiser",    l: "Advertiser",    scope: null },
+  { v: "distributor",   l: "Distributor",   scope: "company" },   // Light Solution / Alpha Project: sees its fulfillment centers and their dealers
+  { v: "fulfillment",   l: "Fulfillment",   scope: "vendor" },    // Light Solution / Alpha Project: sees only its own fulfillment center's dealers
 ] as const;
 
 const ROLE_LABEL: Record<string, string> = {
@@ -39,6 +44,8 @@ const ROLE_LABEL: Record<string, string> = {
   client_admin:   "Admin",
   store_user:     "Store",
   advertiser:     "Advertiser",
+  distributor:    "Distributor",
+  fulfillment:    "Fulfillment",
 };
 const roleColor: Record<string, string> = {
   superadmin:     "#22c55e",
@@ -48,6 +55,8 @@ const roleColor: Record<string, string> = {
   client_admin:   "#f59e0b",
   store_user:     "#a78bfa",
   advertiser:     "#ec4899",
+  distributor:    "#14b8a6",
+  fulfillment:    "#f97316",
 };
 
 const inp: React.CSSProperties = {
@@ -109,6 +118,8 @@ export default function UsersPage() {
   const wsId = useWorkspaceId();
   const wsName = WORKSPACES.find((w) => w.id === wsId)?.name ?? "this workspace";
   const [inviteWs, setInviteWs] = useState<string[]>([wsId]);                      // Super Admin: the workspaces a new invite gets
+  const [companies, setCompanies] = useState<Company[]>([]);                    // the distributors / fulfillment centers of this workspace (Connector > Structure)
+  const [vendors, setVendors] = useState<Vendor[]>([]);
   const [accessFilter, setAccessFilter] = useState<"all" | "only" | "several">("all");
 
   // client_admin (e.g. "Vani") may only create/edit/delete Dealer Owner
@@ -116,7 +127,9 @@ export default function UsersPage() {
   // superadmin-only. Enforced server-side too (API routes + RLS); this
   // just keeps the UI from offering actions that would be rejected anyway.
   const isClientAdmin = myRole === "client_admin";
-  const availableRoles = isClientAdmin ? INVITE_ROLES.filter((r) => r.v === "branch_manager") : INVITE_ROLES;
+  // Distributor / Fulfillment: Super Admin only, and only in Light Solution / Alpha Project
+  const levelsOk = myRole === "superadmin" && wsId !== "gobel";
+  const availableRoles = isClientAdmin ? INVITE_ROLES.filter((r) => r.v === "branch_manager") : INVITE_ROLES.filter((r) => (r.v !== "distributor" && r.v !== "fulfillment") || levelsOk);
   const canManage = (p: Profile) => !isClientAdmin || p.role === "branch_manager";
 
   const getAuthHeader = useCallback(async () => {
@@ -126,7 +139,7 @@ export default function UsersPage() {
 
   const reload = useCallback(async () => {
     const [{ data: p }, h] = await Promise.all([
-      supabase.from("profiles").select("id,email,display_name,username,role,scope_store,scope_city,scope_stores,workspaces").order("display_name"),
+      supabase.from("profiles").select("id,email,display_name,username,role,scope_store,scope_city,scope_stores,workspaces,scope_company_id,scope_vendor_id").order("display_name"),
       getAuthHeader(),
     ]);
     setRows((p as Profile[]) || []);
@@ -141,6 +154,9 @@ export default function UsersPage() {
         const { data: me } = await supabase.from("profiles").select("role").eq("id", user.id).single();
         setMyRole(me?.role ?? null);
       }
+      // the structure of this workspace; Reline Project 1.0 has none (the tables do not exist there: the answer is simply empty)
+      const [{ data: co }, { data: ve }] = await Promise.all([supabase.from("companies").select("id,name").order("name"), supabase.from("vendors").select("id,name,company_id").order("name")]);
+      setCompanies((co as Company[]) || []); setVendors((ve as Vendor[]) || []);
       const { data: cl } = await supabase.from("clients").select("id,name").order("name");
       const clientList = (cl as Client[]) || [];
       setClients(clientList);
@@ -167,7 +183,7 @@ export default function UsersPage() {
   const shownRows = members.filter((r) => accessFilter === "all" || (accessFilter === "only" ? isOnlyHere(r) : !isOnlyHere(r)));
 
   const selectedRoleDef = INVITE_ROLES.find((r) => r.v === form.role);
-  const scopeType = selectedRoleDef?.scope ?? null; // "city" | "store" | "city_stores" | null
+  const scopeType = selectedRoleDef?.scope ?? null; // "city" | "store" | "city_stores" | "company" | "vendor" | null
   const dealersInScopeCity = dealers.filter((d) => d.city === form.scope);
 
   function openForm() {
@@ -182,10 +198,10 @@ export default function UsersPage() {
   async function createInvite() {
     if (!form.owner_name.trim()) { setMsg("Name is required"); return; }
     if (scopeType && !form.scope.trim()) {
-      setMsg(`${scopeType === "store" ? "Store" : "City"} is required for this role`);
+      setMsg(scopeType === "company" ? "Pick the distributor" : scopeType === "vendor" ? "Pick the fulfillment center" : `${scopeType === "store" ? "Store" : "City"} is required for this role`);
       return;
     }
-    if (myRole === "superadmin" && form.role !== "superadmin" && inviteWs.length === 0) { setMsg("Pick at least one workspace"); return; }
+    if (myRole === "superadmin" && form.role !== "superadmin" && form.role !== "distributor" && form.role !== "fulfillment" && inviteWs.length === 0) { setMsg("Pick at least one workspace"); return; }
     if (scopeType === "city_stores" && form.scope_stores.length === 0) {
       setMsg("Select at least one dealer");
       return;
@@ -199,10 +215,12 @@ export default function UsersPage() {
           owner_name:   form.owner_name.trim(),
           role:         form.role,
           client_id:    form.client_id || null,
-          store_name:   form.scope.trim() || null,  // re-used for city or store
+          store_name:   scopeType === "company" || scopeType === "vendor" ? null : (form.scope.trim() || null),  // re-used for city or store
+          scope_company_id: scopeType === "company" ? form.scope : undefined,
+          scope_vendor_id:  scopeType === "vendor" ? form.scope : undefined,
           username:     form.username.trim() || null,
           scope_stores: form.role === "sales" ? form.scope_stores : undefined,
-          ...(myRole === "superadmin" && form.role !== "superadmin" ? { workspaces: inviteWs } : {}),   // a Super Admin invite gets every workspace on the server
+          ...(myRole === "superadmin" && form.role !== "superadmin" && form.role !== "distributor" && form.role !== "fulfillment" ? { workspaces: inviteWs } : {}),   // a Super Admin invite gets every workspace on the server
         }),
       });
       const j = await res.json();
@@ -233,11 +251,11 @@ export default function UsersPage() {
   // user to a different role (that's what re-inviting is for), which
   // also means the API's client_admin guard never has to see a role
   // change coming from this form.
-  async function saveUser(id: string, patch: { display_name: string; scope_store?: string | null; password?: string; workspaces?: string[] }) {
+  async function saveUser(id: string, patch: { display_name: string; scope_store?: string | null; password?: string; workspaces?: string[]; scope_company_id?: string; scope_vendor_id?: string }) {
     const h = await getAuthHeader();
     const res = await fetch("/api/users", {
       method: "PATCH", headers: { ...h, "Content-Type": "application/json" },
-      body: JSON.stringify({ id, display_name: patch.display_name, scope_store: patch.scope_store, password: patch.password || undefined, workspaces: patch.workspaces }),
+      body: JSON.stringify({ id, display_name: patch.display_name, scope_store: patch.scope_store, password: patch.password || undefined, workspaces: patch.workspaces, scope_company_id: patch.scope_company_id, scope_vendor_id: patch.scope_vendor_id }),
     });
     const j = await res.json();
     if (!res.ok) { alert(j.error); return; }
@@ -249,6 +267,8 @@ export default function UsersPage() {
   const pending = invites.filter((i) => !i.used_at && new Date(i.expires_at) > new Date());
 
   const scopeOf = (r: Profile) => {
+    if (r.role === "distributor") { const c = companies.find((x) => x.id === r.scope_company_id); return c ? "🏢 " + c.name : "⚠ not linked"; }
+    if (r.role === "fulfillment") { const v = vendors.find((x) => x.id === r.scope_vendor_id); return v ? "📦 " + v.name : "⚠ not linked"; }
     if (r.scope_city && r.scope_stores?.length) return `📍 ${r.scope_city} · ${r.scope_stores.length} dealer${r.scope_stores.length === 1 ? "" : "s"}`;
     if (r.scope_city)  return `📍 ${r.scope_city}`;
     if (r.scope_store) return `🏬 ${r.scope_store}`;
@@ -358,6 +378,8 @@ export default function UsersPage() {
             { role: "branch_manager",desc: "Dashboard (store) · Product · Store · Price Calculator · Market Fee" },
             { role: "client_admin",  desc: "Upload Data · Connector" },
             { role: "advertiser",    desc: "Dashboard (all) · Ads Performance · Connector" },
+            { role: "distributor",   desc: "Light Solution / Alpha Project: Dashboard · Demographic · Earning of all dealers under its fulfillment centers" },
+            { role: "fulfillment",   desc: "Light Solution / Alpha Project: Dashboard · Demographic · Earning of its own fulfillment center's dealers only" },
           ].map(({ role, desc }) => (
             <div key={role} style={{ display: "flex", alignItems: "center", gap: 10 }}>
               <RolePill role={role} />
@@ -434,6 +456,24 @@ export default function UsersPage() {
                     </select>
                   </Fld>
                 )}
+                {scopeType === "company" && (
+                  <Fld label="Distributor">
+                    <select style={inp} value={form.scope} onChange={(e) => setForm({ ...form, scope: e.target.value })}>
+                      <option value="">— select distributor —</option>
+                      {companies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    </select>
+                    <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 4 }}>Sees all its fulfillment centers and their dealers (Dashboard, Demographic, Earning). Set them up in Connector.</div>
+                  </Fld>
+                )}
+                {scopeType === "vendor" && (
+                  <Fld label="Fulfillment center">
+                    <select style={inp} value={form.scope} onChange={(e) => setForm({ ...form, scope: e.target.value })}>
+                      <option value="">— select fulfillment center —</option>
+                      {vendors.map((v) => <option key={v.id} value={v.id}>{v.name}{v.company_id ? " · " + (companies.find((c) => c.id === v.company_id)?.name ?? "") : ""}</option>)}
+                    </select>
+                    <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 4 }}>Sees only the dealers of this fulfillment center (Dashboard, Demographic, Earning).</div>
+                  </Fld>
+                )}
                 {scopeType === "city_stores" && (
                   <>
                     <Fld label="City (scope)">
@@ -476,7 +516,7 @@ export default function UsersPage() {
                   </>
                 )}
 
-                {myRole === "superadmin" && form.role !== "superadmin" && (
+                {myRole === "superadmin" && form.role !== "superadmin" && form.role !== "distributor" && form.role !== "fulfillment" && (
                   <Fld label="Workspace access">
                     <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
                       {WORKSPACES.map((w) => (
@@ -522,7 +562,7 @@ export default function UsersPage() {
       )}
 
       {editing && (
-        <EditUserModal user={editing} dealers={dealers} canSetWorkspace={myRole === "superadmin"} currentWs={wsId} currentWsName={wsName} onSave={saveUser} onClose={() => setEditing(null)} />
+        <EditUserModal user={editing} dealers={dealers} companies={companies} vendors={vendors} canSetWorkspace={myRole === "superadmin"} currentWs={wsId} currentWsName={wsName} onSave={saveUser} onClose={() => setEditing(null)} />
       )}
     </div>
   );
@@ -568,9 +608,9 @@ function AccessCell({ p, wsId }: { p: Profile; wsId: string }) {
   );
 }
 
-function EditUserModal({ user, dealers, canSetWorkspace, currentWs, currentWsName, onSave, onClose }: {
-  user: Profile; dealers: { value: string; city: string | null }[]; canSetWorkspace: boolean; currentWs: string; currentWsName: string;
-  onSave: (id: string, patch: { display_name: string; scope_store?: string | null; password?: string; workspaces?: string[] }) => void;
+function EditUserModal({ user, dealers, companies, vendors, canSetWorkspace, currentWs, currentWsName, onSave, onClose }: {
+  user: Profile; dealers: { value: string; city: string | null }[]; companies: Company[]; vendors: Vendor[]; canSetWorkspace: boolean; currentWs: string; currentWsName: string;
+  onSave: (id: string, patch: { display_name: string; scope_store?: string | null; password?: string; workspaces?: string[]; scope_company_id?: string; scope_vendor_id?: string }) => void;
   onClose: () => void;
 }) {
   const [displayName, setDisplayName] = useState(user.display_name || "");
@@ -578,6 +618,7 @@ function EditUserModal({ user, dealers, canSetWorkspace, currentWs, currentWsNam
   const [password, setPassword] = useState("");
   const [wsSel, setWsSel] = useState<string[]>(user.workspaces?.length ? user.workspaces : ["gobel"]);
   const showStoreScope = user.role === "branch_manager" || user.role === "store_user";
+  const [linkId, setLinkId] = useState(user.role === "distributor" ? user.scope_company_id || "" : user.scope_vendor_id || "");
 
   return typeof document === "undefined" ? null : createPortal(
     <div onClick={onClose} style={overlay}>
@@ -602,12 +643,22 @@ function EditUserModal({ user, dealers, canSetWorkspace, currentWs, currentWsNam
             </Fld>
           )}
 
+          {canSetWorkspace && (user.role === "distributor" || user.role === "fulfillment") && (
+            <Fld label={user.role === "distributor" ? "Distributor" : "Fulfillment center"}>
+              <select style={inp} value={linkId} onChange={(e) => setLinkId(e.target.value)}>
+                <option value="">— not linked —</option>
+                {user.role === "distributor"
+                  ? companies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)
+                  : vendors.map((v) => <option key={v.id} value={v.id}>{v.name}{v.company_id ? " · " + (companies.find((c) => c.id === v.company_id)?.name ?? "") : ""}</option>)}
+              </select>
+            </Fld>
+          )}
           {canSetWorkspace && user.role === "superadmin" && (
             <Fld label="Workspace access">
               <div style={{ fontSize: 13, color: "#6fe0ad" }}>Super Admins can enter every workspace.</div>
             </Fld>
           )}
-          {canSetWorkspace && user.role !== "superadmin" && (
+          {canSetWorkspace && user.role !== "superadmin" && user.role !== "distributor" && user.role !== "fulfillment" && (
             <Fld label="Workspace access">
               <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
                 {WORKSPACES.map((w) => (
@@ -638,10 +689,12 @@ function EditUserModal({ user, dealers, canSetWorkspace, currentWs, currentWsNam
           </Fld>
 
           <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
-            <button className="btn-gold" style={{ flex: 1 }} disabled={canSetWorkspace && user.role !== "superadmin" && wsSel.length === 0}
+            <button className="btn-gold" style={{ flex: 1 }} disabled={canSetWorkspace && user.role !== "superadmin" && user.role !== "distributor" && user.role !== "fulfillment" && wsSel.length === 0}
               onClick={() => onSave(user.id, {
                 display_name: displayName.trim(),
-                ...(canSetWorkspace && user.role !== "superadmin" ? { workspaces: wsSel } : {}),
+                ...(canSetWorkspace && user.role !== "superadmin" && user.role !== "distributor" && user.role !== "fulfillment" ? { workspaces: wsSel } : {}),
+                ...(canSetWorkspace && linkId && user.role === "distributor" ? { scope_company_id: linkId } : {}),
+                ...(canSetWorkspace && linkId && user.role === "fulfillment" ? { scope_vendor_id: linkId } : {}),
                 ...(showStoreScope ? { scope_store: scopeStore || null } : {}),
                 password,
               })}>

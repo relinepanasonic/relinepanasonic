@@ -41,11 +41,11 @@ export default function StructurePanel({ clientId }: { clientId: string }) {
 
   const addCompany = async () => { if (!cName.trim()) return; await run(supabase.rpc("company_upsert", { p_client_id: clientId, p_id: null, p_name: cName.trim(), p_npwp: cNpwp.trim() || null })); setCName(""); setCNpwp(""); };
   const editCompany = (c: Company) => {
-    const n = window.prompt("Company name", c.name); if (n === null) return;
+    const n = window.prompt("Distributor name", c.name); if (n === null) return;
     const t = window.prompt("NPWP (leave empty if none)", c.npwp || ""); if (t === null) return;
     run(supabase.rpc("company_upsert", { p_client_id: clientId, p_id: c.id, p_name: n.trim() || c.name, p_npwp: t.trim() || null }));
   };
-  const delCompany = (c: Company) => { if (window.confirm(`Delete company ${c.name}? Its vendors stay (with their stores), without a company.`)) run(supabase.rpc("company_delete", { p_id: c.id })); };
+  const delCompany = (c: Company) => { if (window.confirm(`Delete distributor ${c.name}? Its fulfillment centers stay (with their dealers), without a distributor.`)) run(supabase.rpc("company_delete", { p_id: c.id })); };
   const addVendor = async (companyId: string) => {
     const name = (newVendor[companyId] || "").trim(); if (!name) return;
     const { data, error } = await supabase.rpc("vendor_upsert", { p_client_id: clientId, p_id: null, p_name: name });
@@ -53,8 +53,8 @@ export default function StructurePanel({ clientId }: { clientId: string }) {
     if (data) await supabase.rpc("company_set_vendor", { p_client_id: clientId, p_vendor: data, p_company: companyId });
     setNewVendor((m) => ({ ...m, [companyId]: "" })); setMsg(null); load();
   };
-  const renameVendor = (v: Vendor) => { const n = window.prompt("Vendor name", v.name); if (n && n.trim() !== v.name) run(supabase.rpc("vendor_upsert", { p_client_id: clientId, p_id: v.id, p_name: n.trim() })); };
-  const delVendor = (v: Vendor) => { if (window.confirm(`Delete vendor ${v.name}? Its ${v.stores.length} store(s) stay, without a vendor.`)) run(supabase.rpc("vendor_delete", { p_id: v.id })); };
+  const renameVendor = (v: Vendor) => { const n = window.prompt("Fulfillment name", v.name); if (n && n.trim() !== v.name) run(supabase.rpc("vendor_upsert", { p_client_id: clientId, p_id: v.id, p_name: n.trim() })); };
+  const delVendor = (v: Vendor) => { if (window.confirm(`Delete fulfillment ${v.name}? Its ${v.stores.length} dealer(s) stay, without a fulfillment.`)) run(supabase.rpc("vendor_delete", { p_id: v.id })); };
   const moveVendor = (v: Vendor, companyId: string) => run(supabase.rpc("company_set_vendor", { p_client_id: clientId, p_vendor: v.id, p_company: companyId || null }));
   const setStore = (store: string, vendorId: string | null) => run(supabase.rpc("vendor_set_store", { p_client_id: clientId, p_store: store, p_vendor: vendorId }));
 
@@ -63,19 +63,19 @@ export default function StructurePanel({ clientId }: { clientId: string }) {
       <div style={{ fontWeight: 700, fontSize: 14 }}>🚚 {v.name}</div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
         {v.stores.map((s) => (
-          <span key={s} style={chip}>🏬 {s}<button onClick={() => setStore(s, null)} title="Take this store out of the vendor" style={{ ...link, color: "#9fb4d8", fontSize: 14, padding: "0 4px" }}>×</button></span>
+          <span key={s} style={chip}>🏬 {s}<button onClick={() => setStore(s, null)} title="Take this dealer out of the fulfillment" style={{ ...link, color: "#9fb4d8", fontSize: 14, padding: "0 4px" }}>×</button></span>
         ))}
-        {v.stores.length === 0 && <span style={{ fontSize: 12, color: "#fbbf24" }}>no store yet</span>}
+        {v.stores.length === 0 && <span style={{ fontSize: 12, color: "#fbbf24" }}>no dealer yet</span>}
         {free.length > 0 && (
           <select value="" onChange={(e) => e.target.value && setStore(e.target.value, v.id)} style={{ ...select, maxWidth: 150 }}>
-            <option value="">+ store</option>
+            <option value="">+ dealer</option>
             {free.map((s) => <option key={s.store_name} value={s.store_name}>{s.store_name}</option>)}
           </select>
         )}
       </div>
       <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
         <select value={v.company_id || ""} onChange={(e) => moveVendor(v, e.target.value)} style={{ ...select, maxWidth: 160 }} title="Move this vendor (with its stores) to another company">
-          <option value="">{v.company_id ? "— no company —" : "Move to company…"}</option>
+          <option value="">{v.company_id ? "— no distributor —" : "Move to distributor…"}</option>
           {companies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
         <button style={link} onClick={() => renameVendor(v)}>Rename</button>
@@ -91,9 +91,9 @@ export default function StructurePanel({ clientId }: { clientId: string }) {
       {msg && <div style={{ color: msg.ok ? "var(--gold)" : "#f87171", marginBottom: 12, fontSize: 13 }}>{msg.ok ? "✓" : "✗"} {msg.text}</div>}
 
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 18 }}>
-        <input style={{ ...input, flex: "1 1 240px" }} placeholder="New company (PT …)" value={cName} onChange={(e) => setCName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addCompany()} />
+        <input style={{ ...input, flex: "1 1 240px" }} placeholder="New distributor (PT …)" value={cName} onChange={(e) => setCName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addCompany()} />
         <input style={{ ...input, flex: "1 1 180px" }} placeholder="NPWP (optional)" value={cNpwp} onChange={(e) => setCNpwp(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addCompany()} />
-        <button className="btn-gold" onClick={addCompany} style={{ padding: "9px 22px" }}>+ Company</button>
+        <button className="btn-gold" onClick={addCompany} style={{ padding: "9px 22px" }}>+ Distributor</button>
       </div>
 
       <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -104,17 +104,17 @@ export default function StructurePanel({ clientId }: { clientId: string }) {
               <div style={{ display: "flex", alignItems: "flex-start", gap: 10, marginBottom: 6 }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 17, fontWeight: 800, color: "#fff" }}>🏢 {c.name}</div>
-                  <div style={{ fontSize: 11.5, color: "var(--muted)", fontFamily: "monospace" }}>{c.npwp ? `NPWP ${c.npwp}` : "no NPWP"} · {mine.length} vendor{mine.length === 1 ? "" : "s"} · {mine.reduce((a, v) => a + v.stores.length, 0)} stores</div>
+                  <div style={{ fontSize: 11.5, color: "var(--muted)", fontFamily: "monospace" }}>{c.npwp ? `NPWP ${c.npwp}` : "no NPWP"} · {mine.length} fulfillment center{mine.length === 1 ? "" : "s"} · {mine.reduce((a, v) => a + v.stores.length, 0)} dealers</div>
                 </div>
                 <button style={link} onClick={() => editCompany(c)}>Edit</button>
                 <button style={{ ...link, color: "#f87171" }} onClick={() => delCompany(c)}>Delete</button>
               </div>
               {mine.map(vendorRow)}
-              {mine.length === 0 && <div style={{ color: "var(--muted)", fontSize: 12.5, padding: "8px 4px 12px", borderTop: "1px solid var(--line)" }}>No vendor yet.</div>}
+              {mine.length === 0 && <div style={{ color: "var(--muted)", fontSize: 12.5, padding: "8px 4px 12px", borderTop: "1px solid var(--line)" }}>No fulfillment center yet.</div>}
               <div style={{ display: "flex", gap: 8, paddingTop: 10, borderTop: "1px solid var(--line)" }}>
-                <input style={{ ...input, flex: "0 1 280px", padding: "7px 12px" }} placeholder="+ New vendor in this company" value={newVendor[c.id] || ""}
+                <input style={{ ...input, flex: "0 1 280px", padding: "7px 12px" }} placeholder="+ New fulfillment center in this distributor" value={newVendor[c.id] || ""}
                   onChange={(e) => setNewVendor((m) => ({ ...m, [c.id]: e.target.value }))} onKeyDown={(e) => e.key === "Enter" && addVendor(c.id)} />
-                <button className="btn-gold" onClick={() => addVendor(c.id)} style={{ padding: "7px 16px", fontSize: 13 }}>Add vendor</button>
+                <button className="btn-gold" onClick={() => addVendor(c.id)} style={{ padding: "7px 16px", fontSize: 13 }}>Add fulfillment</button>
               </div>
             </div>
           );
@@ -123,16 +123,16 @@ export default function StructurePanel({ clientId }: { clientId: string }) {
         {(loose.length > 0 || free.length > 0) && (
           <div className="panel" style={{ margin: 0, borderStyle: "dashed" }}>
             <div style={{ fontSize: 15, fontWeight: 800, color: "#fbbf24", marginBottom: 2 }}>Not placed yet</div>
-            <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 6 }}>Vendors without a company, and stores without a vendor (one store = one vendor).</div>
+            <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 6 }}>Fulfillment centers without a distributor, and dealers without a fulfillment center (one dealer = one fulfillment center).</div>
             {loose.map(vendorRow)}
             {free.length > 0 && (
               <div style={{ borderTop: "1px solid var(--line)", padding: "10px 4px", display: "flex", flexWrap: "wrap", gap: 14, alignItems: "center" }}>
-                <span style={{ fontSize: 13, fontWeight: 700, width: 180 }}>🏬 Stores without vendor</span>
+                <span style={{ fontSize: 13, fontWeight: 700, width: 180 }}>🏬 Dealers without fulfillment</span>
                 {free.map((s) => (
                   <span key={s.store_name} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
                     <span style={{ fontSize: 13 }}>{s.store_name}</span>
                     <select value="" onChange={(e) => e.target.value && setStore(s.store_name, e.target.value)} style={{ ...select, maxWidth: 140 }}>
-                      <option value="">{vendors.length ? "→ vendor…" : "no vendor yet"}</option>
+                      <option value="">{vendors.length ? "→ vendor…" : "no fulfillment center yet"}</option>
                       {vendors.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
                     </select>
                   </span>
@@ -142,7 +142,7 @@ export default function StructurePanel({ clientId }: { clientId: string }) {
           </div>
         )}
       </div>
-      {companies.length === 0 && vendors.length === 0 && stores.length === 0 && <div style={{ color: "var(--muted)", padding: 24, textAlign: "center" }}>Nothing here yet. Add the store names first (Store names tab), then a company.</div>}
+      {companies.length === 0 && vendors.length === 0 && stores.length === 0 && <div style={{ color: "var(--muted)", padding: 24, textAlign: "center" }}>Nothing here yet. Add the dealers first (Dealers tab), then a distributor.</div>}
     </div>
   );
 }

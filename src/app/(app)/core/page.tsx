@@ -63,9 +63,9 @@ export default function ConnectorPage() {
 
   const showStructure = hasStructure && isAdmin;
   const tabs: { v: Tab; l: string; n?: number }[] = [
-    ...(showStructure ? [{ v: "structure" as Tab, l: "Company · Vendor · Store" }] : []),
+    ...(showStructure ? [{ v: "structure" as Tab, l: "Distributor · Fulfillment · Dealer" }] : []),
     { v: "city", l: "City & PIC", n: cities.length },
-    { v: "store", l: hasStructure ? "Store names" : "Dealers", n: dealers.length },
+    { v: "store", l: "Dealers", n: dealers.length },
     { v: "brand", l: "Brands", n: brands.length },
     { v: "type", l: "Product types", n: types.length },
   ];
@@ -77,7 +77,7 @@ export default function ConnectorPage() {
         <h3 style={{ margin: 0, fontSize: 22 }}>Connector</h3>
         <div style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 4 }}>
           {showStructure
-            ? "Who owns what: Company → Vendor → Store. Plus the lists behind every dropdown (City, PIC, Store names, Brand, Product type)."
+            ? "Who owns what: Distributor → Fulfillment → Dealer. Plus the lists behind every dropdown (City, PIC, Dealers, Brand, Product type)."
             : "The lists behind every dropdown — City, PIC, Dealer, Brand & Product Type — used across Upload, Invites and filters."}
         </div>
       </div>
@@ -104,7 +104,7 @@ export default function ConnectorPage() {
       {active === "store" && (
         <ListCard
           rows={dealers.map((d) => ({ id: d.id, main: d.value, sub: [d.city, d.pic].filter(Boolean).join(" · ") || null }))} onDel={delItem}
-          hint={hasStructure ? "The store names (Shopee shops). Link each one to a vendor in the Company · Vendor · Store tab." : "The dealers."}
+          hint={hasStructure ? "The dealers (Shopee shops). Link each one to a fulfillment center in the Distributor · Fulfillment · Dealer tab." : "The dealers."}
           add={<DealerAdd label={hasStructure ? "Store name" : "Dealer name"} cities={cities.map((c) => c.value)} picOfCity={picOfCity}
                  onAdd={(name, city) => insertRow({ kind: "store", value: name, city: city || null, pic: picOfCity(city) })} />}
         />

@@ -41,7 +41,7 @@ export async function POST(req: NextRequest) {
   // Validate invite
   const { data: inv, error: ie } = await db
     .from("invites")
-    .select("id,owner_name,store_name,role,client_id,used_at,expires_at,scope_stores,workspaces")
+    .select("id,owner_name,store_name,role,client_id,used_at,expires_at,scope_stores,workspaces,scope_company_id,scope_vendor_id")
     .eq("token", token)
     .single();
 
@@ -78,6 +78,8 @@ export async function POST(req: NextRequest) {
     scope_city:   isCityScoped  ? (inv.store_name ?? null) : null,
     scope_store:  isStoreScoped ? (inv.store_name ?? null) : null,
     scope_stores: inv.role === "sales" ? (inv.scope_stores ?? null) : null,
+    scope_company_id: inv.role === "distributor" ? (inv.scope_company_id ?? null) : null,   // distributor: its company
+    scope_vendor_id:  inv.role === "fulfillment" ? (inv.scope_vendor_id ?? null) : null,    // fulfillment: its vendor
     workspaces:   inv.workspaces?.length ? inv.workspaces : ["gobel"],
   });
 

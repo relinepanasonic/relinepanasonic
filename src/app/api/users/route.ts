@@ -31,7 +31,7 @@ async function getManager(): Promise<Caller | null> {
 // superadmin & client_admin are global (see/edit all clients) so they carry
 // no client_id.
 function isScopedRole(role?: string) {
-  return role === "branch_manager" || role === "store_user" || role === "pic_panasonic" || role === "sales";
+  return role === "branch_manager" || role === "store_user" || role === "pic_panasonic" || role === "sales" || role === "distributor" || role === "fulfillment";
 }
 
 // Resolve which client the new/edited user belongs to + guard role escalation.
@@ -57,6 +57,9 @@ export async function POST(req: NextRequest) {
   // sales, another client_admin, or advertiser.
   if (mgr.role === "client_admin" && role !== "branch_manager")
     return NextResponse.json({ error: "Not allowed" }, { status: 403 });
+  // Distributor / Fulfillment: Super Admin only, one workspace (Light Solution or Alpha Project), linked to one company / vendor
+  if ((role === "distributor" || role === "fulfillment") && (mgr.role !== "superadmin" || (role === "distributor" ? !b.scope_company_id : !b.scope_vendor_id) || (await currentWorkspaceId()) === "gobel"))
+    return NextResponse.json({ error: "Not allowed" }, { status: 403 });
 
   const clientId = mgr.role === "client_admin" ? mgr.client_id : resolveClient(mgr, b.client_id, role);
   if (clientId === "ERR") return NextResponse.json({ error: "Not allowed" }, { status: 403 });
@@ -79,8 +82,10 @@ export async function POST(req: NextRequest) {
     scope_city: (role === "pic_panasonic" || role === "sales") ? scope_city || null : null,
     scope_store: (role === "branch_manager" || role === "store_user") ? scope_store || null : null,
     scope_stores: role === "sales" ? (scope_stores?.length ? scope_stores : null) : null,
-    // superadmin may pick; everyone else gets the workspace the creator is in
-    workspaces: (mgr.role === "superadmin" ? cleanWorkspaces(b.workspaces) : null) ?? [await currentWorkspaceId()],
+    scope_company_id: role === "distributor" ? b.scope_company_id : null,
+    scope_vendor_id:  role === "fulfillment" ? b.scope_vendor_id : null,
+    // superadmin may pick; everyone else gets the workspace the creator is in (Distributor / Fulfillment: only that one)
+    workspaces: (role === "distributor" || role === "fulfillment") ? [await currentWorkspaceId()] : ((mgr.role === "superadmin" ? cleanWorkspaces(b.workspaces) : null) ?? [await currentWorkspaceId()]),
   });
   if (pErr) {
     await admin.auth.admin.deleteUser(created.user.id); // rollback
@@ -125,11 +130,22 @@ export async function PATCH(req: NextRequest) {
     if (scope_store !== undefined) patch.scope_store = scope_store || null;
     if (scope_stores !== undefined) patch.scope_stores = scope_stores?.length ? scope_stores : null;
   }
+  // The distributor / fulfillment a Distributor / Fulfillment user is linked to: Super Admin only.
+  if (b.scope_company_id !== undefined || b.scope_vendor_id !== undefined) {
+    if (mgr.role !== "superadmin") return NextResponse.json({ error: "Only a Super Admin can change the link" }, { status: 403 });
+    const { data: target } = await admin.from("profiles").select("role").eq("id", id).single();
+    if (target?.role === "distributor" && b.scope_company_id) patch.scope_company_id = b.scope_company_id;
+    if (target?.role === "fulfillment" && b.scope_vendor_id) patch.scope_vendor_id = b.scope_vendor_id;
+  }
   // Workspace access: superadmin only (a client_admin cannot widen anyone's access).
   if (b.workspaces !== undefined) {
     if (mgr.role !== "superadmin") return NextResponse.json({ error: "Only a Super Admin can change workspace access" }, { status: 403 });
     const ws = cleanWorkspaces(b.workspaces);
     if (!ws) return NextResponse.json({ error: "Pick at least one workspace" }, { status: 400 });
+    // a Distributor / Fulfillment user belongs to exactly one workspace (Light Solution or Alpha Project): the company / vendor they are linked to lives there
+    const { data: tr } = await admin.from("profiles").select("role").eq("id", id).single();
+    if ((tr?.role === "distributor" || tr?.role === "fulfillment") && (ws.length !== 1 || ws[0] === "gobel"))
+      return NextResponse.json({ error: "A Distributor or Fulfillment user has exactly one workspace (Light Solution or Alpha Project)" }, { status: 400 });
     patch.workspaces = ws;
   }
   if (Object.keys(patch).length) {
