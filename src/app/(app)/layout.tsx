@@ -69,11 +69,16 @@ function AppShell({ children }: { children: React.ReactNode }) {
       // Profile + (best-effort) workspace access + the client's name. Kept as
       // plain selects (no embed): in the Light Solution workspace "profiles"
       // is a view, where PostgREST embeds are less reliable.
-      const { data: p } = await supabase
+      const { data: p, error: pErr } = await supabase
         .from("profiles")
         .select("role, display_name, client_id")
         .eq("id", user.id)
         .single();
+      // the database refuses a workspace the person may not enter (Supabase Migration/107)
+      if (pErr && (pErr.code === "PT403" || /WORKSPACE_FORBIDDEN/.test(pErr.message || ""))) {
+        window.location.href = "/welcome?denied=" + clientWorkspaceId();
+        return;
+      }
       if (p) {
         setRole(p.role as Role);
         setName(p.display_name || user.email?.split("@")[0] || "User");

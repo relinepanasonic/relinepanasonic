@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { createClient } from "@/lib/supabase/client";
 import { WORKSPACES } from "@/lib/workspace";
+import { useWorkspaceId } from "@/lib/useWorkspace";
 import { fmtDate } from "@/lib/dates";
 
 export const dynamic = "force-dynamic";
@@ -105,6 +106,10 @@ export default function UsersPage() {
   const [copied, setCopied] = useState(false);
   const [myRole, setMyRole] = useState<string | null>(null);
   const [editing, setEditing] = useState<Profile | null>(null);
+  const wsId = useWorkspaceId();
+  const wsName = WORKSPACES.find((w) => w.id === wsId)?.name ?? "this workspace";
+  const [inviteWs, setInviteWs] = useState<string[]>([wsId]);                      // Super Admin: the workspaces a new invite gets
+  const [accessFilter, setAccessFilter] = useState<"all" | "only" | "several">("all");
 
   // client_admin (e.g. "Vani") may only create/edit/delete Dealer Owner
   // (branch_manager) accounts -- everything else on this page stays
@@ -154,11 +159,19 @@ export default function UsersPage() {
     })();
   }, [supabase, reload]);
 
+  // who can enter this workspace: a Super Admin always, everybody else when it is in their list (nobody listed = Reline Project 1.0)
+  const members = rows.filter((r) => r.role === "superadmin" || (r.workspaces?.length ? r.workspaces : ["gobel"]).includes(wsId));
+  const isOnlyHere = (r: Profile) => r.role !== "superadmin" && (r.workspaces?.length ? r.workspaces : ["gobel"]).length === 1;
+  const onlyCount = members.filter(isOnlyHere).length;
+  const severalCount = members.length - onlyCount;
+  const shownRows = members.filter((r) => accessFilter === "all" || (accessFilter === "only" ? isOnlyHere(r) : !isOnlyHere(r)));
+
   const selectedRoleDef = INVITE_ROLES.find((r) => r.v === form.role);
   const scopeType = selectedRoleDef?.scope ?? null; // "city" | "store" | "city_stores" | null
   const dealersInScopeCity = dealers.filter((d) => d.city === form.scope);
 
   function openForm() {
+    setInviteWs([wsId]);
     setShowForm(true); setToken(null); setMsg("");
     setForm({
       owner_name: "", client_id: clients[0]?.id ?? "", role: "branch_manager",
@@ -172,6 +185,7 @@ export default function UsersPage() {
       setMsg(`${scopeType === "store" ? "Store" : "City"} is required for this role`);
       return;
     }
+    if (myRole === "superadmin" && form.role !== "superadmin" && inviteWs.length === 0) { setMsg("Pick at least one workspace"); return; }
     if (scopeType === "city_stores" && form.scope_stores.length === 0) {
       setMsg("Select at least one dealer");
       return;
@@ -188,6 +202,7 @@ export default function UsersPage() {
           store_name:   form.scope.trim() || null,  // re-used for city or store
           username:     form.username.trim() || null,
           scope_stores: form.role === "sales" ? form.scope_stores : undefined,
+          ...(myRole === "superadmin" && form.role !== "superadmin" ? { workspaces: inviteWs } : {}),   // a Super Admin invite gets every workspace on the server
         }),
       });
       const j = await res.json();
@@ -250,21 +265,32 @@ export default function UsersPage() {
         <button className="btn-gold" onClick={openForm}>+ Invite User</button>
       </div>
 
-      {/* ── Active Users ── */}
+      {/* ── Active Users: only the people who can enter THIS workspace (Super Admins can enter all) ── */}
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 10 }}>
+        {([["all", "All", members.length], ["only", "Only " + wsName, onlyCount], ["several", "Several workspaces", severalCount]] as const).map(([k, label, n]) => (
+          <button key={k} onClick={() => setAccessFilter(k)}
+            style={{ padding: "5px 13px", borderRadius: 999, fontSize: 12, fontWeight: 700, cursor: "pointer",
+              border: "1px solid " + (accessFilter === k ? "rgba(201,162,39,.7)" : "rgba(255,255,255,.12)"),
+              background: accessFilter === k ? "rgba(201,162,39,.16)" : "transparent", color: accessFilter === k ? "#e8c84a" : "var(--muted)" }}>
+            {label} <span style={{ opacity: .75 }}>({n})</span>
+          </button>
+        ))}
+        <span style={{ fontSize: 12, color: "var(--muted)" }}>People who can enter <b style={{ color: "var(--text-2)" }}>{wsName}</b></span>
+      </div>
       <div className="tbl-wrap">
         <table className="tbl">
           <thead>
             <tr><th>Name</th><th>Username</th><th>Email</th><th>Role</th><th>Scope</th><th>Workspace</th><th></th></tr>
           </thead>
           <tbody>
-            {rows.map((r) => (
+            {shownRows.map((r) => (
               <tr key={r.id}>
                 <td>{r.display_name || "—"}</td>
                 <td style={{ color: "#c9a227", fontFamily: "monospace", fontSize: 12 }}>{r.username || "—"}</td>
                 <td style={{ fontSize: 12, color: "var(--muted)" }}>{r.email || "—"}</td>
                 <td><RolePill role={r.role} /></td>
                 <td style={{ fontSize: 12, color: "var(--muted)" }}>{scopeOf(r)}</td>
-                <td><WorkspacePills ws={r.workspaces} /></td>
+                <td><AccessCell p={r} wsId={wsId} /></td>
                 <td>
                   {canManage(r) && (
                     <div style={{ display: "flex", gap: 6 }}>
@@ -281,8 +307,8 @@ export default function UsersPage() {
                 </td>
               </tr>
             ))}
-            {rows.length === 0 && (
-              <tr><td colSpan={7} style={{ textAlign: "center", color: "var(--muted)", padding: 24 }}>No users yet</td></tr>
+            {shownRows.length === 0 && (
+              <tr><td colSpan={7} style={{ textAlign: "center", color: "var(--muted)", padding: 24 }}>{rows.length === 0 ? "No users yet" : "No user matches this filter"}</td></tr>
             )}
           </tbody>
         </table>
@@ -450,6 +476,23 @@ export default function UsersPage() {
                   </>
                 )}
 
+                {myRole === "superadmin" && form.role !== "superadmin" && (
+                  <Fld label="Workspace access">
+                    <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
+                      {WORKSPACES.map((w) => (
+                        <label key={w.id} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: "#e8edf8", cursor: "pointer" }}>
+                          <input type="checkbox" checked={inviteWs.includes(w.id)}
+                            onChange={(e) => setInviteWs(e.target.checked ? [...inviteWs, w.id] : inviteWs.filter((x) => x !== w.id))} />
+                          {w.name}
+                        </label>
+                      ))}
+                    </div>
+                    <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 4 }}>
+                      {inviteWs.length === 1 ? "This person will see only " + (WORKSPACES.find((w) => w.id === inviteWs[0])?.name ?? "one workspace") + "." : inviteWs.length > 1 ? "This person can switch between the " + inviteWs.length + " workspaces." : "Pick at least one workspace."}
+                    </div>
+                  </Fld>
+                )}
+
                 <Fld label="Username (optional — user can set their own)">
                   <input style={inp} placeholder="e.g. yunita_owner"
                     value={form.username}
@@ -479,7 +522,7 @@ export default function UsersPage() {
       )}
 
       {editing && (
-        <EditUserModal user={editing} dealers={dealers} canSetWorkspace={myRole === "superadmin"} onSave={saveUser} onClose={() => setEditing(null)} />
+        <EditUserModal user={editing} dealers={dealers} canSetWorkspace={myRole === "superadmin"} currentWs={wsId} currentWsName={wsName} onSave={saveUser} onClose={() => setEditing(null)} />
       )}
     </div>
   );
@@ -508,8 +551,25 @@ function WorkspacePills({ ws }: { ws: string[] | null }) {
   );
 }
 
-function EditUserModal({ user, dealers, canSetWorkspace, onSave, onClose }: {
-  user: Profile; dealers: { value: string; city: string | null }[]; canSetWorkspace: boolean;
+// what a person can enter, as seen from the workspace you are in
+function AccessCell({ p, wsId }: { p: Profile; wsId: string }) {
+  if (p.role === "superadmin") {
+    return <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 9px", borderRadius: 999, whiteSpace: "nowrap", color: "#6fe0ad", background: "rgba(46,158,107,.14)", border: "1px solid rgba(46,158,107,.4)" }}>All workspaces</span>;
+  }
+  const list = p.workspaces?.length ? p.workspaces : ["gobel"];
+  if (list.length === 1) {
+    return <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 9px", borderRadius: 999, whiteSpace: "nowrap", color: "#e8c84a", background: "rgba(201,162,39,.12)", border: "1px solid rgba(201,162,39,.4)" }}>Only this workspace</span>;
+  }
+  return (
+    <div style={{ display: "flex", gap: 5, flexWrap: "wrap", alignItems: "center" }}>
+      <span style={{ fontSize: 11, color: "var(--muted)" }}>Also in</span>
+      <WorkspacePills ws={list.filter((w) => w !== wsId)} />
+    </div>
+  );
+}
+
+function EditUserModal({ user, dealers, canSetWorkspace, currentWs, currentWsName, onSave, onClose }: {
+  user: Profile; dealers: { value: string; city: string | null }[]; canSetWorkspace: boolean; currentWs: string; currentWsName: string;
   onSave: (id: string, patch: { display_name: string; scope_store?: string | null; password?: string; workspaces?: string[] }) => void;
   onClose: () => void;
 }) {
@@ -542,7 +602,12 @@ function EditUserModal({ user, dealers, canSetWorkspace, onSave, onClose }: {
             </Fld>
           )}
 
-          {canSetWorkspace && (
+          {canSetWorkspace && user.role === "superadmin" && (
+            <Fld label="Workspace access">
+              <div style={{ fontSize: 13, color: "#6fe0ad" }}>Super Admins can enter every workspace.</div>
+            </Fld>
+          )}
+          {canSetWorkspace && user.role !== "superadmin" && (
             <Fld label="Workspace access">
               <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
                 {WORKSPACES.map((w) => (
@@ -554,6 +619,17 @@ function EditUserModal({ user, dealers, canSetWorkspace, onSave, onClose }: {
                 ))}
               </div>
               {wsSel.length === 0 && <div style={{ fontSize: 11, color: "#f87171", marginTop: 4 }}>Pick at least one workspace</div>}
+              <div style={{ marginTop: 8 }}>
+                {(user.workspaces?.length ? user.workspaces : ["gobel"]).length > 1 ? (
+                  <button type="button"
+                    onClick={() => { if (confirm("Remove " + (user.display_name || user.email) + " from " + currentWsName + "? They keep their other workspaces.")) onSave(user.id, { display_name: displayName.trim(), workspaces: (user.workspaces?.length ? user.workspaces : ["gobel"]).filter((x) => x !== currentWs) }); }}
+                    style={{ padding: "5px 12px", borderRadius: 8, border: "1px solid rgba(239,68,68,.35)", background: "rgba(239,68,68,.08)", color: "#f87171", fontSize: 12, cursor: "pointer" }}>
+                    Remove from {currentWsName}
+                  </button>
+                ) : (
+                  <span style={{ fontSize: 11.5, color: "var(--muted)" }}>This is their only workspace. To take it away, delete the user.</span>
+                )}
+              </div>
             </Fld>
           )}
 
@@ -562,10 +638,10 @@ function EditUserModal({ user, dealers, canSetWorkspace, onSave, onClose }: {
           </Fld>
 
           <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
-            <button className="btn-gold" style={{ flex: 1 }} disabled={canSetWorkspace && wsSel.length === 0}
+            <button className="btn-gold" style={{ flex: 1 }} disabled={canSetWorkspace && user.role !== "superadmin" && wsSel.length === 0}
               onClick={() => onSave(user.id, {
                 display_name: displayName.trim(),
-                ...(canSetWorkspace ? { workspaces: wsSel } : {}),
+                ...(canSetWorkspace && user.role !== "superadmin" ? { workspaces: wsSel } : {}),
                 ...(showStoreScope ? { scope_store: scopeStore || null } : {}),
                 password,
               })}>

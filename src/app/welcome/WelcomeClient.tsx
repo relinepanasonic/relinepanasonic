@@ -37,11 +37,12 @@ export default function WelcomeClient({ denied }: { denied?: string }) {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.user) { window.location.replace("/login"); return; }
 
-      const { data: p } = await supabase.from("profiles").select("role").eq("id", session.user.id).single();
-      // May not exist before Supabase Migration/50 — default to Gobel then.
-      const { data: acc } = await supabase.from("profiles").select("workspaces").eq("id", session.user.id).single();
-      const mine = ((acc?.workspaces as string[] | null) ?? ["gobel"]);
-      const ids = WORKSPACES.filter((w) => p?.role === "superadmin" || mine.includes(w.id)).map((w) => w.id);
+      // The server answers (a Super Admin: all workspaces). The browser must not read the profile table here: the database only lets a person
+      // into the workspaces they have, and before one is chosen the browser would be asking for Reline Project 1.0.
+      const res = await fetch("/api/workspace/mine", { cache: "no-store" });
+      if (res.status === 401) { window.location.replace("/login"); return; }
+      const j = (await res.json().catch(() => ({}))) as { workspaces?: string[] };
+      const ids = WORKSPACES.filter((w) => (j.workspaces || []).includes(w.id)).map((w) => w.id);
       const list: WorkspaceId[] = ids.length ? ids : ["gobel"];
 
       if (list.length === 1) { window.location.replace(`/api/workspace?ws=${list[0]}`); return; }

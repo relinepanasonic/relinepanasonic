@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { isWorkspaceId } from "@/lib/workspace";
+import { WORKSPACES, isWorkspaceId, type WorkspaceId } from "@/lib/workspace";
 import { createClient } from "@supabase/supabase-js";
 
 const admin = () =>
@@ -14,10 +14,13 @@ async function verifyAdmin(req: NextRequest) {
   const token = (req.headers.get("authorization") ?? "").replace("Bearer ", "");
   const { data: { user }, error } = await db.auth.getUser(token);
   if (error || !user) return null;
-  const { data: p } = await db.from("profiles").select("role,client_id").eq("id", user.id).single();
+  const { data: p } = await db.from("profiles").select("role,client_id,workspaces").eq("id", user.id).single();
   if (!p || !["superadmin", "client_admin"].includes(p.role)) return null;
-  return { user, role: p.role as string, client_id: p.client_id as string | null };
+  return { user, role: p.role as string, client_id: p.client_id as string | null, workspaces: (p.workspaces as string[] | null) ?? ["gobel"] };
 }
+
+// the workspace the caller is working in (cookie "ws"), default Reline Project 1.0
+const wsOf = (req: NextRequest): WorkspaceId => (isWorkspaceId(req.cookies.get("ws")?.value) ? (req.cookies.get("ws")!.value as WorkspaceId) : "gobel");
 
 // GET — list invites. Superadmin sees everything; client_admin only sees
 // their own client's Dealer Owner (branch_manager) invites -- matching
@@ -29,14 +32,17 @@ export async function GET(req: NextRequest) {
   const db = admin();
   let q = db
     .from("invites")
-    .select("id,token,owner_name,store_name,role,created_at,expires_at,used_at")
+    .select("id,token,owner_name,store_name,role,created_at,expires_at,used_at,workspaces")
     .order("created_at", { ascending: false });
   if (caller.role === "client_admin") {
     q = q.eq("role", "branch_manager").eq("client_id", caller.client_id);
   }
   const { data } = await q;
 
-  return NextResponse.json({ invites: data ?? [] });
+  // the Users page of a workspace lists only the invites that give access to THAT workspace
+  const ws = wsOf(req);
+  const invites = ((data as { workspaces?: string[] | null }[] | null) ?? []).filter((i) => (i.workspaces?.length ? i.workspaces : ["gobel"]).includes(ws));
+  return NextResponse.json({ invites });
 }
 
 // POST — create invite. client_admin (e.g. "Vani") may only invite Dealer
@@ -47,12 +53,24 @@ export async function POST(req: NextRequest) {
   const caller = await verifyAdmin(req);
   if (!caller) return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
 
-  const body = await req.json() as { owner_name: string; store_name?: string; role: string; username?: string | null; client_id?: string | null; scope_stores?: string[] };
+  const body = await req.json() as { owner_name: string; store_name?: string; role: string; username?: string | null; client_id?: string | null; scope_stores?: string[]; workspaces?: string[] };
   if (!body.owner_name?.trim()) return NextResponse.json({ error: "Owner name is required" }, { status: 400 });
 
   const isClientAdmin = caller.role === "client_admin";
   const role = isClientAdmin ? "branch_manager" : (body.role || "branch_manager");
   const clientId = isClientAdmin ? caller.client_id : (body.client_id || caller.client_id);
+
+  // Workspace access of the new person. Only a Super Admin can give more than the workspace they are in (and a Super Admin invite always gets all of
+  // them); an Admin invites into the workspace they are working in, and only if they may use it themselves.
+  const cookieWs = wsOf(req);
+  let workspaces: string[] = [cookieWs];
+  if (role === "superadmin") workspaces = WORKSPACES.map((w) => w.id);
+  else if (caller.role === "superadmin" && Array.isArray(body.workspaces)) {
+    const picked = [...new Set(body.workspaces.filter((x): x is string => typeof x === "string" && isWorkspaceId(x)))];
+    if (picked.length) workspaces = picked;
+  } else if (caller.role === "client_admin" && !caller.workspaces.includes(cookieWs)) {
+    return NextResponse.json({ error: "You do not have access to this workspace" }, { status: 403 });
+  }
 
   const db = admin();
   const { data: inv, error } = await db
@@ -65,8 +83,8 @@ export async function POST(req: NextRequest) {
       client_id:    clientId,
       created_by:   caller.user.id,
       scope_stores: role === "sales" ? (body.scope_stores?.length ? body.scope_stores : null) : null,
-      // workspace the inviter is currently in (cookie "ws"); join copies it to the profile
-      workspaces:   [isWorkspaceId(req.cookies.get("ws")?.value) ? (req.cookies.get("ws")!.value) : "gobel"],
+      // join copies this to the new profile (profiles.workspaces)
+      workspaces,
     })
     .select("token")
     .single();
