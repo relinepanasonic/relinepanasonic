@@ -41,7 +41,7 @@ export default function WeeklyReportButton({ store, week, compact = false }: { s
       if (status === 409 && a.error === "already_sent") { setDialog({ mode: "already", data: current || {}, sentAt: a.sentAt, resend: true, last: action }); return; }
       if (status === 200 && a.ok && action === "preview") { setImgBad(false); setDialog({ mode: "preview", data: a, resend, last: "preview" }); return; }
       if (status === 200 && a.ok && action === "send") { setSentAt(new Date()); setDialog(null); return; }
-      setErr(a.message || (a.error === "no_data" ? "No numbers for this dealer and week yet. Upload first." : `Could not complete (${a.error || status}).`));
+      setErr(a.message || (a.error === "no_data" ? "No numbers for this dealer and week yet. If you just uploaded, wait a minute and press the button again; otherwise upload the weekly files first." : `Could not complete (${a.error || status}).`));
     } catch {
       setErr("The request failed. Check your connection; if you were sending, check WhatsApp before pressing Send again.");
     } finally { setBusy(null); }
@@ -54,7 +54,7 @@ export default function WeeklyReportButton({ store, week, compact = false }: { s
     <div style={{ display: "inline-flex", flexDirection: "column", gap: 6, alignItems: "flex-start" }}>
       <button className="btn-gold" disabled={!!busy || noGroup || !store} onClick={() => run("preview", false)} style={{ padding: pad, fontSize: compact ? 12 : undefined, whiteSpace: "nowrap" }}
         title="Send weekly report to client group (Oli)">
-        {busy === "preview" ? "Preparing…" : compact ? "Send to group (Oli)" : "Send weekly report to client group (Oli)"}
+        {busy === "preview" ? "Preparing… (up to 1 min after an upload)" : compact ? "Send to group (Oli)" : "Send weekly report to client group (Oli)"}
       </button>
       {noGroup && <div style={{ fontSize: 12, color: "#fbbf24", maxWidth: 300 }}>{NO_GROUP_TEXT}</div>}
       {sentAt && !dialog && <div style={{ fontSize: 12, color: "#4ade80" }}>✓ Sent {fmtWhen(sentAt)}</div>}

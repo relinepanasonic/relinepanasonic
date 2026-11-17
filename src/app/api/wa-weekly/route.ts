@@ -2,12 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { currentWorkspaceId } from "@/lib/workspace-server";
 import { workspaceById } from "@/lib/workspace";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-// POST /api/wa-weekly  { store, week?, action: "preview" | "send", resend? }
+// POST /api/wa-weekly  { store, week?, action: "preview" | "send" | "warm", resend? }
 //
 // The "Send weekly report to client group (Oli)" button. The accounting ERP makes the one-page report image and sends it to the client's WhatsApp
 // group; this route only asks it to, ON THE SERVER, so ERP_API_KEY never reaches the browser.
@@ -15,17 +16,35 @@ export const maxDuration = 60;
 //   - source = "reline", workspace = the active workspace name, store = the dealer name exactly as in the performance data (sales_rows.store_name).
 //   - sentBy = the logged-in person's name (taken from the session, never from the request).
 //   - NO automatic retry: one request here is one call to the ERP. "Send again" is a deliberate second click that comes in with resend: true.
+//   - The ERP reads the store numbers from /api/erp/performance, which is served from a weekly cache that is rebuilt (~30 s) on the first read after an
+//     upload. Asked right after an upload the ERP used to hit that rebuild and answer "no numbers". So the cache is rebuilt HERE first (a no-op when
+//     it is fresh), and the Upload page asks for action "warm" as soon as an upload finishes, so the later click finds it ready.
 // The ERP's answers are passed on (same status, known fields only); a 401 from the ERP is shown as a configuration problem, never as the ERP's own text.
 
 const ERP_URL = process.env.ERP_WA_CLIENT_WEEKLY_URL || "https://erp.profesoronline.id/api/v1/erp/wa/client-weekly";
 const TIMEOUT_MS = 55_000;
+const BUDGET_MS = 58_000;        // maxDuration is 60 s: warming the cache and the ERP call share it
+const WARM_MS = 40_000;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const NO_STORE = { "Cache-Control": "no-store" };
 const KNOWN = ["ok", "store", "label", "client", "week", "group", "status", "caption", "imageUrl", "sent", "detail", "error", "message", "sentAt"] as const;
 
 const out = (body: Record<string, unknown>, status: number) => NextResponse.json(body, { status, headers: NO_STORE });
 
+// rebuilds the weekly numbers cache of the active workspace when an upload made it stale; never throws, never waits longer than WARM_MS
+async function warmCache(schema: string): Promise<boolean> {
+  try {
+    const db = createAdminClient(schema);
+    const r = await Promise.race([
+      db.rpc("erp_perf_refresh_if_stale").then((x) => !x.error),
+      new Promise<boolean>((res) => setTimeout(() => res(false), WARM_MS)),
+    ]);
+    return r;
+  } catch { return false; }
+}
+
 export async function POST(req: NextRequest) {
+  const started = Date.now();
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return out({ error: "AUTH_REQUIRED" }, 401);
@@ -37,6 +56,8 @@ export async function POST(req: NextRequest) {
   if (!key) return out({ error: "not_configured", message: "ERP_API_KEY is not set on the server." }, 500);
 
   const b = (await req.json().catch(() => ({}))) as { store?: unknown; week?: unknown; action?: unknown; resend?: unknown };
+  const wsInfo = workspaceById(await currentWorkspaceId());
+  if (b.action === "warm") return out({ ok: true, warmed: await warmCache(wsInfo.schema) }, 200);   // the Upload page, right after an upload: nothing is sent to the ERP
   const store = typeof b.store === "string" ? b.store.trim() : "";
   if (!store || store.length > 200) return out({ error: "bad_request", message: "Pick a dealer first." }, 400);
   const action = b.action === "send" ? "send" : b.action === "preview" ? "preview" : null;
@@ -49,12 +70,13 @@ export async function POST(req: NextRequest) {
   if (herr) return out({ error: "bad_request", message: "Could not check the dealer." }, 500);
   if (!hit || hit.length === 0) return out({ error: "bad_request", message: `No data for dealer "${store}" in this workspace.` }, 400);
 
-  const ws = workspaceById(await currentWorkspaceId());
+  const ws = wsInfo;
   const sentBy = (p.display_name || p.email?.split("@")[0] || "").trim() || undefined;
   const payload = { source: "reline", store, workspace: ws.name, ...(week ? { week } : {}), action, resend: b.resend === true, ...(sentBy ? { sentBy } : {}) };
 
+  await warmCache(ws.schema);                                          // a failed warm-up is not fatal: the ERP may still find the numbers
   const ctl = new AbortController();
-  const timer = setTimeout(() => ctl.abort(), TIMEOUT_MS);
+  const timer = setTimeout(() => ctl.abort(), Math.max(10_000, Math.min(TIMEOUT_MS, BUDGET_MS - (Date.now() - started))));
   try {
     const res = await fetch(ERP_URL, {
       method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },

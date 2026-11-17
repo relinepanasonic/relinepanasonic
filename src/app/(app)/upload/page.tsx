@@ -269,6 +269,7 @@ export default function UploadPage() {
       }
     }
     setBusy(false);
+    if (uploaded > 0) fetch("/api/wa-weekly", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "warm" }) }).catch(() => {});   // rebuild the weekly numbers now, so the WhatsApp report is ready when the admin presses the button
     if (uploaded > 0 && form.dealer && form.bulan !== BASELINE) setJustUploaded({ store: form.dealer, week: reportWeek({ tanggal: form.tanggal_mulai, year: form.year, month: form.bulan, week: form.week }) });
     loadUploads(clientId);
   }

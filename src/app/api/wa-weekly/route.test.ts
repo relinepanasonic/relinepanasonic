@@ -16,18 +16,25 @@ vi.mock("@/lib/supabase/server", () => ({
   }),
 }));
 vi.mock("@/lib/workspace-server", () => ({ currentWorkspaceId: async () => workspace }));
+const order: string[] = [];
+let warmFails = false;
+vi.mock("@/lib/supabase/admin", () => ({
+  createAdminClient: (schema = "public") => ({
+    rpc: async (fn: string) => { order.push(`${fn}@${schema}`); return warmFails ? { data: null, error: { message: "boom" } } : { data: false, error: null }; },
+  }),
+}));
 
 const KEY = "test-only-erp-key-do-not-use";
 const fetchMock = vi.fn();
-const erp = (status: number, body: unknown) => fetchMock.mockResolvedValueOnce(new Response(body === null ? "" : JSON.stringify(body), { status }));
+const erp = (status: number, body: unknown) => fetchMock.mockImplementationOnce(async () => { order.push("erp"); return new Response(body === null ? "" : JSON.stringify(body), { status }); });
 const post = (body: unknown) => new NextRequest(new URL("/api/wa-weekly", "http://localhost"), { method: "POST", body: JSON.stringify(body), headers: { "content-type": "application/json" } });
 const OK = { store: "Sumber Multi - Cinere", week: "2026-11-02", action: "preview" };
 
 describe("POST /api/wa-weekly", () => {
   beforeEach(() => {
     process.env.ERP_API_KEY = KEY;
-    user = { id: "u1" }; profile = { role: "client_admin", display_name: "Vani", email: "vani@x.id" }; dealerExists = true; workspace = "alpha"; dealerQueries.length = 0;
-    fetchMock.mockReset(); vi.stubGlobal("fetch", fetchMock);
+    user = { id: "u1" }; profile = { role: "client_admin", display_name: "Vani", email: "vani@x.id" }; dealerExists = true; workspace = "alpha"; dealerQueries.length = 0; order.length = 0; warmFails = false;
+    fetchMock.mockReset(); fetchMock.mockImplementation(async () => { order.push("erp"); return new Response(JSON.stringify({ ok: true }), { status: 200 }); }); vi.stubGlobal("fetch", fetchMock);
   });
 
   it("needs a logged-in Super Admin or Admin; nothing is sent to the ERP otherwise", async () => {
@@ -100,6 +107,32 @@ describe("POST /api/wa-weekly", () => {
     const abort = new Error("timeout"); abort.name = "AbortError"; fetchMock.mockRejectedValueOnce(abort);
     r = await POST(post({ ...OK, action: "send" })); j = await r.json(); expect([r.status, j.error]).toEqual([502, "timeout"]);
     expect(fetchMock).toHaveBeenCalledTimes(4);                         // one call per request, no retries
+  });
+
+  it("rebuilds the weekly numbers of the active workspace BEFORE asking the ERP, so the ERP does not hit a stale cache", async () => {
+    const { POST } = await import("./route");
+    erp(200, { ok: true });
+    await POST(post(OK));
+    expect(order).toEqual(["erp_perf_refresh_if_stale@ws_alpha", "erp"]);
+    workspace = "gobel"; order.length = 0; erp(200, { ok: true });
+    await POST(post({ ...OK, action: "send" }));
+    expect(order).toEqual(["erp_perf_refresh_if_stale@public", "erp"]);
+  });
+
+  it("a failed warm-up does not stop the call to the ERP", async () => {
+    const { POST } = await import("./route");
+    warmFails = true; erp(200, { ok: true, group: "G" });
+    const r = await POST(post(OK));
+    expect(r.status).toBe(200); expect(order).toEqual(["erp_perf_refresh_if_stale@ws_alpha", "erp"]);
+  });
+
+  it("action warm only rebuilds the numbers (Upload page, right after an upload): admin only, nothing goes to the ERP", async () => {
+    const { POST } = await import("./route");
+    const r = await POST(post({ action: "warm" }));
+    expect(r.status).toBe(200); expect((await r.json()).ok).toBe(true);
+    expect(order).toEqual(["erp_perf_refresh_if_stale@ws_alpha"]); expect(fetchMock).not.toHaveBeenCalled();
+    profile = { role: "sales", display_name: "S", email: null }; order.length = 0;
+    expect((await POST(post({ action: "warm" }))).status).toBe(403); expect(order).toEqual([]);
   });
 
   it("no key on the server is a 500 and nothing is sent", async () => {
