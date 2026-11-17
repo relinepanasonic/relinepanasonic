@@ -96,6 +96,8 @@ export default function UploadPage() {
   const workspaceId = useWorkspaceId();
   const [supabase] = useState(() => createClient());
   const [clientId, setClientId] = useState("");
+  // Light Solution / Alpha Project: who works with whom (Connector) replaces City and PIC, so the upload asks for the Dealer only
+  const dealerOnly = !isPageHidden(workspaceId, "/payout");
 
   // form state
   const [form, setForm] = useState({
@@ -168,6 +170,10 @@ export default function UploadPage() {
       const { data: cityRows } = await supabase.from("master_data")
         .select("value,pic").eq("kind", "city").eq("client_id", cid).order("value");
       setCities((cityRows as CityRow[]) || []);
+      if (dealerOnly) {
+        const { data: all } = await supabase.from("master_data").select("value").eq("kind", "store").eq("client_id", cid).order("value");
+        setDealers(((all as { value: string }[]) || []).map((d) => d.value));
+      }
 
       loadUploads(cid);
 
@@ -176,7 +182,7 @@ export default function UploadPage() {
       setDealerRows(((snap as { dealers?: DealerRow[] } | null)?.dealers) || []);
 
     })();
-  }, [supabase, loadUploads]);
+  }, [supabase, loadUploads, dealerOnly]);
 
   // when city changes: auto-fill PIC + reload dealers
   async function pickCity(city: string) {
@@ -395,36 +401,49 @@ export default function UploadPage() {
           Pick the week&apos;s details once, attach one or more exports (Performa / SPOS / Ads Performa / GMV Auto Performa / Group Ads Performa), then Upload. Brand &amp; Tipe Produk are auto-detected from the product/campaign name.
         </div>
 
-        {/* Row 1: Admin | City | PIC Panasonic */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 14, marginBottom: 14 }}>
+        {/* Row 1: Admin | City | PIC Panasonic   (Light Solution / Alpha Project: Admin | Dealer) */}
+        <div style={{ display: "grid", gridTemplateColumns: dealerOnly ? "repeat(2,1fr)" : "repeat(3,1fr)", gap: 14, marginBottom: 14 }}>
           <Field label="Admin">
             <select value={form.admin} onChange={(e) => setForm((f) => ({ ...f, admin: e.target.value }))}>
               <option value="">Select admin</option>
               {admins.map((a) => <option key={a} value={a}>{a}</option>)}
             </select>
           </Field>
-          <Field label="City">
-            <select value={form.city} onChange={(e) => pickCity(e.target.value)}>
-              <option value="">Select city</option>
-              {cities.map((c) => <option key={c.value} value={c.value}>{c.value}</option>)}
-            </select>
-          </Field>
-          <Field label="PIC Panasonic">
-            <select value={form.pic_panasonic} onChange={(e) => setForm((f) => ({ ...f, pic_panasonic: e.target.value }))}>
-              <option value="">{form.city ? (form.pic_panasonic || "Select PIC") : "Select PIC"}</option>
-              {form.pic_panasonic && <option value={form.pic_panasonic}>{form.pic_panasonic}</option>}
-            </select>
-          </Field>
+          {dealerOnly ? (
+            <Field label="Dealer">
+              <select value={form.dealer} onChange={(e) => setForm((f) => ({ ...f, dealer: e.target.value }))}>
+                <option value="">{dealers.length ? "Select dealer" : "No dealer yet: add it in Connector"}</option>
+                {dealers.map((d) => <option key={d} value={d}>{d}</option>)}
+              </select>
+            </Field>
+          ) : (
+            <>
+              <Field label="City">
+                <select value={form.city} onChange={(e) => pickCity(e.target.value)}>
+                  <option value="">Select city</option>
+                  {cities.map((c) => <option key={c.value} value={c.value}>{c.value}</option>)}
+                </select>
+              </Field>
+              <Field label="PIC Panasonic">
+                <select value={form.pic_panasonic} onChange={(e) => setForm((f) => ({ ...f, pic_panasonic: e.target.value }))}>
+                  <option value="">{form.city ? (form.pic_panasonic || "Select PIC") : "Select PIC"}</option>
+                  {form.pic_panasonic && <option value={form.pic_panasonic}>{form.pic_panasonic}</option>}
+                </select>
+              </Field>
+            </>
+          )}
         </div>
 
-        {/* Row 2: Dealer | Year | Bulan */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 14, marginBottom: 14 }}>
-          <Field label="Dealer">
-            <select value={form.dealer} onChange={(e) => setForm((f) => ({ ...f, dealer: e.target.value }))} disabled={!form.city}>
-              <option value="">{form.city ? "Select dealer" : "Select city first"}</option>
-              {dealers.map((d) => <option key={d} value={d}>{d}</option>)}
-            </select>
-          </Field>
+        {/* Row 2: Dealer | Year | Bulan   (Light Solution / Alpha Project: Year | Bulan) */}
+        <div style={{ display: "grid", gridTemplateColumns: dealerOnly ? "repeat(2,1fr)" : "repeat(3,1fr)", gap: 14, marginBottom: 14 }}>
+          {!dealerOnly && (
+            <Field label="Dealer">
+              <select value={form.dealer} onChange={(e) => setForm((f) => ({ ...f, dealer: e.target.value }))} disabled={!form.city}>
+                <option value="">{form.city ? "Select dealer" : "Select city first"}</option>
+                {dealers.map((d) => <option key={d} value={d}>{d}</option>)}
+              </select>
+            </Field>
+          )}
           <Field label="Year">
             <select value={form.year} onChange={(e) => setForm((f) => ({ ...f, year: Number(e.target.value) }))}>
               {YEARS.map((y) => <option key={y} value={y}>{y}</option>)}
@@ -522,7 +541,7 @@ export default function UploadPage() {
 
       {/* ───── Earning + Demographic: own cards ───── */}
       {!isPageHidden(workspaceId, "/finance") && (
-        <FinOpsUploadCards supabase={supabase} clientId={clientId} cities={cities} onDone={() => loadUploads(clientId)} />
+        <FinOpsUploadCards supabase={supabase} clientId={clientId} cities={cities} dealerOnly={dealerOnly} onDone={() => loadUploads(clientId)} />
       )}
 
       {/* ───── Upload Log ───── */}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { createClient } from "@/lib/supabase/client";
 import ImageGuideModal from "@/components/ImageGuideModal";
 import { GUIDE } from "@/lib/uploadGuides";
@@ -65,29 +65,29 @@ const RETUR_SLOTS: Slot[] = [
   retur("return", "Return Refund", "(Order.return_refund)"),
 ];
 
-export default function FinOpsUploadCards({ supabase, clientId, cities, onDone }: {
-  supabase: Supabase; clientId: string; cities: CityRow[]; onDone: () => void;
+export default function FinOpsUploadCards({ supabase, clientId, cities, dealerOnly, onDone }: {
+  supabase: Supabase; clientId: string; cities: CityRow[]; dealerOnly: boolean; onDone: () => void;
 }) {
   return (
     <div style={{ display: "flex", flexWrap: "wrap", gap: 20, marginTop: 20, alignItems: "stretch" }}>
       <div style={{ flex: "1 1 380px", minWidth: 0, display: "flex" }}>
-        <UploadCard supabase={supabase} clientId={clientId} cities={cities} onDone={onDone}
+        <UploadCard supabase={supabase} clientId={clientId} cities={cities} dealerOnly={dealerOnly} onDone={onDone}
           title="Earning" roles="Super Admin | Admin" slots={[EARNING_SLOT]} />
       </div>
       <div style={{ flex: "1.7 1 640px", minWidth: 0, display: "flex" }}>
-        <UploadCard supabase={supabase} clientId={clientId} cities={cities} onDone={onDone}
+        <UploadCard supabase={supabase} clientId={clientId} cities={cities} dealerOnly={dealerOnly} onDone={onDone}
           title="Demographic" roles="Super Admin | Admin" slots={[SHIPPING_SLOT, COMPLETED_SLOT]} />
       </div>
       <div style={{ flex: "1 1 100%", minWidth: 0, display: "flex" }}>
-        <UploadCard supabase={supabase} clientId={clientId} cities={cities} onDone={onDone}
+        <UploadCard supabase={supabase} clientId={clientId} cities={cities} dealerOnly={dealerOnly} onDone={onDone}
           title="Retur" roles="Super Admin | Admin" slots={RETUR_SLOTS} />
       </div>
     </div>
   );
 }
 
-function UploadCard({ supabase, clientId, cities, onDone, title, roles, slots }: {
-  supabase: Supabase; clientId: string; cities: CityRow[]; onDone: () => void;
+function UploadCard({ supabase, clientId, cities, dealerOnly, onDone, title, roles, slots }: {
+  supabase: Supabase; clientId: string; cities: CityRow[]; dealerOnly: boolean; onDone: () => void;
   title: string; roles: string; slots: Slot[];
 }) {
   const [date, setDate] = useState(yesterday);
@@ -97,6 +97,15 @@ function UploadCard({ supabase, clientId, cities, onDone, title, roles, slots }:
   const [files, setFiles] = useState<Record<string, File | null>>({});
   const [busy, setBusy] = useState(false);
   const [log, setLog] = useState<string[]>([]);
+
+  // Light Solution / Alpha Project: no City, every dealer is listed
+  useEffect(() => {
+    if (!dealerOnly || !clientId) return;
+    (async () => {
+      const { data } = await supabase.from("master_data").select("value").eq("kind", "store").eq("client_id", clientId).order("value");
+      setDealers(((data as { value: string }[]) || []).map((d) => d.value));
+    })();
+  }, [supabase, clientId, dealerOnly]);
 
   async function pickCity(c: string) {
     setCity(c); setDealer("");
@@ -108,14 +117,14 @@ function UploadCard({ supabase, clientId, cities, onDone, title, roles, slots }:
 
   async function submit() {
     if (!clientId) { setLog(["✗ Workspace not ready."]); return; }
-    if (!date || !city || !dealer) { setLog(["✗ Pick the Date, City and Dealer first."]); return; }
+    if (!date || (!dealerOnly && !city) || !dealer) { setLog([dealerOnly ? "✗ Pick the Date and the Dealer first." : "✗ Pick the Date, City and Dealer first."]); return; }
     const chosen = slots.filter((s) => files[s.key]);
     if (!chosen.length) { setLog(["✗ Choose a file first."]); return; }
     setBusy(true); setLog([]);
     // the calendar date sets the Year / Month the rows are filed under (week comes from each row's own date)
     const manual = JSON.stringify({
-      date, year: Number(date.slice(0, 4)), bulan: MONTHS[Number(date.slice(5, 7)) - 1], city,
-      pic_client: cities.find((c) => c.value === city)?.pic || "",
+      date, year: Number(date.slice(0, 4)), bulan: MONTHS[Number(date.slice(5, 7)) - 1], city: dealerOnly ? undefined : city,
+      pic_client: dealerOnly ? "" : (cities.find((c) => c.value === city)?.pic || ""),
       store_name: dealer,
     });
     const out: string[] = [];
@@ -154,15 +163,17 @@ function UploadCard({ supabase, clientId, cities, onDone, title, roles, slots }:
           <input type="date" value={date} onChange={(e) => setDate(e.target.value)} style={{ colorScheme: "dark" }} />
           <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 4 }}>Filed under {MONTHS[Number(date.slice(5, 7)) - 1] || "—"} {date.slice(0, 4)}</div>
         </Field>
-        <Field label="City">
-          <select value={city} onChange={(e) => pickCity(e.target.value)}>
-            <option value="">Select city…</option>
-            {cities.map((c) => <option key={c.value} value={c.value}>{c.value}</option>)}
-          </select>
-        </Field>
-        <Field label="Store name">
-          <select value={dealer} onChange={(e) => setDealer(e.target.value)} disabled={!city}>
-            <option value="">{city ? "Select dealer…" : "Pick city first"}</option>
+        {!dealerOnly && (
+          <Field label="City">
+            <select value={city} onChange={(e) => pickCity(e.target.value)}>
+              <option value="">Select city…</option>
+              {cities.map((c) => <option key={c.value} value={c.value}>{c.value}</option>)}
+            </select>
+          </Field>
+        )}
+        <Field label={dealerOnly ? "Dealer" : "Store name"}>
+          <select value={dealer} onChange={(e) => setDealer(e.target.value)} disabled={!dealerOnly && !city}>
+            <option value="">{dealerOnly ? (dealers.length ? "Select dealer…" : "No dealer yet: add it in Connector") : city ? "Select dealer…" : "Pick city first"}</option>
             {dealers.map((d) => <option key={d} value={d}>{d}</option>)}
           </select>
         </Field>

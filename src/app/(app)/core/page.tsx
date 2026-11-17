@@ -62,33 +62,41 @@ export default function ConnectorPage() {
   async function delItem(id: string) { await supabase.from("master_data").delete().eq("id", id); reload(clientId); }
 
   const showStructure = hasStructure && isAdmin;
-  const tabs: { v: Tab; l: string; n?: number }[] = [
-    ...(showStructure ? [{ v: "structure" as Tab, l: "Distributor · Fulfillment · Dealer" }] : []),
-    { v: "city", l: "City & PIC", n: cities.length },
-    { v: "store", l: "Dealers", n: dealers.length },
-    { v: "brand", l: "Brands", n: brands.length },
-    { v: "type", l: "Product types", n: types.length },
-  ];
+  // Light Solution / Alpha Project (hasStructure): who works with whom replaces City & PIC, and everything is Panasonic, so there is no Brands list.
+  // Dealers are created inside the structure (an Admin); anyone else sees the plain Dealers list.
+  const tabs: { v: Tab; l: string; n?: number }[] = hasStructure
+    ? [
+        showStructure ? { v: "structure" as Tab, l: "Distributors, fulfillment centers & dealers" } : { v: "store" as Tab, l: "Dealers", n: dealers.length },
+        { v: "type", l: "Product types", n: types.length },
+      ]
+    : [
+        { v: "city", l: "City & PIC", n: cities.length },
+        { v: "store", l: "Dealers", n: dealers.length },
+        { v: "brand", l: "Brands", n: brands.length },
+        { v: "type", l: "Product types", n: types.length },
+      ];
   const active: Tab = tab && tabs.some((t) => t.v === tab) ? tab : tabs[0].v;
 
   return (
     <>
-      <div style={{ marginBottom: 14 }}>
-        <h3 style={{ margin: 0, fontSize: 22 }}>Connector</h3>
-        <div style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 4 }}>
-          {showStructure
-            ? "Who owns what: Distributor → Fulfillment → Dealer. Plus the lists behind every dropdown (City, PIC, Dealers, Brand, Product type)."
-            : "The lists behind every dropdown — City, PIC, Dealer, Brand & Product Type — used across Upload, Invites and filters."}
-        </div>
-      </div>
+      {/* the page title is in the top bar already: only a short guide here */}
+      <p style={{ fontSize: 13.5, color: "var(--muted)", margin: "0 0 16px", maxWidth: 720, lineHeight: 1.55 }}>
+        {hasStructure
+          ? (showStructure
+              ? "Set up who works with whom: a distributor has fulfillment centers, and each fulfillment center has its dealers. A dealer you add here is available in Upload, the Dashboard and Users."
+              : "The dealers and product types behind the dropdowns of Upload and the filters.")
+          : "The lists behind every dropdown — City, PIC, Dealer, Brand & Product Type — used across Upload, Invites and filters."}
+      </p>
 
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
-        {tabs.map((t) => (
-          <button key={t.v} onClick={() => setTab(t.v)} style={tabBtn(active === t.v)}>
-            {t.l}{t.n !== undefined && <span style={{ marginLeft: 8, fontSize: 11.5, opacity: .75 }}>{t.n}</span>}
-          </button>
-        ))}
-      </div>
+      {tabs.length > 1 && (
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
+          {tabs.map((t) => (
+            <button key={t.v} onClick={() => setTab(t.v)} style={tabBtn(active === t.v)}>
+              {t.l}{t.n !== undefined && <span style={{ marginLeft: 8, fontSize: 11.5, opacity: .75 }}>{t.n}</span>}
+            </button>
+          ))}
+        </div>
+      )}
 
       {msg && <div style={{ color: "#ff9a9a", fontSize: 13, marginBottom: 12, background: "rgba(239,68,68,.1)", border: "1px solid rgba(239,68,68,.2)", borderRadius: 8, padding: "8px 12px" }}>{msg}</div>}
 
@@ -104,8 +112,8 @@ export default function ConnectorPage() {
       {active === "store" && (
         <ListCard
           rows={dealers.map((d) => ({ id: d.id, main: d.value, sub: [d.city, d.pic].filter(Boolean).join(" · ") || null }))} onDel={delItem}
-          hint={hasStructure ? "The dealers (Shopee shops). Link each one to a fulfillment center in the Distributor · Fulfillment · Dealer tab." : "The dealers."}
-          add={<DealerAdd label={hasStructure ? "Store name" : "Dealer name"} cities={cities.map((c) => c.value)} picOfCity={picOfCity}
+          hint={hasStructure ? "The dealers (Shopee shops). An Admin adds them inside a fulfillment center." : "The dealers."}
+          add={hasStructure ? null : <DealerAdd label="Dealer name" cities={cities.map((c) => c.value)} picOfCity={picOfCity}
                  onAdd={(name, city) => insertRow({ kind: "store", value: name, city: city || null, pic: picOfCity(city) })} />}
         />
       )}
