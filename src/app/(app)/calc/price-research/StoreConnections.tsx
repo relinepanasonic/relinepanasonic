@@ -377,10 +377,10 @@ function ConnectionEditor({ supabase, clientId, isAdmin, conn, onBack, onDone, o
                   <tr key={p.prod_id} style={changed ? { background: "rgba(201,162,39,.06)" } : undefined}>
                     <td style={{ fontFamily: "monospace", fontSize: 12, color: "var(--muted)" }}>{conn.srp_no || "—"}</td>
                     <td style={{ fontFamily: "monospace", fontSize: 12, color: "var(--muted)" }}>{conn.catalog_no || "—"}</td>
-                    <td style={{ fontFamily: "monospace", fontSize: 12.5 }}>{p.prod_id}</td>
-                    <td style={{ minWidth: 220, maxWidth: 340, whiteSpace: "normal", overflowWrap: "anywhere", fontWeight: 700 }}>{p.product_name}</td>
+                    <td style={{ fontFamily: "monospace", fontSize: 11, width: 1, whiteSpace: "nowrap", paddingLeft: 6, paddingRight: 6 }}>{p.prod_id}</td>
+                    <td style={{ minWidth: 380, width: "40%", whiteSpace: "normal", overflowWrap: "anywhere", fontWeight: 700 }}>{p.product_name}</td>
                     <td className="num" style={{ fontWeight: 700 }}>{rp(ourPrice(p, platform, !!conn.platform))}</td>
-                    <td style={{ minWidth: 300 }}>
+                    <td style={{ minWidth: 260 }}>
                       {isAdmin ? (
                         <input value={urls[p.prod_id] ?? ""} onChange={(e) => setUrls((x) => ({ ...x, [p.prod_id]: e.target.value }))} placeholder="Paste the Product URL, or leave empty if the store does not sell it"
                           style={{ width: "100%", background: "rgba(10,22,40,.5)", border: `1px solid ${url && (!platform || !isProductUrl(platform, url) || (allowed && !allowed.includes(platform))) ? "rgba(248,113,113,.7)" : "rgba(201,162,39,.25)"}`, borderRadius: 6, padding: "6px 8px", color: "var(--text)", fontSize: 12.5 }} />
